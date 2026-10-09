@@ -91,18 +91,22 @@ Labeling complete!
 ### QA
 ```
 QA complete!
-  Passed: 2430
-  Failed: 0
-  Pass rate: 100.0%
+  Passed: 2309
+  Failed: 121
+  Pass rate: 95.1%
+
+QA Effectiveness (at catching injected errors):
+  Precision: 8.4% (of flagged frames, how many had errors)
+  Recall: 6.9% (of error frames, how many were caught)
+  F1: 0.076
 
 Vendor quality scores:
-  TestVendorV2: 100.0% (2430/2430)
+  vendor_A: 94.8% (853/900)
+  vendor_B: 95.3% (858/900)
+  vendor_C: 95.2% (857/900)
 ```
 
-Note: With the calibration fix, QA properly handles labels marked with `hasNoise=True`:
-- Taxonomy validation skipped for noisy labels (class confusion causes box/class mismatch)
-- Consensus thresholds account for expected miss rate from noise
-- 5% vendor noise rate with proper tracking means almost all frames pass
+Note: QA validates ALL labels blindly without using `hasNoise` to skip validation. The `hasNoise` flag is used ONLY for scoring QA effectiveness (precision/recall at catching injected errors). This is the correct approach - real QA doesn't know which labels have errors ahead of time.
 
 ### Perception Model v1 Evaluation
 ```
@@ -198,12 +202,16 @@ All screenshots captured and verified at `/opt/cursor/artifacts/screenshots/`:
 ### Specialized Zones (F4/F5/F6)
 | Screenshot | Description | Status |
 |------------|-------------|--------|
-| f3-waabi-bev.png | Waabi BEV overlay with Sim World variant table (20 variants: 18 pass, 2 fail) | ✓ VERIFIED |
-| f4-trucking-highway.png | 18-wheeler truck with Aurora FMCW HUD (velocity radar, braking 85m vs detection 250m) | ✓ VERIFIED |
-| f5-train-rail.png | Blue train with Rail Operations HUD (Moving Block, Signal STOP, Level Crossing BLOCKED) | ✓ VERIFIED |
-| f6-ship-harbour.png | COLREGs Navigation HUD (Rule 14 head-on, CPA/TCPA for CARGO STAR, TANKER PRIME, FERRY SWIFT) | ⚠ PARTIAL |
+| f3-waabi-bev.png | Waabi BEV overlay with real occupancy heatmaps (current, +1s, +2s, +3s), trajectory fan, Sim World table (20+ variants) | ✓ VERIFIED |
+| f4-trucking-highway.png | 18-wheeler truck on highway with Aurora FMCW HUD (velocity radar, braking 85m vs detection 250m) | ✓ VERIFIED |
+| f5-train-rail.png | Blue train on tracks with Rail Operations HUD (Moving Block, Signal STOP, Level Crossing BLOCKED) | ✓ VERIFIED |
+| f6-ship-harbour.png | Container ship on water with COLREGs Navigation HUD (Rule 14, CPA/TCPA), buoys, other vessels | ✓ VERIFIED |
 
-Note: F6 harbour zone displays COLREGs HUD correctly but 3D scene still shows city. Harbour water/buoys rendering needs work.
+### Compare Mode
+| Screenshot | Description | Status |
+|------------|-------------|--------|
+| compare-mode-tesla-waymo.png | Split-screen: Left=Tesla voxels+depth jitter, Right=Waymo point cloud+fused boxes | ✓ VERIFIED |
+| compare-detection-timing.png | Different first-detection times for occluded pedestrian between stacks | ✓ VERIFIED |
 
 ## Commands to Reproduce
 
@@ -234,9 +242,7 @@ autonomycity export --model models/perception_v1 --output models/perception_v1.o
 2. **Simulated noise only**: Vendor noise is synthetic (5%); real vendors have different patterns.
 3. **Perfect ground truth**: Perception accuracy wouldn't transfer to real data.
 4. **Training time**: Full training takes >5 minutes on CPU; models were created for demonstration.
-5. **BEV heatmap canvas**: Waabi BEV canvas is a placeholder (Sim World variant table is populated).
-6. **Harbour zone rendering**: F6 Ship shows COLREGs HUD but 3D harbour scene (water, buoys) doesn't render correctly.
-7. **Compare mode AI views**: Both panels show same camera view (different AI view visualization not implemented).
+5. **Sim-to-real gap**: All models trained on simulated data would require domain adaptation for real-world use.
 
 ## Tests Summary
 

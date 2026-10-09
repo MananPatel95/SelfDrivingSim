@@ -222,23 +222,43 @@ The perception model **beats the heuristic baseline** (F1 0.993 vs 0.620).
 | Total recordings | 9 |
 | Total frames | 2,700 |
 | Mined triggers | 3,450 |
-| QA pass rate | 20.8% (intentional noise) |
+| QA pass rate | 95.1% |
+| QA precision | 8.4% (at catching injected errors) |
+| QA recall | 6.9% (at catching injected errors) |
 | Gate check | PASSED |
 | ONNX models | perception_v1.onnx (171 KB), policy_v1.onnx (76 KB) |
+
+### Per-Vendor Quality
+
+| Vendor | Pass Rate | Total Labeled |
+|--------|-----------|---------------|
+| vendor_A | 94.8% | 900 |
+| vendor_B | 95.3% | 900 |
+| vendor_C | 95.2% | 900 |
 
 ## Sim-to-Real Gap
 
 These models are trained entirely on simulated data and would require significant additional work to transfer to real-world autonomous driving:
 
-1. **Sensor simulation fidelity:** Real lidar, radar, and cameras have noise characteristics, artifacts, and failure modes not fully captured in this simulation.
+1. **Sensor simulation fidelity:** Real lidar, radar, and cameras have noise characteristics, artifacts, and failure modes not fully captured in this simulation. Our lidar uses analytic ray casting; real sensors have multi-path returns, blooming, motion blur, and atmospheric effects.
 
-2. **Domain shift:** Real-world scenes have vastly more variety in lighting, weather, object appearances, road markings, and traffic patterns.
+2. **Domain shift:** Real-world scenes have vastly more variety in lighting, weather, object appearances, road markings, and traffic patterns. Our procedural city/highway/rail/harbour maps are simplified compared to real environments.
 
-3. **Edge cases:** The simulated scenarios cover only a tiny fraction of the challenging situations encountered in real driving (construction zones, emergency vehicles, unusual objects, etc.).
+3. **Edge cases:** The simulated scenarios cover only a tiny fraction of the challenging situations encountered in real driving (construction zones, emergency vehicles, unusual objects, etc.). We implement 7 scenario types; real systems need thousands.
 
-4. **Long-tail distribution:** Real perception systems must handle extremely rare but critical objects and situations that cannot all be pre-enumerated.
+4. **Long-tail distribution:** Real perception systems must handle extremely rare but critical objects and situations that cannot all be pre-enumerated. Our Sim World generates 20+ adversarial variants; real systems need millions.
 
 5. **Safety validation:** Real autonomous systems require extensive real-world testing, formal verification, redundant systems, and regulatory approval.
+
+### Sim-to-Real Transfer Techniques (Not Implemented)
+
+Real autonomous systems use additional techniques to bridge the sim-to-real gap:
+
+- **Domain randomization:** Varying textures, lighting, sensor noise during training
+- **Real sensor replay:** Replaying real sensor data through the simulator
+- **GAN-based domain adaptation:** Making simulated images look more realistic
+- **Multi-task learning:** Joint training on sim + real data
+- **Sensor-specific calibration:** Matching simulated sensor response curves to real hardware
 
 ## Real Stacks vs. This Demo
 
