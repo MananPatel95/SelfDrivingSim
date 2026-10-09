@@ -1,0 +1,67 @@
+# Autonomy City Label Taxonomy
+# Versioned class definitions and box size rules
+version: "1.0.0"
+
+classes:
+  car:
+    description: "Passenger vehicle"
+    length: [3.5, 5.5]
+    width: [1.5, 2.2]
+    height: [1.2, 2.0]
+    
+  truck:
+    description: "Freight truck or semi"
+    length: [5.0, 20.0]
+    width: [2.0, 3.0]
+    height: [2.0, 4.5]
+    
+  bus:
+    description: "Bus or coach"
+    length: [8.0, 15.0]
+    width: [2.2, 3.0]
+    height: [2.5, 4.0]
+    
+  pedestrian:
+    description: "Person on foot"
+    length: [0.3, 0.8]
+    width: [0.3, 0.8]
+    height: [1.0, 2.0]
+    
+  cyclist:
+    description: "Person on bicycle"
+    length: [1.0, 2.5]
+    width: [0.4, 1.0]
+    height: [1.0, 2.0]
+    
+  bicycle:
+    description: "Bicycle without rider"
+    length: [1.0, 2.0]
+    width: [0.3, 0.7]
+    height: [0.5, 1.5]
+    
+  motorcycle:
+    description: "Motorcycle or scooter"
+    length: [1.5, 3.0]
+    width: [0.5, 1.2]
+    height: [1.0, 1.8]
+
+attributes:
+  occlusion:
+    values: [0, 1, 2]
+    descriptions:
+      0: "Fully visible"
+      1: "Partially occluded (25-50%)"
+      2: "Heavily occluded (>50%)"
+      
+  truncation:
+    values: [0, 1, 2]
+    descriptions:
+      0: "Not truncated"
+      1: "Partially truncated by image boundary"
+      2: "Heavily truncated"
+
+validation_rules:
+  - "Box dimensions must be within class range"
+  - "Yaw must be normalized to [-pi, pi]"
+  - "Position coordinates must be finite"
+  - "ID must be unique within frame"

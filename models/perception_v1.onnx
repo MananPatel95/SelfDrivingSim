@@ -1,0 +1,442 @@
+
+pytorch2.14.1+cu130:ä©
+≥
+points
+val_0val_1node_MatMul_1"MatMulJ≥
+	namespace•: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.0: torch.nn.modules.linear.Linear/linear: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J¢
+pkg.torch.onnx.fx_nodeá%linear : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%x, %p_mlp_0_weight, %p_mlp_0_bias), kwargs = {})J<
+pkg.torch.onnx.name_scopes['', 'mlp', 'mlp.0', 'linear']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+≥
+val_1
+
+mlp.0.biaslinearnode_linear"AddJ≥
+	namespace•: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.0: torch.nn.modules.linear.Linear/linear: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J¢
+pkg.torch.onnx.fx_nodeá%linear : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%x, %p_mlp_0_weight, %p_mlp_0_bias), kwargs = {})J<
+pkg.torch.onnx.name_scopes['', 'mlp', 'mlp.0', 'linear']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+Ç
+linearrelu	node_relu"ReluJ±
+	namespace£: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.1: torch.nn.modules.activation.ReLU/relu: aten.relu.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']JÉ
+pkg.torch.onnx.fx_nodei%relu : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%linear,), kwargs = {})J:
+pkg.torch.onnx.name_scopes['', 'mlp', 'mlp.1', 'relu']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+∫
+relu
+val_2val_3node_MatMul_3"MatMulJµ
+	namespaceß: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.2: torch.nn.modules.linear.Linear/linear_1: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']Jß
+pkg.torch.onnx.fx_nodeå%linear_1 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu, %p_mlp_2_weight, %p_mlp_2_bias), kwargs = {})J>
+pkg.torch.onnx.name_scopes ['', 'mlp', 'mlp.2', 'linear_1']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+¿
+val_3
+
+mlp.2.biaslinear_1node_linear_1"AddJµ
+	namespaceß: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.2: torch.nn.modules.linear.Linear/linear_1: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']Jß
+pkg.torch.onnx.fx_nodeå%linear_1 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu, %p_mlp_2_weight, %p_mlp_2_bias), kwargs = {})J>
+pkg.torch.onnx.name_scopes ['', 'mlp', 'mlp.2', 'linear_1']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+ê
+linear_1relu_1node_relu_1"ReluJ≥
+	namespace•: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.3: torch.nn.modules.activation.ReLU/relu_1: aten.relu.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Já
+pkg.torch.onnx.fx_nodem%relu_1 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%linear_1,), kwargs = {})J<
+pkg.torch.onnx.name_scopes['', 'mlp', 'mlp.3', 'relu_1']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+æ
+relu_1
+val_4val_5node_MatMul_5"MatMulJµ
+	namespaceß: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.4: torch.nn.modules.linear.Linear/linear_2: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J©
+pkg.torch.onnx.fx_nodeé%linear_2 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu_1, %p_mlp_4_weight, %p_mlp_4_bias), kwargs = {})J>
+pkg.torch.onnx.name_scopes ['', 'mlp', 'mlp.4', 'linear_2']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+¬
+val_5
+
+mlp.4.biaslinear_2node_linear_2"AddJµ
+	namespaceß: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.4: torch.nn.modules.linear.Linear/linear_2: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J©
+pkg.torch.onnx.fx_nodeé%linear_2 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu_1, %p_mlp_4_weight, %p_mlp_4_bias), kwargs = {})J>
+pkg.torch.onnx.name_scopes ['', 'mlp', 'mlp.4', 'linear_2']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+ê
+linear_2relu_2node_relu_2"ReluJ≥
+	namespace•: autonomycity.commands.export.run.<locals>.PointNetONNX/mlp: torch.nn.modules.container.Sequential/mlp.5: torch.nn.modules.activation.ReLU/relu_2: aten.relu.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Já
+pkg.torch.onnx.fx_nodem%relu_2 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%linear_2,), kwargs = {})J<
+pkg.torch.onnx.name_scopes['', 'mlp', 'mlp.5', 'relu_2']J®
+pkg.torch.onnx.stack_traceâFile "/workspace/pipeline/autonomycity/commands/export.py", line 71, in forward
+    x = self.mlp(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+È
+relu_2
+val_8getitemnode_max_1__0"	ReduceMax*
+noop_with_empty_axes †*
+keepdims †JY
+	namespaceL: autonomycity.commands.export.run.<locals>.PointNetONNX/max_1: aten.max.dimJl
+pkg.torch.onnx.class_hierarchyJ['autonomycity.commands.export.run.<locals>.PointNetONNX', 'aten.max.dim']JÅ
+pkg.torch.onnx.fx_nodeg%max_1 : [num_users=1] = call_function[target=torch.ops.aten.max.dim](args = (%relu_2, 1), kwargs = {})J+
+pkg.torch.onnx.name_scopes['', 'max_1']Jå
+pkg.torch.onnx.stack_tracenFile "/workspace/pipeline/autonomycity/commands/export.py", line 72, in forward
+    x = torch.max(x, dim=1)[0]
+’	
+getitem
+classifier.0.weight
+classifier.0.biaslinear_3node_linear_3"Gemm*
+beta  Ä?†*
+transB†*
+alpha  Ä?†*
+transA †J√
+	namespaceµ: autonomycity.commands.export.run.<locals>.PointNetONNX/classifier: torch.nn.modules.container.Sequential/classifier.0: torch.nn.modules.linear.Linear/linear_3: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J∏
+pkg.torch.onnx.fx_nodeù%linear_3 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%getitem, %p_classifier_0_weight, %p_classifier_0_bias), kwargs = {})JL
+pkg.torch.onnx.name_scopes.['', 'classifier', 'classifier.0', 'linear_3']J≤
+pkg.torch.onnx.stack_traceìFile "/workspace/pipeline/autonomycity/commands/export.py", line 73, in forward
+    return self.classifier(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+∂
+linear_3relu_3node_relu_3"ReluJ¡
+	namespace≥: autonomycity.commands.export.run.<locals>.PointNetONNX/classifier: torch.nn.modules.container.Sequential/classifier.1: torch.nn.modules.activation.ReLU/relu_3: aten.relu.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Já
+pkg.torch.onnx.fx_nodem%relu_3 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%linear_3,), kwargs = {})JJ
+pkg.torch.onnx.name_scopes,['', 'classifier', 'classifier.1', 'relu_3']J≤
+pkg.torch.onnx.stack_traceìFile "/workspace/pipeline/autonomycity/commands/export.py", line 73, in forward
+    return self.classifier(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+”	
+relu_3
+classifier.2.weight
+classifier.2.biaslinear_4node_linear_4"Gemm*
+beta  Ä?†*
+transB†*
+alpha  Ä?†*
+transA †J√
+	namespaceµ: autonomycity.commands.export.run.<locals>.PointNetONNX/classifier: torch.nn.modules.container.Sequential/classifier.2: torch.nn.modules.linear.Linear/linear_4: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J∑
+pkg.torch.onnx.fx_nodeú%linear_4 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu_3, %p_classifier_2_weight, %p_classifier_2_bias), kwargs = {})JL
+pkg.torch.onnx.name_scopes.['', 'classifier', 'classifier.2', 'linear_4']J≤
+pkg.torch.onnx.stack_traceìFile "/workspace/pipeline/autonomycity/commands/export.py", line 73, in forward
+    return self.classifier(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+∂
+linear_4relu_4node_relu_4"ReluJ¡
+	namespace≥: autonomycity.commands.export.run.<locals>.PointNetONNX/classifier: torch.nn.modules.container.Sequential/classifier.3: torch.nn.modules.activation.ReLU/relu_4: aten.relu.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.activation.ReLU', 'aten.relu.default']Já
+pkg.torch.onnx.fx_nodem%relu_4 : [num_users=1] = call_function[target=torch.ops.aten.relu.default](args = (%linear_4,), kwargs = {})JJ
+pkg.torch.onnx.name_scopes,['', 'classifier', 'classifier.3', 'relu_4']J≤
+pkg.torch.onnx.stack_traceìFile "/workspace/pipeline/autonomycity/commands/export.py", line 73, in forward
+    return self.classifier(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/activation.py", line 143, in forward
+    return F.relu(input, inplace=self.inplace)
+—	
+relu_4
+classifier.4.weight
+classifier.4.biaslogitsnode_linear_5"Gemm*
+beta  Ä?†*
+transB†*
+alpha  Ä?†*
+transA †J√
+	namespaceµ: autonomycity.commands.export.run.<locals>.PointNetONNX/classifier: torch.nn.modules.container.Sequential/classifier.4: torch.nn.modules.linear.Linear/linear_5: aten.linear.defaultJø
+pkg.torch.onnx.class_hierarchyú['autonomycity.commands.export.run.<locals>.PointNetONNX', 'torch.nn.modules.container.Sequential', 'torch.nn.modules.linear.Linear', 'aten.linear.default']J∑
+pkg.torch.onnx.fx_nodeú%linear_5 : [num_users=1] = call_function[target=torch.ops.aten.linear.default](args = (%relu_4, %p_classifier_4_weight, %p_classifier_4_bias), kwargs = {})JL
+pkg.torch.onnx.name_scopes.['', 'classifier', 'classifier.4', 'linear_5']J≤
+pkg.torch.onnx.stack_traceìFile "/workspace/pipeline/autonomycity/commands/export.py", line 73, in forward
+    return self.classifier(x)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/container.py", line 259, in forward
+    input = module(input)
+  File "/home/ubuntu/.local/lib/python3.12/site-packages/torch/nn/modules/linear.py", line 134, in forward
+    return F.linear(input, self.weight, self.bias)
+main_graph*ì@B
+mlp.0.biasJÄ>È⁄ær>ªÏK>RS¡æ_˛æ;∂=`B˘æÂû´>?8ªC·æ2ãïæ≤>ŸqΩNM\æ˛∫¡æLj≤>*c¯>€›◊>—Væ§r Ω	á!>n†F>ªE‡=NJΩ¿_3æ:∫;ä?´=˝˛˘ºzv–>£[>J]Bæl:eæ Å◊>ärlæ≠Êí>ÕÒ¸=ã!?}>?[VÓæ›k”æK≤ø‹¡∆>wøóê>¸b æS·\Ω⁄ûq>G>ü>µ¡›>ˇßﬂæ\…>,>©¡Ù=’æf=ˆQ¡æÈ5æ2ª>‘ﬂ«>i ø´ øLåøæÒŸææ∞}≈æ*TÄB
+mlp.2.biasj#
+locationperception_v1.onnx.dataj
+offset0j
+length512p*XÄB
+mlp.4.biasj#
+locationperception_v1.onnx.dataj
+offset1792j
+length1024p*]ÄBclassifier.0.biasj#
+locationperception_v1.onnx.dataj
+offset512j
+length512p*ö@Bclassifier.2.biasJÄ>yhºlî'=”QH=:◊¡<eπxΩ¿·ä<ø°∫Û9§=<ùT<MΩÊûÖ=î}ÅΩÙ\=`Òü=„PΩ˘BõΩ)≠ñΩYëÑºïÉ<Æ¿G=¯2ÌºK¥V<H€–<9ﬂh=œF3Ω3xª<Qù∏<›H{Ωi£¨<(<ÒÑ=bg˙<‡=ôˆ˘<É&”<f_ΩNŸ<©ﬁ"=¬l@=∆C¢Ω/ö*ºu1m=œv,=Ï®ΩÛ{•Ω±0Ω±IΩ0ã¢Ω'EÓªE£=9;ΩùØÍ<$˜=¬;Ö=ë)=»Íπ<W–≠Ωtl“:sà9<ûSΩ¡°õº3ΩØ$¸ºÛÔíΩ*b@Bclassifier.4.weightj#
+locationperception_v1.onnx.dataj
+offset2816j
+length1792p*5Bclassifier.4.biasJ`!i<¥ê8=0{J<
+ËΩp¨7=D™=`óﬂº*gÄÄBclassifier.0.weightj#
+locationperception_v1.onnx.dataj
+offset70144j
+length131072p*d@ÄBclassifier.2.weightj#
+locationperception_v1.onnx.dataj
+offset4608j
+length32768p*S@Bval_0j#
+locationperception_v1.onnx.dataj
+offset1024j
+length768p*W@ÄBval_2j#
+locationperception_v1.onnx.dataj
+offset37376j
+length32768p*ZÄÄBval_4j#
+locationperception_v1.onnx.dataj
+offset201216j
+length131072p*Bval_8J       ZÕ
+points
+
+
+batch_size
+Ä
+"=
+/pkg.torch.export.graph_signature.InputSpec.kind
+USER_INPUT"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"&
+!pkg.torch.onnx.original_node_namexbí
+logits
+
+
+batch_size
+"?
+0pkg.torch.export.graph_signature.OutputSpec.kindUSER_OUTPUT"-
+!pkg.torch.onnx.original_node_namelinear_5j»
+
+mlp.0.bias
+
+
+@"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"1
+!pkg.torch.onnx.original_node_namep_mlp_0_biasj…
+
+mlp.2.bias
+	
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"1
+!pkg.torch.onnx.original_node_namep_mlp_2_biasj…
+
+mlp.4.bias
+	
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"1
+!pkg.torch.onnx.original_node_namep_mlp_4_biasj◊
+classifier.0.bias
+	
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"8
+!pkg.torch.onnx.original_node_namep_classifier_0_biasj÷
+classifier.2.bias
+
+
+@"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"8
+!pkg.torch.onnx.original_node_namep_classifier_2_biasjﬁ
+classifier.4.weight
+
+
+@"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone":
+!pkg.torch.onnx.original_node_namep_classifier_4_weightj÷
+classifier.4.bias
+
+
+"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone"8
+!pkg.torch.onnx.original_node_namep_classifier_4_biasj‡
+classifier.0.weight
+
+
+Ä
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone":
+!pkg.torch.onnx.original_node_namep_classifier_0_weightjﬂ
+classifier.2.weight
+	
+@
+Ä"<
+/pkg.torch.export.graph_signature.InputSpec.kind	PARAMETER"=
+5pkg.torch.export.graph_signature.InputSpec.persistentNone":
+!pkg.torch.onnx.original_node_namep_classifier_2_weightjQ
+val_0
+
+
+@"8
+$pkg.onnxscript.optimizer.folded_from['mlp.0.weight']jR
+val_2
+	
+@
+Ä"8
+$pkg.onnxscript.optimizer.folded_from['mlp.2.weight']jS
+val_4
+
+
+Ä
+Ä"8
+$pkg.onnxscript.optimizer.folded_from['mlp.4.weight']jO
+val_8
+
+
+":
+$pkg.onnxscript.optimizer.folded_from['val_6', 'val_7']j&
+val_1
+
+
+batch_size
+Ä
+@j'
+linear
+
+
+batch_size
+Ä
+@j%
+relu
+
+
+batch_size
+Ä
+@j'
+val_3
+
+
+batch_size
+Ä
+Äj*
+linear_1
+
+
+batch_size
+Ä
+Äj(
+relu_1
+
+
+batch_size
+Ä
+Äj'
+val_5
+
+
+batch_size
+Ä
+Äj*
+linear_2
+
+
+batch_size
+Ä
+Äj(
+relu_2
+
+
+batch_size
+Ä
+Äj$
+getitem
+
+
+batch_size
+Äj%
+linear_3
+
+
+batch_size
+Äj#
+relu_3
+
+
+batch_size
+Äj$
+linear_4
+
+
+batch_size
+@j"
+relu_4
+
+
+batch_size
+@ÇÍ
+0pkg.torch.export.ExportedProgram.graph_signatureµ
+# inputs
+p_mlp_0_weight: PARAMETER target='mlp.0.weight'
+p_mlp_0_bias: PARAMETER target='mlp.0.bias'
+p_mlp_2_weight: PARAMETER target='mlp.2.weight'
+p_mlp_2_bias: PARAMETER target='mlp.2.bias'
+p_mlp_4_weight: PARAMETER target='mlp.4.weight'
+p_mlp_4_bias: PARAMETER target='mlp.4.bias'
+p_classifier_0_weight: PARAMETER target='classifier.0.weight'
+p_classifier_0_bias: PARAMETER target='classifier.0.bias'
+p_classifier_2_weight: PARAMETER target='classifier.2.weight'
+p_classifier_2_bias: PARAMETER target='classifier.2.bias'
+p_classifier_4_weight: PARAMETER target='classifier.4.weight'
+p_classifier_4_bias: PARAMETER target='classifier.4.bias'
+x: USER_INPUT
+
+# outputs
+linear_5: USER_OUTPUT
+ÇJ
+2pkg.torch.export.ExportedProgram.range_constraints{s77: VR[0, int_oo]}B
+ 

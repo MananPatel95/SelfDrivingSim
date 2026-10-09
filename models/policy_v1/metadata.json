@@ -1,0 +1,15 @@
+{
+  "inputDim": 20,
+  "outputDim": 2,
+  "trainSamples": 2400,
+  "valSamples": 500,
+  "epochs": 100,
+  "batchSize": 64,
+  "lr": 0.0001,
+  "bestValLoss": 0.0234,
+  "metrics": {
+    "accelerationMAE": 0.254,
+    "steeringMAE": 0.066,
+    "actionMSE": 0.108
+  }
+}
