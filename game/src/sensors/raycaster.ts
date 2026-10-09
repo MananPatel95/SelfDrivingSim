@@ -286,18 +286,44 @@ export function generateLidarRays(
 ): Array<{ ray: Ray; ring: number; azimuth: number }> {
   const rays: Array<{ ray: Ray; ring: number; azimuth: number }> = [];
   
-  const vertMin = (verticalFov[0] * Math.PI) / 180;
-  const vertMax = (verticalFov[1] * Math.PI) / 180;
-  const horzMin = (horizontalFov[0] * Math.PI) / 180;
-  const horzMax = (horizontalFov[1] * Math.PI) / 180;
-  const horzStep = (horizontalRes * Math.PI) / 180;
+  // Validate inputs to prevent overflow
+  if (!verticalFov || !horizontalFov || !Array.isArray(verticalFov) || !Array.isArray(horizontalFov)) {
+    console.error('Invalid FOV inputs to generateLidarRays');
+    return rays;
+  }
+  
+  const vFov0 = Number(verticalFov[0]) || 0;
+  const vFov1 = Number(verticalFov[1]) || 0;
+  const hFov0 = Number(horizontalFov[0]) || 0;
+  const hFov1 = Number(horizontalFov[1]) || 0;
+  const hRes = Number(horizontalRes) || 1;
+  
+  const vertMin = (vFov0 * Math.PI) / 180;
+  const vertMax = (vFov1 * Math.PI) / 180;
+  const horzMin = (hFov0 * Math.PI) / 180;
+  const horzMax = (hFov1 * Math.PI) / 180;
+  const horzStep = Math.max(0.001, (hRes * Math.PI) / 180); // Ensure positive step
+  
+  // Safety check for reasonable values
+  if (!Number.isFinite(horzMin) || !Number.isFinite(horzMax) || Math.abs(horzMax) > 10) {
+    console.error('horzMax overflow detected:', { horzMin, horzMax, horizontalFov });
+    return rays;
+  }
   
   const vertStep = beams > 1 ? (vertMax - vertMin) / (beams - 1) : 0;
+  
+  // Limit total rays to prevent memory issues
+  const maxRaysPerRing = Math.ceil((horzMax - horzMin) / horzStep);
+  if (maxRaysPerRing > 2000) {
+    console.warn('Too many rays per ring:', maxRaysPerRing);
+  }
   
   for (let ring = 0; ring < beams; ring++) {
     const elevation = vertMin + ring * vertStep;
     
-    for (let azimuth = horzMin; azimuth <= horzMax; azimuth += horzStep) {
+    let rayCount = 0;
+    for (let azimuth = horzMin; azimuth <= horzMax && rayCount < 2000; azimuth += horzStep) {
+      rayCount++;
       const totalAzimuth = sensorYaw + azimuth;
       
       const direction: Vec3 = {
