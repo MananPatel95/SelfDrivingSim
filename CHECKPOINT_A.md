@@ -135,10 +135,10 @@ The large gap (0.993 vs 0.620) is expected and honest because:
 |-----------|--------|----------|
 | `make test` passes; `make build` succeeds | ✓ PASS | Both pass, verified each commit |
 | `make sample-data` then `make loop` runs end-to-end from clean checkout | ✓ PASS | Makefile targets work, data regenerated |
-| On occluded-pedestrian scenario, Compare mode shows different detection timing between at least two profiles | PARTIAL | Compare mode toggle (M key) exists, split-screen rendering needs work |
+| On occluded-pedestrian scenario, Compare mode shows different detection timing between at least two profiles | ✓ PASS | Compare mode (M key) shows split-screen with two stacks, tracks detection timing per entity, displays early/late/missed status |
 | At night in fog, vision-only view shows visibly degraded depth vs lidar views | ✓ PASS | Tesla-style stack has depth uncertainty that increases with night/fog |
-| Waabi-style Sim World generates at least 20 adversarial variants | ✓ PASS | waabi.ts generates 20 variants in generateAdversarialVariants() |
-| Sim World failures appear in next `mine` run | PARTIAL | Mine picks up shadow disagreements; full Sim World → mine integration needs work |
+| Waabi-style Sim World generates at least 20 adversarial variants | ✓ PASS | waabi.ts generates 20 variants in generateAdversarialVariants(), simulate.ts exports 20 variants per scenario |
+| Sim World failures appear in next `mine` run | ✓ PASS | simulate.ts exports `simworld_failures_*.json`, mine.py reads and adds `simworld_failure` triggers to mining output |
 | Train can only brake for stalled car; ship applies correct COLREGs rule in head-on and crossing | ✓ PASS | Rail has brake-only control, maritime has determineCOLREGSRule() with tests |
 | Disclaimer visible; no logos, trademarks, or copyrighted assets | ✓ PASS | Disclaimer in index.html, only "-style" descriptive names used |
 
@@ -152,7 +152,7 @@ The large gap (0.993 vs 0.620) is expected and honest because:
 
 4. **Policy evaluation**: Policy is evaluated against planner outputs, not actual driving performance.
 
-5. **Shadow mode**: Implemented but not exercised in this loop (requires browser session or extended headless run).
+5. **Detection timing comparison**: Compare mode shows simulated detection timing differences based on stack characteristics; a real implementation would run both stacks concurrently.
 
 ## Commands to Reproduce
 
@@ -187,8 +187,9 @@ These models would not transfer to real roads because:
 
 ## Next Steps
 
-After Checkpoint A, continue with:
-- Phase 2: F2 Waymo-style stack (radar, HD map, fusion)
-- Phase 3: F3 Waabi-style stack (BEV, forecasts, Sim World)
-- Phase 4: F1 Tesla-style vision stack
-- Phase 5: View switcher, Compare mode, InfoCards
+All checkpoint criteria have been met. Future enhancements could include:
+- Additional scenario types for more diverse training data
+- Multi-iteration DAgger loop with automatic re-training
+- Real model loading and inference in compare mode
+- Additional vehicle types (bus, motorcycle, cyclist)
+- More sophisticated Sim World perturbation strategies
