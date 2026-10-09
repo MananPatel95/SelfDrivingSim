@@ -281,6 +281,13 @@ async function main() {
         // Generate Sim World adversarial variants (Waabi-style)
         // This simulates running adversarial testing on the recorded scenario
         const numVariants = 20; // Per spec: at least 20 variants
+        const variantResults: Array<{
+          variantId: string;
+          perturbationType: 'timing' | 'speed' | 'path';
+          result: 'pass' | 'fail';
+          metrics: { minTTC: number; maxDecel: number; hadCollision: boolean };
+        }> = [];
+        
         for (let v = 0; v < numVariants; v++) {
           const perturbTypes: Array<'timing' | 'speed' | 'path'> = ['timing', 'speed', 'path'];
           const perturbType = perturbTypes[v % 3]!;
@@ -291,12 +298,21 @@ async function main() {
           const hadCollision = minTTC < 1.0 && Math.random() < 0.3;
           const isFail = hadCollision || minTTC < 0.8;
           
+          const variant = {
+            variantId: `${baseName}_variant_${v}`,
+            perturbationType: perturbType,
+            result: isFail ? 'fail' as const : 'pass' as const,
+            metrics: { minTTC, maxDecel, hadCollision },
+          };
+          
+          variantResults.push(variant);
+          
           if (isFail) {
             allSimWorldFailures.push({
-              variantId: `${baseName}_variant_${v}`,
+              variantId: variant.variantId,
               description: `${perturbType} perturbation on scenario actor`,
               perturbationType: perturbType,
-              actorId: v % 5, // Simulated actor ID
+              actorId: v % 5,
               result: 'fail',
               metrics: { minTTC, maxDecel, hadCollision },
               timestamp: Date.now() + v,
@@ -304,6 +320,20 @@ async function main() {
             });
           }
         }
+        
+        // Log variant summary
+        const passCount = variantResults.filter(v => v.result === 'pass').length;
+        const failCount = variantResults.filter(v => v.result === 'fail').length;
+        console.log(`  Sim World: ${numVariants} variants generated (${passCount} pass, ${failCount} fail)`);
+        
+        // Save all variant results (not just failures)
+        const variantPath = path.join(recordingDir, 'simworld_variants.json');
+        fs.writeFileSync(variantPath, JSON.stringify({
+          totalVariants: numVariants,
+          passed: passCount,
+          failed: failCount,
+          variants: variantResults,
+        }, null, 2));
         
         console.log(`  Completed: ${recording.metadata.totalFrames} frames, ${recording.metadata.totalTakeovers} takeovers, ${Math.round(recording.metadata.distanceTraveled)}m`);
         

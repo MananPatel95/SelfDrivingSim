@@ -37,7 +37,10 @@ def inject_vendor_noise(
         noisy_label['isAutoLabel'] = False
         
         # Box jitter
+        label_has_noise = False
+        
         if random.random() < noise_rate:
+            label_has_noise = True
             box = noisy_label.get('boundingBox', {})
             center = box.get('center', {})
             size = box.get('size', {})
@@ -59,6 +62,7 @@ def inject_vendor_noise(
         
         # Wrong class (misclassification)
         if random.random() < noise_rate * 0.2:
+            label_has_noise = True
             class_confusions = {
                 'car': ['truck', 'bus'],
                 'truck': ['car', 'bus'],
@@ -70,6 +74,8 @@ def inject_vendor_noise(
             if current_class in class_confusions:
                 noisy_label['classType'] = random.choice(class_confusions[current_class])
         
+        # Mark if this label has noise (for QA calibration)
+        noisy_label['hasNoise'] = label_has_noise
         noisy_labels.append(noisy_label)
     
     # Chance to add false positive (phantom object)

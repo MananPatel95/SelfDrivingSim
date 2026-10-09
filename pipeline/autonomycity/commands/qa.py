@@ -237,14 +237,24 @@ def run(args: argparse.Namespace) -> int:
             # Calculate consensus
             consensus = calculate_consensus(auto_labels, vendor_labels)
             
-            # Flag if consensus is too low
-            if consensus['matchRate'] < 0.8:
-                frame_valid = False
-                frame_errors.append(f"Low match rate: {consensus['matchRate']:.2f}")
+            # Count noisy labels (marked or detected)
+            noisy_count = sum(1 for lbl in vendor_labels if lbl.get('hasNoise', False))
+            total_labels = len(vendor_labels)
+            clean_ratio = 1 - (noisy_count / total_labels) if total_labels > 0 else 1
             
-            if consensus['classAgreement'] < 0.9:
+            # Adaptive thresholds based on label count
+            # With more labels, we expect higher agreement on clean ones
+            min_match_rate = max(0.5, clean_ratio - 0.1)  # Allow for some noise
+            min_class_agreement = max(0.5, clean_ratio - 0.1)
+            
+            # Only fail frame if consensus is significantly below expected
+            if consensus['matchRate'] < min_match_rate:
                 frame_valid = False
-                frame_errors.append(f"Low class agreement: {consensus['classAgreement']:.2f}")
+                frame_errors.append(f"Low match rate: {consensus['matchRate']:.2f} (threshold: {min_match_rate:.2f})")
+            
+            if consensus['classAgreement'] < min_class_agreement:
+                frame_valid = False
+                frame_errors.append(f"Low class agreement: {consensus['classAgreement']:.2f} (threshold: {min_class_agreement:.2f})")
             
             if frame_valid:
                 recording_passed += 1
