@@ -11,6 +11,9 @@ import { BASELINE_INFO_CARD } from './stacks/perception';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import { WAABI_INFO_CARD } from './stacks/waabi';
 import { TESLA_INFO_CARD } from './stacks/tesla';
+import { AURORA_INFO_CARD } from './stacks/aurora';
+import { RAIL_INFO_CARD } from './stacks/rail';
+import { MARITIME_INFO_CARD } from './stacks/maritime';
 
 // Stack types available
 type StackProfile = 'baseline_lidar' | 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
@@ -28,30 +31,9 @@ const INFO_CARDS: Record<StackProfile, {
   tesla: TESLA_INFO_CARD,
   waymo: WAYMO_INFO_CARD,
   waabi: WAABI_INFO_CARD,
-  aurora: {
-    name: 'Aurora-style: Trucking First',
-    sensors: 'Publicly described: long-range lidar, cameras, radar optimized for highway',
-    internals: 'Highway-focused perception, longer prediction horizons for trucking speeds, map-based routing',
-    strengths: 'Optimized for highway driving, longer range detection for high-speed operations',
-    weaknesses: 'Less focus on dense urban environments, requires detailed highway maps',
-    example: 'Aurora focuses on autonomous trucking with the Aurora Driver, emphasizing highway safety.',
-  },
-  rail: {
-    name: 'Rail: Fixed-path Autonomy',
-    sensors: 'Forward-facing lidar/radar, track circuit sensors, wayside signals',
-    internals: 'Fixed-path motion, signal-based control, track occupancy detection',
-    strengths: 'Simplified path planning (fixed track), centralized control possible',
-    weaknesses: 'Cannot avoid obstacles laterally, long stopping distances',
-    example: 'Rail autonomy uses fixed infrastructure and signaling for safe operations.',
-  },
-  maritime: {
-    name: 'Maritime: Open Water Autonomy',
-    sensors: 'Marine radar, AIS transponders, cameras, sonar',
-    internals: 'Long-range detection, collision regulations (COLREGS), sea clutter filtering',
-    strengths: 'More time to react due to slow speeds, existing maritime regulations',
-    weaknesses: 'Sea clutter, weather dependency, limited maneuverability of large vessels',
-    example: 'Maritime autonomy follows COLREGS collision avoidance rules on open water.',
-  },
+  aurora: AURORA_INFO_CARD,
+  rail: RAIL_INFO_CARD,
+  maritime: MARITIME_INFO_CARD,
 };
 
 // Game state
