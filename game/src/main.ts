@@ -50,7 +50,7 @@ let compareMode = false;
 
 // Compare mode state
 let compareRenderer: THREE.WebGLRenderer | null = null;
-let compareScene: THREE.Scene | null = null;
+let leftRenderer: THREE.WebGLRenderer | null = null;
 let compareCamera: THREE.PerspectiveCamera | null = null;
 let compareStack: StackProfile = 'waymo';
 
@@ -650,36 +650,24 @@ function initCompareMode() {
   rightCanvas.width = width;
   rightCanvas.height = height;
   
-  // Create compare scene (duplicate of main scene)
-  compareScene = new THREE.Scene();
-  compareScene.background = new THREE.Color(0x87ceeb);
-  compareScene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+  // Create left renderer (for main/Tesla view)
+  if (leftRenderer) {
+    leftRenderer.dispose();
+  }
+  leftRenderer = new THREE.WebGLRenderer({ canvas: leftCanvas, antialias: true });
+  leftRenderer.setSize(width, height);
+  leftRenderer.setClearColor(0x1a1a2e);
   
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
-  compareScene.add(ambientLight);
-  
-  const sunLight = new THREE.DirectionalLight(0xffffff, 1);
-  sunLight.position.set(100, 100, 100);
-  compareScene.add(sunLight);
-  
-  // Ground
-  const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
-  const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
-  const compareGround = new THREE.Mesh(groundGeometry, groundMaterial);
-  compareGround.rotation.x = -Math.PI / 2;
-  compareScene.add(compareGround);
-  
-  const gridHelper = new THREE.GridHelper(600, 60, 0x444444, 0x333333);
-  gridHelper.position.y = 0.01;
-  compareScene.add(gridHelper);
-  
-  // Camera
-  compareCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
-  
-  // Renderer for right side
+  // Create right renderer (for compare/Waymo view)
+  if (compareRenderer) {
+    compareRenderer.dispose();
+  }
   compareRenderer = new THREE.WebGLRenderer({ canvas: rightCanvas, antialias: true });
   compareRenderer.setSize(width, height);
+  compareRenderer.setClearColor(0x87ceeb);
+  
+  // Create compare camera (shares position with main camera)
+  compareCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
   
   // Reset timing tracking
   detectionTimings.clear();
@@ -743,12 +731,20 @@ function updateCompareMode() {
   // Update timing display
   updateCompareTimingDisplay(currentTime);
   
-  // Render compare view
-  if (compareRenderer && compareScene && compareCamera) {
-    // Update compare camera to match main camera
+  // Render both compare views using the main scene
+  if (leftRenderer && compareCamera) {
+    // Update camera to match main camera
     compareCamera.position.copy(camera.position);
     compareCamera.rotation.copy(camera.rotation);
-    compareRenderer.render(compareScene, compareCamera);
+    
+    // Render left panel (Tesla-style) using main scene
+    leftRenderer.render(scene, compareCamera);
+  }
+  
+  if (compareRenderer && compareCamera) {
+    // Render right panel (Waymo-style) using same main scene
+    // In a full implementation, this could have different post-processing
+    compareRenderer.render(scene, compareCamera);
   }
 }
 
@@ -1176,14 +1172,8 @@ function animate(time: number) {
   // Render (only if not in compare mode, which has its own rendering)
   if (!compareMode) {
     renderer.render(scene, camera);
-  } else {
-    // Render left panel with main renderer to compare canvas
-    const leftCanvas = document.getElementById('compare-canvas-left') as HTMLCanvasElement;
-    if (leftCanvas) {
-      renderer.setSize(leftCanvas.width, leftCanvas.height);
-      renderer.render(scene, camera);
-    }
   }
+  // Compare mode rendering is handled by updateCompareMode()
 }
 
 // Create a more detailed ego vehicle mesh
