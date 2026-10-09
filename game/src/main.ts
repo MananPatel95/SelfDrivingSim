@@ -13,9 +13,12 @@ import {
   BEVOccupancy, AdversarialVariant 
 } from './stacks/waabi';
 import { TESLA_INFO_CARD } from './stacks/tesla';
-import { AURORA_INFO_CARD } from './stacks/aurora';
-import { RAIL_INFO_CARD } from './stacks/rail';
-import { MARITIME_INFO_CARD } from './stacks/maritime';
+import { AURORA_INFO_CARD, TruckingState } from './stacks/aurora';
+import { RAIL_INFO_CARD, RailState, calculateRailBrakingDistance } from './stacks/rail';
+import { 
+  MARITIME_INFO_CARD, MaritimeState,
+  calculateCPATCPA, determineCOLREGSRule
+} from './stacks/maritime';
 import { generateHighwayMap, generateRailMap } from './sim/world';
 
 // Waabi stack state
@@ -35,6 +38,44 @@ let waabiState: WaabiStackState = {
     lastGenerationTime: 0,
   },
 };
+
+// Maritime stack state
+let maritimeState: MaritimeState = {
+  tracks: [],
+  aisTargets: [
+    { mmsi: 123456789, name: 'CARGO STAR', position: { x: -80, y: 100, z: 0 }, courseOverGround: Math.PI / 4, speedOverGround: 5, heading: Math.PI / 4, vesselType: 'cargo', length: 150, beam: 25 },
+    { mmsi: 234567890, name: 'TANKER PRIME', position: { x: 60, y: -80, z: 0 }, courseOverGround: -Math.PI / 3, speedOverGround: 4, heading: -Math.PI / 3, vesselType: 'tanker', length: 200, beam: 30 },
+    { mmsi: 345678901, name: 'FERRY SWIFT', position: { x: 100, y: 150, z: 0 }, courseOverGround: Math.PI, speedOverGround: 8, heading: Math.PI, vesselType: 'passenger', length: 100, beam: 20 },
+  ],
+  colregsActions: new Map(),
+  ownHeading: 0,
+  ownSpeed: 5,
+  rudderAngle: 0,
+  engineThrottle: 0.5,
+};
+
+// Rail stack state
+let railState: RailState = {
+  tracks: [],
+  currentSignal: { id: 1, position: { x: 200, y: 0, z: 0 }, state: 'stop', distanceToStop: 200 },
+  nextSignals: [],
+  currentSpeed: 0,
+  targetSpeed: 0,
+  brakingDistance: 500,
+  emergencyBraking: false,
+  gradeCrossings: [{ id: 1, position: { x: 150, y: 0, z: 0 }, state: 'active', hasObstruction: true }],
+};
+
+// Trucking stack state (for future use in highway perception)
+const _truckingState: TruckingState = {
+  tracks: [],
+  currentLane: 1,
+  targetLane: 1,
+  laneChangeProgress: 0,
+  brakingDelay: 0.3,
+  blindSpotOccupied: { left: false, right: false },
+};
+void _truckingState; // Silence unused warning
 
 // Stack types available (F1-F6 per spec)
 type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
@@ -629,6 +670,310 @@ function updateHUD() {
   controlEl.className = 'status-value';
   if (state.controlSource === 'human') {
     controlEl.classList.add('status-warning');
+  }
+  
+  // Update specialized HUDs based on current stack
+  if (currentStack === 'maritime') {
+    updateMaritimeHUD();
+  } else if (currentStack === 'rail') {
+    updateRailHUD();
+  } else if (currentStack === 'aurora') {
+    updateFMCWHUD();
+  }
+}
+
+// Update Maritime COLREGs HUD with live values
+function updateMaritimeHUD() {
+  const state = simulation.getState();
+  const egoPos = state.ego.transform.position;
+  const egoVel = state.ego.velocity;
+  const egoHeading = state.ego.transform.rotation;
+  
+  // Update ship positions based on simulation time
+  maritimeState.aisTargets.forEach(target => {
+    target.position.x += Math.cos(target.courseOverGround) * target.speedOverGround * 0.016;
+    target.position.y += Math.sin(target.courseOverGround) * target.speedOverGround * 0.016;
+  });
+  
+  // Calculate CPA/TCPA for each target
+  interface TargetInfo { name: string; cpa: number; tcpa: number; rule: string }
+  let closestTarget: TargetInfo | undefined;
+  let minTcpa = Infinity;
+  
+  const targetListEl = document.getElementById('ais-targets');
+  if (targetListEl) targetListEl.innerHTML = '';
+  
+  for (const target of maritimeState.aisTargets) {
+    const { cpa, tcpa } = calculateCPATCPA(
+      egoPos,
+      egoVel,
+      target.position,
+      { x: Math.cos(target.courseOverGround) * target.speedOverGround, 
+        y: Math.sin(target.courseOverGround) * target.speedOverGround, z: 0 }
+    );
+    
+    const rule = determineCOLREGSRule(egoPos, egoHeading, target.position, target.heading);
+    
+    // Format TCPA as minutes:seconds
+    const tcpaMin = Math.floor(tcpa / 60);
+    const tcpaSec = Math.floor(tcpa % 60);
+    const tcpaStr = tcpa < 0 ? 'passed' : `${tcpaMin}:${tcpaSec.toString().padStart(2, '0')}`;
+    
+    if (targetListEl) {
+      const div = document.createElement('div');
+      const isRisk = cpa < 200 && tcpa > 0 && tcpa < 600;
+      div.style.color = isRisk ? '#ff4444' : '#ccc';
+      div.textContent = `${target.name} - CPA: ${Math.round(cpa)}m, TCPA: ${tcpaStr}`;
+      targetListEl.appendChild(div);
+    }
+    
+    if (tcpa > 0 && tcpa < minTcpa && cpa < 500) {
+      minTcpa = tcpa;
+      closestTarget = { name: target.name, cpa, tcpa, rule };
+    }
+  }
+  
+  // Update situation display
+  const situationEl = document.getElementById('colregs-situation');
+  const ruleEl = document.getElementById('colregs-rule');
+  const actionEl = document.getElementById('colregs-action');
+  
+  if (closestTarget && situationEl && ruleEl && actionEl) {
+    const ruleNames: Record<string, string> = {
+      'head_on': 'Head-on situation',
+      'crossing': 'Crossing situation',
+      'overtaking': 'Overtaking situation',
+      'stand_on': 'Stand-on vessel',
+      'give_way': 'Give-way situation',
+    };
+    
+    const ruleDescriptions: Record<string, string> = {
+      'head_on': 'Rule 14: Head-on - Both vessels alter to starboard',
+      'crossing': 'Rule 15: Crossing - Give-way vessel alters to starboard',
+      'overtaking': 'Rule 13: Overtaking - Keep clear of vessel being overtaken',
+      'stand_on': 'Rule 17: Stand-on - Maintain course and speed',
+      'give_way': 'Rule 16: Give-way - Take early and substantial action',
+    };
+    
+    const actions: Record<string, string> = {
+      'head_on': `ACTION: Alter course 20° to starboard`,
+      'crossing': `ACTION: Alter course to pass astern`,
+      'overtaking': `ACTION: Maintain safe passing distance`,
+      'stand_on': `ACTION: Maintain course and speed`,
+      'give_way': `ACTION: Alter course to starboard`,
+    };
+    
+    situationEl.textContent = `${ruleNames[closestTarget.rule] || 'Encounter'} with ${closestTarget.name}`;
+    ruleEl.textContent = ruleDescriptions[closestTarget.rule] || `COLREGS: ${closestTarget.rule}`;
+    actionEl.textContent = actions[closestTarget.rule] || 'Monitor situation';
+  }
+}
+
+// Update Rail HUD with live values
+function updateRailHUD() {
+  const state = simulation.getState();
+  const speed = vec3Length(state.ego.velocity) * 3.6; // km/h
+  
+  // Calculate braking distance (trains are heavy!)
+  const trainMass = 500000; // 500 tons
+  const brakingDist = calculateRailBrakingDistance(
+    vec3Length(state.ego.velocity),
+    trainMass,
+    0 // level track
+  );
+  railState.brakingDistance = brakingDist;
+  
+  // Find nearest signal and crossing
+  const egoX = state.ego.transform.position.x;
+  
+  // Update signal distance
+  const signalDist = Math.max(0, 200 - egoX); // Signal at x=200
+  const crossingDist = Math.max(0, 150 - egoX); // Crossing at x=150
+  
+  // Determine permitted speed based on signal and obstacles
+  let permittedSpeed = 80; // km/h default
+  let signalState: 'clear' | 'approach' | 'stop' = 'clear';
+  
+  if (railState.gradeCrossings[0]?.hasObstruction && crossingDist < 300) {
+    permittedSpeed = 0;
+    signalState = 'stop';
+    railState.emergencyBraking = true;
+  } else if (crossingDist < 500) {
+    permittedSpeed = 40;
+    signalState = 'approach';
+  }
+  
+  // Update HUD elements
+  const modeEl = document.getElementById('rail-mode');
+  const signalEl = document.getElementById('rail-signal');
+  const speedEl = document.getElementById('rail-speed');
+  const distanceEl = document.getElementById('rail-distance');
+  const crossingEl = document.getElementById('rail-crossing');
+  
+  if (modeEl) modeEl.textContent = 'Mode: Moving Block';
+  
+  if (signalEl) {
+    const color = signalState === 'stop' ? '#ff4444' : signalState === 'approach' ? '#ffaa00' : '#00ff00';
+    signalEl.innerHTML = `<span style="color: ${color};">●</span> Signal: ${signalState.toUpperCase()}`;
+  }
+  
+  if (speedEl) {
+    speedEl.textContent = `Permitted: ${permittedSpeed} km/h | Current: ${Math.round(speed)} km/h`;
+    speedEl.style.color = speed > permittedSpeed ? '#ff4444' : '#00ff88';
+  }
+  
+  if (distanceEl) {
+    distanceEl.textContent = `Distance to signal: ${Math.round(signalDist)}m | Braking: ${Math.round(brakingDist)}m`;
+  }
+  
+  if (crossingEl) {
+    if (railState.gradeCrossings[0]?.hasObstruction) {
+      crossingEl.innerHTML = `
+        <div style="color: #ff6600; font-size: 12px;">⚠ LEVEL CROSSING BLOCKED</div>
+        <div style="color: #888; font-size: 11px; margin-top: 4px;">Stalled vehicle detected at ${Math.round(crossingDist)}m</div>
+      `;
+    } else {
+      crossingEl.innerHTML = `
+        <div style="color: #00ff00; font-size: 12px;">✓ Level crossing clear</div>
+        <div style="color: #888; font-size: 11px; margin-top: 4px;">Distance: ${Math.round(crossingDist)}m</div>
+      `;
+    }
+  }
+}
+
+// Update FMCW HUD with live values
+function updateFMCWHUD() {
+  const state = simulation.getState();
+  const speed = vec3Length(state.ego.velocity); // m/s
+  const speedKmh = speed * 3.6;
+  
+  // Calculate braking distance for truck (longer than car due to air brakes)
+  // Truck braking distance: approx speed^2 / (2 * decel) + reaction distance
+  const airBrakeDelay = 0.4; // seconds
+  const decel = 4.5; // m/s^2 for loaded truck
+  const reactionDist = speed * airBrakeDelay;
+  const brakingDist = reactionDist + (speed * speed) / (2 * decel);
+  
+  // Detection range from FMCW radar (long range)
+  const detectionRange = 250; // meters
+  
+  // Find closest vehicle ahead
+  let closestDist = detectionRange;
+  for (const track of state.perceptionTracks) {
+    if (track.missedFrames === 0) {
+      const dx = track.box.center.x - state.ego.transform.position.x;
+      const dy = track.box.center.y - state.ego.transform.position.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < closestDist && dx > 0) { // Ahead of ego
+        closestDist = dist;
+      }
+    }
+  }
+  
+  // Update brake/detect bars
+  const brakeBar = document.getElementById('brake-bar');
+  const detectBar = document.getElementById('detect-bar');
+  
+  if (brakeBar && detectBar) {
+    const brakePercent = Math.min(100, (brakingDist / detectionRange) * 100);
+    const detectPercent = Math.min(100, (closestDist / detectionRange) * 100);
+    
+    brakeBar.style.width = `${brakePercent}%`;
+    detectBar.style.width = `${detectPercent}%`;
+  }
+  
+  // Update text labels
+  const fmcwBraking = document.getElementById('fmcw-braking');
+  if (fmcwBraking) {
+    const isSafe = closestDist > brakingDist;
+    const safetyDiv = fmcwBraking.querySelector('div:last-child');
+    if (safetyDiv) {
+      if (isSafe) {
+        safetyDiv.innerHTML = `<div style="padding: 8px; background: #0a2a0a; border-radius: 3px; color: #00ff00; font-size: 12px;">
+          ✓ Safe: Detection (${Math.round(closestDist)}m) > Braking (${Math.round(brakingDist)}m)
+        </div>`;
+      } else {
+        safetyDiv.innerHTML = `<div style="padding: 8px; background: #2a0a0a; border-radius: 3px; color: #ff4444; font-size: 12px;">
+          ⚠ WARNING: Braking distance exceeds safe margin!
+        </div>`;
+      }
+    }
+    
+    // Update distance labels
+    const labelDiv = fmcwBraking.querySelector('div:nth-child(3)');
+    if (labelDiv) {
+      labelDiv.innerHTML = `
+        <span>Brake: ${Math.round(brakingDist)}m</span>
+        <span>Target: ${Math.round(closestDist)}m</span>
+        <span>Speed: ${Math.round(speedKmh)} km/h</span>
+      `;
+    }
+  }
+  
+  // Draw FMCW radar visualization
+  renderFMCWCanvas();
+}
+
+// Render FMCW radar canvas with velocity-colored returns
+function renderFMCWCanvas() {
+  const canvas = document.getElementById('fmcw-canvas') as HTMLCanvasElement;
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d')!;
+  const state = simulation.getState();
+  const egoVel = vec3Length(state.ego.velocity);
+  
+  ctx.fillStyle = '#0a0a15';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw radar returns
+  const maxRange = 250;
+  const egoPos = state.ego.transform.position;
+  const egoHeading = state.ego.transform.rotation;
+  
+  for (const track of state.perceptionTracks) {
+    if (track.missedFrames > 0) continue;
+    
+    const dx = track.box.center.x - egoPos.x;
+    const dy = track.box.center.y - egoPos.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    if (dist > maxRange) continue;
+    
+    // Calculate relative velocity (positive = approaching, negative = receding)
+    const relVel = track.velocity 
+      ? (track.velocity.x * Math.cos(egoHeading) + track.velocity.y * Math.sin(egoHeading)) - egoVel
+      : 0;
+    
+    // Color based on relative velocity
+    let color: string;
+    if (relVel < -2) {
+      color = '#00ff00'; // Green: approaching
+    } else if (relVel > 2) {
+      color = '#ff0000'; // Red: receding
+    } else {
+      color = '#888888'; // Gray: static
+    }
+    
+    // Position on canvas
+    const angle = Math.atan2(dy, dx) - egoHeading;
+    const normDist = dist / maxRange;
+    const canvasX = canvas.width / 2 + Math.sin(angle) * normDist * canvas.width / 2;
+    const canvasY = canvas.height - normDist * canvas.height;
+    
+    // Draw return
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(canvasX, canvasY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Draw velocity line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(canvasX, canvasY);
+    ctx.lineTo(canvasX, canvasY + relVel * 2);
+    ctx.stroke();
   }
 }
 
@@ -1335,9 +1680,17 @@ function renderBEVHeatmaps() {
     { occ: waabiResult.occupancy.t3s, label: '+3s', x: cellWidth * 3, y: 0 },
   ];
   
-  grids.forEach(({ occ, label, x, y }) => {
-    renderOccupancyGrid(ctx, occ, x, y, cellWidth - 2, cellHeight - 20);
-    ctx.fillStyle = '#888';
+  grids.forEach(({ occ, label, x, y }, i) => {
+    // Draw grid background/border
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 1, y + 1, cellWidth - 4, cellHeight - 22);
+    
+    // Render occupancy grid
+    renderOccupancyGrid(ctx, occ, x + 2, y + 2, cellWidth - 6, cellHeight - 24);
+    
+    // Draw label
+    ctx.fillStyle = i === 0 ? '#00ffff' : '#888';
     ctx.font = '10px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(label, x + cellWidth / 2, y + cellHeight - 5);

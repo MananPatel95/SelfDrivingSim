@@ -129,7 +129,9 @@ export function createBEVOccupancy(
 export function predictFutureOccupancy(
   current: BEVOccupancy,
   detections: Detection[],
-  egoState: EgoState
+  egoState: EgoState,
+  resolution: number = 2.0,
+  extent: number = 50
 ): FutureOccupancy {
   // Predict future positions based on velocity
   const predict = (tSeconds: number): BEVOccupancy => {
@@ -142,7 +144,7 @@ export function predictFutureOccupancy(
           : det.boundingBox.center,
       },
     }));
-    return createBEVOccupancy(futureDetections, egoState);
+    return createBEVOccupancy(futureDetections, egoState, resolution, extent);
   };
   
   return {
@@ -361,9 +363,13 @@ export function runWaabiStack(
     0.1
   );
   
-  // Create BEV occupancy
-  const currentOccupancy = createBEVOccupancy(detections, egoState);
-  const futureOccupancy = predictFutureOccupancy(currentOccupancy, detections, egoState);
+  // Create BEV occupancy with coarser resolution for rendering
+  // Use resolution=2.0 (50x50 grid) instead of default 0.5 (200x200 grid)
+  // This makes each cell visible on the small canvas
+  const bevResolution = 2.0;
+  const bevExtent = 50;
+  const currentOccupancy = createBEVOccupancy(detections, egoState, bevResolution, bevExtent);
+  const futureOccupancy = predictFutureOccupancy(currentOccupancy, detections, egoState, bevResolution, bevExtent);
   
   // Generate and score candidate trajectories
   const candidates = generateCandidateTrajectories(egoState, targetSpeed);
