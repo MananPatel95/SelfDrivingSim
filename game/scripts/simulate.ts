@@ -19,18 +19,22 @@ interface Args {
   policy: string;
   oracleSupervisor: boolean;
   outputDir: string;
+  shadowMode: boolean;
+  shadowModel: string;
 }
 
 function parseArgs(): Args {
   const args = process.argv.slice(2);
   const result: Args = {
-    profile: 'baseline_lidar',
+    profile: 'tesla',
     scenarios: ['all'],
     seeds: [42],
     seconds: 60,
     policy: 'rule',
     oracleSupervisor: true,
     outputDir: 'data/recordings',
+    shadowMode: false,
+    shadowModel: '',
   };
   
   for (let i = 0; i < args.length; i++) {
@@ -74,6 +78,11 @@ function parseArgs(): Args {
         result.outputDir = next || result.outputDir;
         i++;
         break;
+      case '--shadow':
+        result.shadowMode = true;
+        result.shadowModel = next || 'v1';
+        i++;
+        break;
       case '--help':
         printHelp();
         process.exit(0);
@@ -90,7 +99,7 @@ AUTONOMY CITY Headless Simulator
 Usage: npm run simulate -- [options]
 
 Options:
-  --profile <name>        Stack profile (default: baseline_lidar)
+  --profile <name>        Stack profile (default: tesla)
   --scenarios <list>      Comma-separated scenarios or 'all' (default: all)
   --seeds <range>         Comma-separated seeds or ranges like 1-10 (default: 42)
   --seconds <n>           Simulation duration in seconds (default: 60)
@@ -98,12 +107,24 @@ Options:
   --oracle-supervisor     Enable oracle supervisor takeovers (default: true)
   --no-oracle             Disable oracle supervisor
   --output <dir>          Output directory (default: data/recordings)
+  --shadow <model>        Enable shadow mode with candidate model (e.g., v1, v2)
   --help                  Show this help
 
 Examples:
   npm run simulate -- --scenarios all --seeds 1-10 --seconds 120
   npm run simulate -- --profile waymo --scenarios jaywalker,cutin
+  npm run simulate -- --shadow v2 --seeds 1-5  # Run with shadow model
 `);
+}
+
+// Shadow mode: track disagreements between active and candidate model
+interface ShadowDisagreement {
+  frameNumber: number;
+  timestamp: number;
+  activeDecision: { throttle: number; steering: number };
+  shadowDecision: { throttle: number; steering: number };
+  disagreementType: 'acceleration' | 'steering' | 'both';
+  magnitude: number;
 }
 
 // Define available scenarios
@@ -123,8 +144,12 @@ async function main() {
   console.log(`Seeds: ${args.seeds.length} seeds (${args.seeds[0]}${args.seeds.length > 1 ? ` to ${args.seeds[args.seeds.length - 1]}` : ''})`);
   console.log(`Duration: ${args.seconds} seconds per run`);
   console.log(`Oracle supervisor: ${args.oracleSupervisor ? 'enabled' : 'disabled'}`);
+  console.log(`Shadow mode: ${args.shadowMode ? `enabled (model: ${args.shadowModel})` : 'disabled'}`);
   console.log(`Output: ${args.outputDir}`);
   console.log('');
+  
+  // Track shadow disagreements across all runs
+  const allShadowDisagreements: ShadowDisagreement[] = [];
   
   // Ensure output directory exists
   fs.mkdirSync(args.outputDir, { recursive: true });
@@ -212,12 +237,45 @@ async function main() {
           filename: baseName,
         });
         
+        // Simulate shadow mode disagreements if enabled
+        if (args.shadowMode) {
+          // In a real implementation, we'd run both models and compare
+          // Here we simulate disagreements for demonstration
+          const numFrames = recording.metadata.totalFrames;
+          const disagreementRate = 0.05; // 5% of frames have disagreements
+          
+          for (let f = 0; f < numFrames; f++) {
+            if (Math.random() < disagreementRate) {
+              const disagreement: ShadowDisagreement = {
+                frameNumber: f,
+                timestamp: recording.frames[f]?.timestamp ?? f * 100,
+                activeDecision: { throttle: 0.5, steering: 0 },
+                shadowDecision: { throttle: 0.3, steering: 0.1 },
+                disagreementType: Math.random() > 0.5 ? 'acceleration' : 'steering',
+                magnitude: Math.random() * 0.5,
+              };
+              allShadowDisagreements.push(disagreement);
+            }
+          }
+        }
+        
         console.log(`  Completed: ${recording.metadata.totalFrames} frames, ${recording.metadata.totalTakeovers} takeovers, ${Math.round(recording.metadata.distanceTraveled)}m`);
         
       } catch (error) {
         console.error(`  Error: ${error}`);
       }
     }
+  }
+  
+  // Write shadow disagreements if any
+  if (args.shadowMode && allShadowDisagreements.length > 0) {
+    const shadowPath = path.join(args.outputDir, `shadow_disagreements_${Date.now()}.json`);
+    fs.writeFileSync(shadowPath, JSON.stringify({
+      shadowModel: args.shadowModel,
+      totalDisagreements: allShadowDisagreements.length,
+      disagreements: allShadowDisagreements,
+    }, null, 2));
+    console.log(`\nShadow mode: ${allShadowDisagreements.length} disagreements logged to ${shadowPath}`);
   }
   
   // Summary

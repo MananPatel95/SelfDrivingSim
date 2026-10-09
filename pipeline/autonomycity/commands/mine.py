@@ -280,6 +280,25 @@ def run(args: argparse.Namespace) -> int:
             'triggerTypes': triggers,
         }, f, indent=2)
     
+    # Mine shadow disagreements if present
+    shadow_triggers = []
+    for shadow_file in recordings_dir.glob('shadow_disagreements_*.json'):
+        print(f"  Mining shadow disagreements from {shadow_file.name}")
+        with open(shadow_file) as f:
+            shadow_data = json.load(f)
+        
+        for disagreement in shadow_data.get('disagreements', []):
+            shadow_triggers.append({
+                'type': 'shadow_disagreement',
+                'frameNumber': disagreement.get('frameNumber', 0),
+                'timestamp': disagreement.get('timestamp', 0),
+                'shadowModel': shadow_data.get('shadowModel', 'unknown'),
+                'disagreementType': disagreement.get('disagreementType', 'unknown'),
+                'magnitude': disagreement.get('magnitude', 0),
+            })
+        
+        total_triggers += len(shadow_data.get('disagreements', []))
+    
     # Save per-type summaries
     trigger_counts: Dict[str, int] = {}
     for result in all_results:
@@ -287,13 +306,25 @@ def run(args: argparse.Namespace) -> int:
             t_type = trigger.get('type', 'unknown')
             trigger_counts[t_type] = trigger_counts.get(t_type, 0) + 1
     
+    # Add shadow disagreements to counts
+    if shadow_triggers:
+        trigger_counts['shadow_disagreement'] = len(shadow_triggers)
+    
     summary_file = output_path / 'summary.json'
     with open(summary_file, 'w') as f:
         json.dump({
             'totalRecordings': len(all_results),
             'totalTriggers': total_triggers,
             'triggerCounts': trigger_counts,
+            'shadowDisagreements': len(shadow_triggers),
         }, f, indent=2)
+    
+    # Save shadow triggers separately if any
+    if shadow_triggers:
+        shadow_triggers_file = output_path / 'shadow_triggers.json'
+        with open(shadow_triggers_file, 'w') as f:
+            json.dump({'triggers': shadow_triggers}, f, indent=2)
+        print(f"  Shadow disagreements: {len(shadow_triggers)} triggers")
     
     print(f"\nMining complete!")
     print(f"  Total triggers: {total_triggers}")
