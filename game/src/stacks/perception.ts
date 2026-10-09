@@ -322,6 +322,10 @@ const CLASS_SIZE_RANGES: Record<EntityClass, { length: [number, number]; width: 
   ship: { length: [20.0, 400.0], width: [5.0, 60.0], height: [5.0, 50.0] },
   boat: { length: [3.0, 20.0], width: [1.0, 6.0], height: [1.0, 5.0] },
   buoy: { length: [0.5, 3.0], width: [0.5, 3.0], height: [0.5, 3.0] },
+  bridge: { length: [10.0, 200.0], width: [5.0, 50.0], height: [1.0, 10.0] },
+  platform: { length: [5.0, 200.0], width: [2.0, 10.0], height: [0.5, 2.0] },
+  signal: { length: [0.5, 2.0], width: [0.5, 2.0], height: [2.0, 10.0] },
+  quay: { length: [10.0, 500.0], width: [5.0, 20.0], height: [2.0, 10.0] },
 };
 
 export function classifyBySize(box: BoundingBox3D): { classType: EntityClass; confidence: number } {

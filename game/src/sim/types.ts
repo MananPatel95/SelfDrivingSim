@@ -38,7 +38,8 @@ export type EntityClass =
   | 'pedestrian' | 'cyclist'
   | 'traffic_light' | 'traffic_sign' | 'pole' | 'tree'
   | 'building' | 'barrier' | 'cone'
-  | 'train' | 'ship' | 'boat' | 'buoy';
+  | 'train' | 'ship' | 'boat' | 'buoy'
+  | 'bridge' | 'platform' | 'signal' | 'quay';
 
 export interface Entity {
   id: number;
@@ -86,7 +87,7 @@ export interface LanePoint {
 export interface Lane {
   id: number;
   points: LanePoint[];
-  type: 'driving' | 'parking' | 'sidewalk' | 'crosswalk' | 'rail' | 'water';
+  type: 'driving' | 'parking' | 'sidewalk' | 'crosswalk' | 'rail' | 'water' | 'fairway';
   connections: number[]; // connected lane IDs
 }
 

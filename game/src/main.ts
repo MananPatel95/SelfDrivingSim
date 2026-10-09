@@ -13,6 +13,7 @@ import { TESLA_INFO_CARD } from './stacks/tesla';
 import { AURORA_INFO_CARD } from './stacks/aurora';
 import { RAIL_INFO_CARD } from './stacks/rail';
 import { MARITIME_INFO_CARD } from './stacks/maritime';
+import { generateHighwayMap, generateRailMap, generateHarbourMap } from './sim/world';
 
 // Stack types available (F1-F6 per spec)
 type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
@@ -78,6 +79,15 @@ let egoMesh: THREE.Mesh;
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
+
+// Zone-specific objects
+let currentZone: 'city' | 'highway' | 'rail' | 'harbour' = 'city';
+let waterMesh: THREE.Mesh | null = null;
+let trackMeshes: THREE.Line[] = [];
+let buoyMeshes: THREE.Mesh[] = [];
+let aisOverlayEnabled = false;
+let bevOverlayEnabled = false;
+let simWorldOverlay: THREE.Group | null = null;
 
 // Initialize Three.js
 function initThreeJS() {
@@ -629,9 +639,591 @@ function switchStack(profile: StackProfile) {
     updateInfoCard();
   }
   
-  // Note: actual stack switching would require restarting simulation
-  // For now we just update the visual indicators
-  console.log(`Switched to stack: ${profile}`);
+  // Determine target zone based on profile
+  const zoneMap: Record<StackProfile, 'city' | 'highway' | 'rail' | 'harbour'> = {
+    tesla: 'city',
+    waymo: 'city',
+    waabi: 'city',
+    aurora: 'highway',
+    rail: 'rail',
+    maritime: 'harbour',
+  };
+  
+  const targetZone = zoneMap[profile];
+  if (targetZone !== currentZone) {
+    rebuildZone(targetZone, profile);
+  } else {
+    // Same zone, just update overlays
+    updateOverlaysForStack(profile);
+  }
+  
+  console.log(`Switched to stack: ${profile} (zone: ${targetZone})`);
+}
+
+// Rebuild scene for a different zone
+function rebuildZone(zone: 'city' | 'highway' | 'rail' | 'harbour', profile: StackProfile) {
+  currentZone = zone;
+  
+  // Clear existing zone-specific objects
+  clearZoneObjects();
+  
+  // Update ground/water
+  if (zone === 'harbour') {
+    setupHarbourZone();
+  } else if (zone === 'rail') {
+    setupRailZone();
+  } else if (zone === 'highway') {
+    setupHighwayZone();
+  } else {
+    setupCityZone();
+  }
+  
+  // Update ego vehicle based on profile
+  updateEgoVehicle(profile);
+  
+  // Update overlays
+  updateOverlaysForStack(profile);
+}
+
+// Clear zone-specific objects
+function clearZoneObjects() {
+  if (waterMesh) {
+    scene.remove(waterMesh);
+    waterMesh = null;
+  }
+  trackMeshes.forEach(m => scene.remove(m));
+  trackMeshes = [];
+  buoyMeshes.forEach(m => scene.remove(m));
+  buoyMeshes = [];
+  if (simWorldOverlay) {
+    scene.remove(simWorldOverlay);
+    simWorldOverlay = null;
+  }
+  
+  // Clear entity meshes for the zone
+  entityMeshes.forEach(mesh => scene.remove(mesh));
+  entityMeshes.clear();
+}
+
+// Setup harbour zone with water, buoys, ships
+function setupHarbourZone() {
+  const harbourMap = generateHarbourMap(Date.now());
+  
+  // Water surface
+  const waterGeo = new THREE.PlaneGeometry(1200, 2200);
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x1a5276,
+    roughness: 0.1,
+    metalness: 0.3,
+    transparent: true,
+    opacity: 0.9,
+  });
+  waterMesh = new THREE.Mesh(waterGeo, waterMat);
+  waterMesh.rotation.x = -Math.PI / 2;
+  waterMesh.position.y = -0.5;
+  scene.add(waterMesh);
+  
+  // Update ground to look like quay
+  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x555555);
+  groundMesh.position.x = -600;
+  
+  // Add buoys
+  harbourMap.buoys.forEach(buoy => {
+    const buoyGeo = new THREE.ConeGeometry(2, 4, 8);
+    const buoyMat = new THREE.MeshStandardMaterial({
+      color: buoy.type === 'port' ? 0xff0000 : (buoy.type === 'starboard' ? 0x00ff00 : 0xffff00),
+    });
+    const buoyMesh = new THREE.Mesh(buoyGeo, buoyMat);
+    buoyMesh.position.set(buoy.position.x, 2, buoy.position.y);
+    buoyMesh.castShadow = true;
+    scene.add(buoyMesh);
+    buoyMeshes.push(buoyMesh);
+  });
+  
+  // Add ships from AIS targets
+  harbourMap.aisTargets.forEach((target, i) => {
+    const shipGroup = createShipMesh();
+    shipGroup.position.set(target.position.x, 1, target.position.y);
+    shipGroup.rotation.y = -target.heading + Math.PI / 2;
+    scene.add(shipGroup);
+    entityMeshes.set(5000 + i, shipGroup as unknown as THREE.Mesh);
+  });
+  
+  // Update sky color for harbour
+  scene.background = new THREE.Color(0x87ceeb);
+  scene.fog = new THREE.Fog(0x87ceeb, 200, 1500);
+}
+
+// Create ship mesh
+function createShipMesh(): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Hull
+  const hullGeo = new THREE.BoxGeometry(150, 15, 25);
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const hull = new THREE.Mesh(hullGeo, hullMat);
+  hull.position.y = 5;
+  hull.castShadow = true;
+  group.add(hull);
+  
+  // Superstructure
+  const superGeo = new THREE.BoxGeometry(40, 20, 20);
+  const superMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+  const superstructure = new THREE.Mesh(superGeo, superMat);
+  superstructure.position.set(-30, 20, 0);
+  superstructure.castShadow = true;
+  group.add(superstructure);
+  
+  // Bridge
+  const bridgeGeo = new THREE.BoxGeometry(20, 8, 15);
+  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2222aa });
+  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+  bridge.position.set(-30, 35, 0);
+  bridge.castShadow = true;
+  group.add(bridge);
+  
+  // Containers on deck
+  const containerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff];
+  for (let i = 0; i < 5; i++) {
+    const contGeo = new THREE.BoxGeometry(12, 8, 8);
+    const contMat = new THREE.MeshStandardMaterial({ color: containerColors[i % 5] });
+    const container = new THREE.Mesh(contGeo, contMat);
+    container.position.set(20 + i * 15, 17, 0);
+    container.castShadow = true;
+    group.add(container);
+  }
+  
+  return group;
+}
+
+// Setup rail zone with tracks, signals, platforms
+function setupRailZone() {
+  const railMap = generateRailMap(Date.now());
+  
+  // Update ground to look like rail bed
+  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x4a4a4a);
+  groundMesh.position.x = 0;
+  
+  // Draw tracks
+  railMap.tracks.forEach(track => {
+    const points = track.points.map(p => new THREE.Vector3(p.position.x, 0.1, p.position.y));
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0x888888, linewidth: 3 });
+    const line = new THREE.Line(geometry, material);
+    scene.add(line);
+    trackMeshes.push(line);
+    
+    // Rail ties
+    for (let i = 0; i < points.length - 1; i += 3) {
+      const tieGeo = new THREE.BoxGeometry(3, 0.2, 0.3);
+      const tieMat = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
+      const tie = new THREE.Mesh(tieGeo, tieMat);
+      tie.position.copy(points[i]!);
+      tie.position.y = 0.05;
+      scene.add(tie);
+    }
+  });
+  
+  // Add signals
+  railMap.signals.forEach(signal => {
+    const signalGroup = new THREE.Group();
+    
+    // Post
+    const postGeo = new THREE.CylinderGeometry(0.1, 0.1, 5, 8);
+    const postMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.y = 2.5;
+    signalGroup.add(post);
+    
+    // Signal head
+    const headGeo = new THREE.BoxGeometry(0.8, 1.5, 0.3);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = 5;
+    signalGroup.add(head);
+    
+    // Signal light
+    const lightColor = signal.state === 'clear' ? 0x00ff00 : (signal.state === 'caution' ? 0xffff00 : 0xff0000);
+    const lightGeo = new THREE.SphereGeometry(0.2, 16, 16);
+    const lightMat = new THREE.MeshBasicMaterial({ color: lightColor });
+    const light = new THREE.Mesh(lightGeo, lightMat);
+    light.position.y = 5;
+    light.position.z = 0.2;
+    signalGroup.add(light);
+    
+    signalGroup.position.set(signal.position.x, 0, signal.position.y);
+    scene.add(signalGroup);
+  });
+  
+  // Add platforms
+  railMap.platforms.forEach(platform => {
+    const platGeo = new THREE.BoxGeometry(8, 1, 100);
+    const platMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+    const plat = new THREE.Mesh(platGeo, platMat);
+    plat.position.set(platform.position.x, 0.5, platform.position.y);
+    plat.castShadow = true;
+    scene.add(plat);
+    
+    // Platform sign
+    const signGeo = new THREE.PlaneGeometry(5, 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#000066';
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(platform.name, 128, 80);
+    const signTex = new THREE.CanvasTexture(canvas);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTex });
+    const sign = new THREE.Mesh(signGeo, signMat);
+    sign.position.set(platform.position.x + 6, 4, platform.position.y);
+    sign.rotation.y = Math.PI / 2;
+    scene.add(sign);
+  });
+  
+  // Add level crossing with stalled car
+  const crossing = railMap.levelCrossings[0];
+  if (crossing) {
+    // Crossing road
+    const roadGeo = new THREE.BoxGeometry(30, 0.1, 10);
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const road = new THREE.Mesh(roadGeo, roadMat);
+    road.position.set(crossing.position.x, 0.05, crossing.position.y);
+    scene.add(road);
+    
+    // Stalled car on crossing
+    if (crossing.stalledCar) {
+      const carMesh = createEntityMesh('car');
+      carMesh.position.set(crossing.stalledCar.transform.position.x, 0.8, crossing.stalledCar.transform.position.y);
+      scene.add(carMesh);
+      entityMeshes.set(crossing.stalledCar.id, carMesh as THREE.Mesh);
+    }
+    
+    // Crossing barriers
+    const barrierGeo = new THREE.BoxGeometry(0.2, 3, 0.2);
+    const barrierMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    [-1, 1].forEach(side => {
+      const barrier = new THREE.Mesh(barrierGeo, barrierMat);
+      barrier.position.set(crossing.position.x + side * 8, 1.5, crossing.position.y - 5);
+      scene.add(barrier);
+    });
+  }
+  
+  scene.fog = new THREE.Fog(0x87ceeb, 100, 2000);
+}
+
+// Setup highway zone for trucking
+function setupHighwayZone() {
+  const highwayMap = generateHighwayMap(Date.now());
+  
+  // Update ground to highway asphalt
+  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x2a2a2a);
+  groundMesh.position.x = 0;
+  
+  // Draw highway lanes with markings
+  const laneWidth = 3.7;
+  const numLanes = 3;
+  
+  // White lane markings
+  for (let l = 0; l <= numLanes; l++) {
+    const x = (l - numLanes / 2) * laneWidth + laneWidth * numLanes / 2;
+    const markingGeo = new THREE.PlaneGeometry(0.15, 2000);
+    const markingMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const marking = new THREE.Mesh(markingGeo, markingMat);
+    marking.rotation.x = -Math.PI / 2;
+    marking.position.set(x, 0.02, 0);
+    scene.add(marking);
+  }
+  
+  // Center median (yellow)
+  const medianGeo = new THREE.PlaneGeometry(0.3, 2000);
+  const medianMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
+  const median = new THREE.Mesh(medianGeo, medianMat);
+  median.rotation.x = -Math.PI / 2;
+  median.position.set(-2.5, 0.02, 0);
+  scene.add(median);
+  
+  // Highway barriers
+  highwayMap.staticEntities.filter(e => e.classType === 'barrier').forEach(barrier => {
+    const barrierGeo = new THREE.BoxGeometry(0.5, 1, 30);
+    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+    const mesh = new THREE.Mesh(barrierGeo, barrierMat);
+    mesh.position.set(barrier.transform.position.x, 0.5, barrier.transform.position.y);
+    mesh.castShadow = true;
+    scene.add(mesh);
+  });
+  
+  // Bridge overpass at y=0
+  const bridgeGeo = new THREE.BoxGeometry(80, 2, 120);
+  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+  bridge.position.set(0, 10, 0);
+  bridge.castShadow = true;
+  scene.add(bridge);
+  
+  // Bridge supports
+  [-35, 35].forEach(x => {
+    const supportGeo = new THREE.BoxGeometry(3, 10, 3);
+    const supportMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
+    const support = new THREE.Mesh(supportGeo, supportMat);
+    support.position.set(x, 5, 0);
+    support.castShadow = true;
+    scene.add(support);
+  });
+  
+  scene.fog = new THREE.Fog(0x87ceeb, 100, 1500);
+}
+
+// Setup city zone (default)
+function setupCityZone() {
+  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x333333);
+  groundMesh.position.x = 0;
+  scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+}
+
+// Update ego vehicle based on stack profile
+function updateEgoVehicle(profile: StackProfile) {
+  // Remove old ego
+  scene.remove(egoMesh);
+  
+  switch (profile) {
+    case 'aurora':
+      egoMesh = createTruckMesh() as unknown as THREE.Mesh;
+      break;
+    case 'rail':
+      egoMesh = createTrainMesh() as unknown as THREE.Mesh;
+      break;
+    case 'maritime':
+      egoMesh = createOwnShipMesh() as unknown as THREE.Mesh;
+      break;
+    default:
+      // Car for tesla, waymo, waabi
+      const carGroup = createEgoVehicle();
+      egoMesh = carGroup as unknown as THREE.Mesh;
+      break;
+  }
+  
+  scene.add(egoMesh);
+}
+
+// Create truck mesh for Aurora FMCW
+function createTruckMesh(): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Cab
+  const cabGeo = new THREE.BoxGeometry(4, 3.5, 2.8);
+  const cabMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, metalness: 0.5, roughness: 0.4 });
+  const cab = new THREE.Mesh(cabGeo, cabMat);
+  cab.position.set(5, 2, 0);
+  cab.castShadow = true;
+  group.add(cab);
+  
+  // Cab windows
+  const windowGeo = new THREE.BoxGeometry(0.1, 1.5, 2.2);
+  const windowMat = new THREE.MeshStandardMaterial({ color: 0x222244, metalness: 0.3 });
+  const frontWindow = new THREE.Mesh(windowGeo, windowMat);
+  frontWindow.position.set(7, 2.5, 0);
+  group.add(frontWindow);
+  
+  // Trailer
+  const trailerGeo = new THREE.BoxGeometry(12, 4, 2.6);
+  const trailerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+  const trailer = new THREE.Mesh(trailerGeo, trailerMat);
+  trailer.position.set(-3, 2.2, 0);
+  trailer.castShadow = true;
+  group.add(trailer);
+  
+  // Wheels (18 wheeler)
+  const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.4, 16);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const wheelPositions: [number, number, number][] = [
+    [6, 0.55, 1.2], [6, 0.55, -1.2],
+    [3, 0.55, 1.2], [3, 0.55, -1.2],
+    [-3, 0.55, 1.2], [-3, 0.55, -1.2],
+    [-5, 0.55, 1.2], [-5, 0.55, -1.2],
+    [-7, 0.55, 1.2], [-7, 0.55, -1.2],
+  ];
+  wheelPositions.forEach(([wx, wy, wz]) => {
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.position.set(wx, wy, wz);
+    wheel.rotation.x = Math.PI / 2;
+    group.add(wheel);
+  });
+  
+  // FMCW radar dome on top
+  const radarGeo = new THREE.SphereGeometry(0.4, 16, 16);
+  const radarMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const radar = new THREE.Mesh(radarGeo, radarMat);
+  radar.position.set(5, 4, 0);
+  group.add(radar);
+  
+  return group;
+}
+
+// Create train mesh
+function createTrainMesh(): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Locomotive body
+  const bodyGeo = new THREE.BoxGeometry(18, 4, 3);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0055aa, metalness: 0.6, roughness: 0.3 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.set(0, 2.5, 0);
+  body.castShadow = true;
+  group.add(body);
+  
+  // Cab
+  const cabGeo = new THREE.BoxGeometry(5, 3, 2.8);
+  const cabMat = new THREE.MeshStandardMaterial({ color: 0x003388 });
+  const cab = new THREE.Mesh(cabGeo, cabMat);
+  cab.position.set(5, 4.5, 0);
+  cab.castShadow = true;
+  group.add(cab);
+  
+  // Windows
+  const windowGeo = new THREE.BoxGeometry(0.1, 1.5, 2);
+  const windowMat = new THREE.MeshStandardMaterial({ color: 0x222244, metalness: 0.3 });
+  const window = new THREE.Mesh(windowGeo, windowMat);
+  window.position.set(7.5, 4.5, 0);
+  group.add(window);
+  
+  // Headlight
+  const lightGeo = new THREE.CircleGeometry(0.3, 16);
+  const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+  const headlight = new THREE.Mesh(lightGeo, lightMat);
+  headlight.position.set(9, 3, 0);
+  headlight.rotation.y = Math.PI / 2;
+  group.add(headlight);
+  
+  // Wheels/bogies
+  const bogieGeo = new THREE.BoxGeometry(3, 0.8, 2.5);
+  const bogieMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  [-5, 5].forEach(x => {
+    const bogie = new THREE.Mesh(bogieGeo, bogieMat);
+    bogie.position.set(x, 0.4, 0);
+    group.add(bogie);
+    
+    // Wheels on bogie
+    const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 16);
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    [-1, 1].forEach(wx => {
+      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+      wheel.position.set(x + wx, 0.5, 1.3);
+      wheel.rotation.x = Math.PI / 2;
+      group.add(wheel);
+      const wheel2 = wheel.clone();
+      wheel2.position.z = -1.3;
+      group.add(wheel2);
+    });
+  });
+  
+  return group;
+}
+
+// Create own ship mesh for maritime
+function createOwnShipMesh(): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Hull - larger container ship
+  const hullGeo = new THREE.BoxGeometry(200, 18, 35);
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c });
+  const hull = new THREE.Mesh(hullGeo, hullMat);
+  hull.position.y = 5;
+  hull.castShadow = true;
+  group.add(hull);
+  
+  // Bow shape
+  const bowGeo = new THREE.ConeGeometry(17.5, 30, 4);
+  const bowMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c });
+  const bow = new THREE.Mesh(bowGeo, bowMat);
+  bow.position.set(115, 5, 0);
+  bow.rotation.z = -Math.PI / 2;
+  group.add(bow);
+  
+  // Superstructure
+  const superGeo = new THREE.BoxGeometry(50, 25, 30);
+  const superMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+  const superstructure = new THREE.Mesh(superGeo, superMat);
+  superstructure.position.set(-50, 25, 0);
+  superstructure.castShadow = true;
+  group.add(superstructure);
+  
+  // Bridge
+  const bridgeGeo = new THREE.BoxGeometry(25, 10, 25);
+  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
+  bridge.position.set(-50, 45, 0);
+  bridge.castShadow = true;
+  group.add(bridge);
+  
+  // Bridge windows
+  const bridgeWindowGeo = new THREE.BoxGeometry(0.2, 5, 20);
+  const bridgeWindowMat = new THREE.MeshStandardMaterial({ color: 0x224466 });
+  const bridgeWindow = new THREE.Mesh(bridgeWindowGeo, bridgeWindowMat);
+  bridgeWindow.position.set(-37.5, 45, 0);
+  group.add(bridgeWindow);
+  
+  // Funnel/stack
+  const funnelGeo = new THREE.CylinderGeometry(3, 4, 15, 16);
+  const funnelMat = new THREE.MeshStandardMaterial({ color: 0xcc3333 });
+  const funnel = new THREE.Mesh(funnelGeo, funnelMat);
+  funnel.position.set(-70, 35, 0);
+  funnel.castShadow = true;
+  group.add(funnel);
+  
+  // Containers on deck
+  const containerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+  for (let row = 0; row < 6; row++) {
+    for (let col = 0; col < 3; col++) {
+      const contGeo = new THREE.BoxGeometry(12, 8.5, 8);
+      const contMat = new THREE.MeshStandardMaterial({ color: containerColors[(row + col) % 6] });
+      const container = new THREE.Mesh(contGeo, contMat);
+      container.position.set(30 + row * 15, 18 + col * 9, 0);
+      container.castShadow = true;
+      group.add(container);
+    }
+  }
+  
+  // Radar mast
+  const mastGeo = new THREE.CylinderGeometry(0.3, 0.3, 8, 8);
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+  const mast = new THREE.Mesh(mastGeo, mastMat);
+  mast.position.set(-50, 55, 0);
+  group.add(mast);
+  
+  // Radar scanner
+  const scannerGeo = new THREE.BoxGeometry(6, 0.5, 1);
+  const scannerMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+  const scanner = new THREE.Mesh(scannerGeo, scannerMat);
+  scanner.position.set(-50, 60, 0);
+  group.add(scanner);
+  
+  return group;
+}
+
+// Update overlays for the current stack
+function updateOverlaysForStack(profile: StackProfile) {
+  // Toggle BEV overlay for Waabi
+  bevOverlayEnabled = profile === 'waabi';
+  
+  // Toggle AIS overlay for maritime
+  aisOverlayEnabled = profile === 'maritime';
+  
+  // Update HUD visibility
+  const bevHud = document.getElementById('bev-overlay');
+  const aisHud = document.getElementById('ais-overlay');
+  const colregsHud = document.getElementById('colregs-display');
+  const railHud = document.getElementById('rail-display');
+  const fmcwHud = document.getElementById('fmcw-display');
+  
+  if (bevHud) bevHud.style.display = bevOverlayEnabled ? 'block' : 'none';
+  if (aisHud) aisHud.style.display = aisOverlayEnabled ? 'block' : 'none';
+  if (colregsHud) colregsHud.style.display = profile === 'maritime' ? 'block' : 'none';
+  if (railHud) railHud.style.display = profile === 'rail' ? 'block' : 'none';
+  if (fmcwHud) fmcwHud.style.display = profile === 'aurora' ? 'block' : 'none';
 }
 
 // Initialize compare mode renderers

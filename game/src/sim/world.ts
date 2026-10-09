@@ -498,3 +498,370 @@ export function updateTrafficLights(
     return { ...light, state };
   });
 }
+
+// Highway world for trucking (F4)
+export interface HighwayMap extends WorldMap {
+  highwayLanes: Lane[];
+  truckStops: Vec3[];
+  bridgePositions: { start: Vec3; end: Vec3 }[];
+}
+
+export function generateHighwayMap(_seed: number): HighwayMap {
+  const lanes: Lane[] = [];
+  const staticEntities: Entity[] = [];
+  const spawnPoints: Vec3[] = [];
+  let laneId = 0;
+  let entityId = 2000;
+  
+  // Multi-lane highway stretching along Y axis
+  const highwayLength = 2000;
+  const laneWidth = 3.7;
+  const numLanes = 3; // Each direction
+  
+  // Forward lanes (Y+)
+  for (let l = 0; l < numLanes; l++) {
+    const x = (l - numLanes / 2 + 0.5) * laneWidth + laneWidth * numLanes / 2;
+    const points = [];
+    for (let y = -highwayLength / 2; y <= highwayLength / 2; y += 20) {
+      points.push({
+        position: vec3(x, y, 0),
+        direction: Math.PI / 2,
+        width: laneWidth,
+        speedLimit: 31.3, // 70 mph
+      });
+    }
+    lanes.push({ id: laneId++, points, type: 'driving', connections: [] });
+  }
+  
+  // Return lanes (Y-)
+  for (let l = 0; l < numLanes; l++) {
+    const x = -(l - numLanes / 2 + 0.5) * laneWidth - laneWidth * numLanes / 2 - 5; // 5m median
+    const points = [];
+    for (let y = highwayLength / 2; y >= -highwayLength / 2; y -= 20) {
+      points.push({
+        position: vec3(x, y, 0),
+        direction: -Math.PI / 2,
+        width: laneWidth,
+        speedLimit: 31.3,
+      });
+    }
+    lanes.push({ id: laneId++, points, type: 'driving', connections: [] });
+  }
+  
+  // Highway barriers
+  const barrierX = laneWidth * numLanes + 2;
+  for (let y = -highwayLength / 2; y < highwayLength / 2; y += 30) {
+    staticEntities.push({
+      id: entityId++,
+      classType: 'barrier',
+      transform: { position: vec3(barrierX, y, 0.5), rotation: Math.PI / 2 },
+      boundingBox: { center: vec3(barrierX, y, 0.5), size: vec3(0.5, 30, 1), yaw: Math.PI / 2 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+    staticEntities.push({
+      id: entityId++,
+      classType: 'barrier',
+      transform: { position: vec3(-barrierX - 5, y, 0.5), rotation: Math.PI / 2 },
+      boundingBox: { center: vec3(-barrierX - 5, y, 0.5), size: vec3(0.5, 30, 1), yaw: Math.PI / 2 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+  }
+  
+  // Bridge structure at y=0
+  const bridgeStart = vec3(-30, -50, 8);
+  const bridgeEnd = vec3(30, 50, 8);
+  staticEntities.push({
+    id: entityId++,
+    classType: 'bridge',
+    transform: { position: vec3(0, 0, 8), rotation: 0 },
+    boundingBox: { center: vec3(0, 0, 8), size: vec3(60, 100, 2), yaw: 0 },
+    velocity: vec3(0, 0, 0),
+    isStatic: true,
+    occlusionLevel: 0,
+  });
+  
+  // Truck stops
+  const truckStops = [
+    vec3(40, -300, 0),
+    vec3(40, 300, 0),
+  ];
+  
+  spawnPoints.push(vec3(laneWidth, -highwayLength / 2 + 50, 0));
+  
+  return {
+    lanes,
+    highwayLanes: lanes,
+    intersections: [],
+    trafficLights: [],
+    staticEntities,
+    spawnPoints,
+    pickupPoints: [],
+    truckStops,
+    bridgePositions: [{ start: bridgeStart, end: bridgeEnd }],
+  };
+}
+
+// Rail world for trains (F5)
+export interface RailMap extends WorldMap {
+  tracks: Lane[];
+  signals: { position: Vec3; state: 'clear' | 'caution' | 'stop' }[];
+  levelCrossings: { position: Vec3; hasBarrier: boolean; stalledCar?: Entity }[];
+  platforms: { position: Vec3; name: string }[];
+}
+
+export function generateRailMap(_seed: number): RailMap {
+  const tracks: Lane[] = [];
+  const signals: { position: Vec3; state: 'clear' | 'caution' | 'stop' }[] = [];
+  const levelCrossings: { position: Vec3; hasBarrier: boolean; stalledCar?: Entity }[] = [];
+  const platforms: { position: Vec3; name: string }[] = [];
+  const staticEntities: Entity[] = [];
+  let entityId = 3000;
+  
+  const trackLength = 3000;
+  const trackGauge = 1.435; // Standard gauge
+  
+  // Main track (straight line for freight)
+  const mainTrackPoints = [];
+  for (let y = -trackLength / 2; y <= trackLength / 2; y += 50) {
+    mainTrackPoints.push({
+      position: vec3(0, y, 0),
+      direction: Math.PI / 2,
+      width: trackGauge,
+      speedLimit: 22.4, // 50 mph freight
+    });
+  }
+  tracks.push({ id: 0, points: mainTrackPoints, type: 'rail', connections: [] });
+  
+  // Parallel metro track
+  const metroTrackPoints = [];
+  for (let y = -500; y <= 500; y += 30) {
+    metroTrackPoints.push({
+      position: vec3(20, y, 0),
+      direction: Math.PI / 2,
+      width: trackGauge,
+      speedLimit: 17.9, // 40 mph metro
+    });
+  }
+  tracks.push({ id: 1, points: metroTrackPoints, type: 'rail', connections: [] });
+  
+  // Platforms (metro stations)
+  const stationNames = ['Central', 'North', 'South'];
+  [-300, 0, 300].forEach((y, i) => {
+    platforms.push({ position: vec3(25, y, 1), name: stationNames[i]! });
+    staticEntities.push({
+      id: entityId++,
+      classType: 'platform',
+      transform: { position: vec3(25, y, 0.5), rotation: Math.PI / 2 },
+      boundingBox: { center: vec3(25, y, 0.5), size: vec3(8, 100, 1), yaw: Math.PI / 2 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+  });
+  
+  // Signals (block signals for moving-block)
+  [-1000, -500, 0, 500, 1000].forEach(y => {
+    const state = y === 0 ? 'stop' : (Math.abs(y) === 500 ? 'caution' : 'clear');
+    signals.push({ position: vec3(-5, y, 4), state });
+    staticEntities.push({
+      id: entityId++,
+      classType: 'signal',
+      transform: { position: vec3(-5, y, 4), rotation: Math.PI / 2 },
+      boundingBox: { center: vec3(-5, y, 4), size: vec3(1, 1, 3), yaw: 0 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+  });
+  
+  // Level crossing with stalled car (key scenario)
+  const crossingY = 200;
+  const stalledCar: Entity = {
+    id: entityId++,
+    classType: 'car',
+    transform: { position: vec3(0, crossingY, 0.8), rotation: 0 },
+    boundingBox: { center: vec3(0, crossingY, 0.8), size: vec3(4.5, 1.8, 1.5), yaw: 0 },
+    velocity: vec3(0, 0, 0),
+    isStatic: true,
+    occlusionLevel: 0,
+  };
+  staticEntities.push(stalledCar);
+  
+  levelCrossings.push({
+    position: vec3(0, crossingY, 0),
+    hasBarrier: true,
+    stalledCar,
+  });
+  
+  // Crossing barriers
+  staticEntities.push({
+    id: entityId++,
+    classType: 'barrier',
+    transform: { position: vec3(-8, crossingY - 5, 2), rotation: 0 },
+    boundingBox: { center: vec3(-8, crossingY - 5, 2), size: vec3(0.3, 8, 0.3), yaw: 0 },
+    velocity: vec3(0, 0, 0),
+    isStatic: true,
+    occlusionLevel: 0,
+  });
+  
+  return {
+    lanes: tracks,
+    tracks,
+    intersections: [],
+    trafficLights: [],
+    staticEntities,
+    spawnPoints: [vec3(0, -trackLength / 2 + 100, 0)],
+    pickupPoints: [],
+    signals,
+    levelCrossings,
+    platforms,
+  };
+}
+
+// Harbor world for maritime (F6)
+export interface HarbourMap extends WorldMap {
+  waterBoundary: Vec3[];
+  buoys: { position: Vec3; type: 'port' | 'starboard' | 'fairway' | 'cardinal' }[];
+  aisTargets: { position: Vec3; mmsi: string; name: string; heading: number; speed: number }[];
+  berths: { position: Vec3; name: string }[];
+}
+
+export function generateHarbourMap(_seed: number): HarbourMap {
+  const waterBoundary: Vec3[] = [];
+  const buoys: { position: Vec3; type: 'port' | 'starboard' | 'fairway' | 'cardinal' }[] = [];
+  const aisTargets: { position: Vec3; mmsi: string; name: string; heading: number; speed: number }[] = [];
+  const berths: { position: Vec3; name: string }[] = [];
+  const staticEntities: Entity[] = [];
+  const lanes: Lane[] = [];
+  let entityId = 4000;
+  
+  // Water area (rectangular harbour basin)
+  const harbourWidth = 1000;
+  const harbourLength = 2000;
+  waterBoundary.push(vec3(-harbourWidth / 2, -harbourLength / 2, 0));
+  waterBoundary.push(vec3(harbourWidth / 2, -harbourLength / 2, 0));
+  waterBoundary.push(vec3(harbourWidth / 2, harbourLength / 2, 0));
+  waterBoundary.push(vec3(-harbourWidth / 2, harbourLength / 2, 0));
+  
+  // Main fairway (shipping channel)
+  const channelPoints = [];
+  for (let y = -harbourLength / 2; y <= harbourLength / 2; y += 100) {
+    channelPoints.push({
+      position: vec3(0, y, -5), // 5m depth
+      direction: Math.PI / 2,
+      width: 100,
+      speedLimit: 5.1, // 10 knots
+    });
+  }
+  lanes.push({ id: 0, points: channelPoints, type: 'fairway', connections: [] });
+  
+  // Navigation buoys marking the channel
+  // Port (red) on left side entering
+  [-700, -400, -100, 200, 500].forEach(y => {
+    buoys.push({ position: vec3(-60, y, 0), type: 'port' });
+    staticEntities.push({
+      id: entityId++,
+      classType: 'buoy',
+      transform: { position: vec3(-60, y, 1), rotation: 0 },
+      boundingBox: { center: vec3(-60, y, 1), size: vec3(3, 3, 2), yaw: 0 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+  });
+  
+  // Starboard (green) on right side entering
+  [-700, -400, -100, 200, 500].forEach(y => {
+    buoys.push({ position: vec3(60, y, 0), type: 'starboard' });
+    staticEntities.push({
+      id: entityId++,
+      classType: 'buoy',
+      transform: { position: vec3(60, y, 1), rotation: 0 },
+      boundingBox: { center: vec3(60, y, 1), size: vec3(3, 3, 2), yaw: 0 },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
+  });
+  
+  // AIS targets (other vessels)
+  aisTargets.push({
+    position: vec3(-200, 300, 0),
+    mmsi: '123456789',
+    name: 'CARGO STAR',
+    heading: Math.PI / 4,
+    speed: 4.0, // knots
+  });
+  aisTargets.push({
+    position: vec3(150, -200, 0),
+    mmsi: '987654321',
+    name: 'TANKER PRIME',
+    heading: -Math.PI / 3,
+    speed: 6.0,
+  });
+  aisTargets.push({
+    position: vec3(100, 500, 0),
+    mmsi: '111222333',
+    name: 'FERRY SWIFT',
+    heading: Math.PI,
+    speed: 12.0,
+  });
+  
+  // Add AIS target entities
+  aisTargets.forEach(target => {
+    staticEntities.push({
+      id: entityId++,
+      classType: 'ship',
+      transform: { position: target.position, rotation: target.heading },
+      boundingBox: {
+        center: target.position,
+        size: vec3(150, 25, 20), // Cargo ship dimensions
+        yaw: target.heading,
+      },
+      velocity: vec3(
+        target.speed * 0.514 * Math.cos(target.heading), // knots to m/s
+        target.speed * 0.514 * Math.sin(target.heading),
+        0
+      ),
+      isStatic: false,
+      occlusionLevel: 0,
+    });
+  });
+  
+  // Berths
+  berths.push({ position: vec3(-harbourWidth / 2 + 50, -300, 0), name: 'Berth A' });
+  berths.push({ position: vec3(-harbourWidth / 2 + 50, 0, 0), name: 'Berth B' });
+  berths.push({ position: vec3(-harbourWidth / 2 + 50, 300, 0), name: 'Berth C' });
+  
+  // Quay walls
+  staticEntities.push({
+    id: entityId++,
+    classType: 'quay',
+    transform: { position: vec3(-harbourWidth / 2, 0, 2), rotation: Math.PI / 2 },
+    boundingBox: {
+      center: vec3(-harbourWidth / 2, 0, 2),
+      size: vec3(10, harbourLength, 4),
+      yaw: Math.PI / 2,
+    },
+    velocity: vec3(0, 0, 0),
+    isStatic: true,
+    occlusionLevel: 0,
+  });
+  
+  return {
+    lanes,
+    intersections: [],
+    trafficLights: [],
+    staticEntities,
+    spawnPoints: [vec3(0, -harbourLength / 2 + 100, 0)],
+    pickupPoints: [],
+    waterBoundary,
+    buoys,
+    aisTargets,
+    berths,
+  };
+}
