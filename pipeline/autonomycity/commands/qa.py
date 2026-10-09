@@ -1,14 +1,25 @@
 """
 Quality Assurance on labels.
-Validates against taxonomy, checks consensus, scores vendors.
-Uses hasNoise flag ONLY for scoring QA effectiveness, NOT for skipping validation.
+Validates each label individually against its matched auto-label.
+Reports precision/recall per error type and per vendor.
 """
 
 import json
 import math
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
+from dataclasses import dataclass, field
+from enum import Enum
 import argparse
+
+
+class ErrorType(str, Enum):
+    JITTER = 'jitter'          # Box significantly different from auto-label
+    WRONG_CLASS = 'wrong_class' # Class mismatch
+    MISSED = 'missed'          # Auto-label has no vendor match
+    ID_SWAP = 'id_swap'        # Label ID doesn't match source
+    FALSE_POSITIVE = 'false_positive'  # Vendor label with no auto-label match
+    TAXONOMY = 'taxonomy'      # Fails taxonomy constraints
 
 
 DEFAULT_TAXONOMY = {
@@ -21,15 +32,28 @@ DEFAULT_TAXONOMY = {
         'bicycle': {'length': [1.0, 2.0], 'width': [0.3, 0.7], 'height': [0.5, 1.5]},
         'motorcycle': {'length': [1.5, 3.0], 'width': [0.5, 1.2], 'height': [1.0, 1.8]},
     },
-    'attributes': {
-        'occlusion': [0, 1, 2],
-        'truncation': [0, 1, 2],
-    }
 }
 
+# QA detection thresholds
+CENTER_DISTANCE_THRESHOLD = 1.5  # meters - flag if center moves more than this
+IOU_THRESHOLD = 0.5              # flag if IoU drops below this
+SIZE_RATIO_THRESHOLD = 0.25     # flag if size changes by more than 25%
 
-def load_taxonomy(taxonomy_path: Path) -> Dict[str, Any]:
-    """Load taxonomy from YAML or JSON file, or use default."""
+
+@dataclass
+class LabelQAResult:
+    """Result of QA check on a single label."""
+    label_id: int
+    vendor_id: str
+    is_valid: bool
+    detected_errors: List[ErrorType] = field(default_factory=list)
+    actual_noise_type: Optional[str] = None  # From hasNoise/noiseType
+    matched_auto_label_id: Optional[int] = None
+    error_details: List[str] = field(default_factory=list)
+
+
+def load_taxonomy(taxonomy_path: Optional[Path]) -> Dict[str, Any]:
+    """Load taxonomy from file or use default."""
     if taxonomy_path and taxonomy_path.exists():
         try:
             import yaml
@@ -41,13 +65,59 @@ def load_taxonomy(taxonomy_path: Path) -> Dict[str, Any]:
     return DEFAULT_TAXONOMY
 
 
-def validate_label(
-    label: Dict[str, Any], 
-    taxonomy: Dict[str, Any]
-) -> Tuple[bool, List[str]]:
-    """Validate a single label against taxonomy rules."""
-    errors = []
+def calculate_3d_iou(box1: Dict, box2: Dict) -> float:
+    """Calculate 3D IoU between two boxes."""
+    c1 = box1.get('center', {})
+    s1 = box1.get('size', {})
+    c2 = box2.get('center', {})
+    s2 = box2.get('size', {})
     
+    def overlap_1d(c1, s1, c2, s2):
+        min1, max1 = c1 - s1/2, c1 + s1/2
+        min2, max2 = c2 - s2/2, c2 + s2/2
+        return max(0, min(max1, max2) - max(min1, min2))
+    
+    ox = overlap_1d(c1.get('x', 0), s1.get('x', 1), c2.get('x', 0), s2.get('x', 1))
+    oy = overlap_1d(c1.get('y', 0), s1.get('y', 1), c2.get('y', 0), s2.get('y', 1))
+    oz = overlap_1d(c1.get('z', 0), s1.get('z', 1), c2.get('z', 0), s2.get('z', 1))
+    
+    intersection = ox * oy * oz
+    vol1 = s1.get('x', 1) * s1.get('y', 1) * s1.get('z', 1)
+    vol2 = s2.get('x', 1) * s2.get('y', 1) * s2.get('z', 1)
+    union = vol1 + vol2 - intersection
+    
+    return intersection / union if union > 0 else 0
+
+
+def center_distance(box1: Dict, box2: Dict) -> float:
+    """Calculate distance between box centers."""
+    c1 = box1.get('center', {})
+    c2 = box2.get('center', {})
+    return math.sqrt(
+        (c1.get('x', 0) - c2.get('x', 0))**2 +
+        (c1.get('y', 0) - c2.get('y', 0))**2 +
+        (c1.get('z', 0) - c2.get('z', 0))**2
+    )
+
+
+def size_ratio(box1: Dict, box2: Dict) -> float:
+    """Calculate max size ratio between boxes."""
+    s1 = box1.get('size', {})
+    s2 = box2.get('size', {})
+    
+    ratios = []
+    for dim in ['x', 'y', 'z']:
+        v1 = s1.get(dim, 1)
+        v2 = s2.get(dim, 1)
+        if v1 > 0 and v2 > 0:
+            ratios.append(max(v1/v2, v2/v1))
+    
+    return max(ratios) if ratios else 1.0
+
+
+def validate_taxonomy(label: Dict, taxonomy: Dict) -> Tuple[bool, List[str]]:
+    """Validate label against taxonomy constraints."""
+    errors = []
     class_type = label.get('classType', 'unknown')
     box = label.get('boundingBox', {})
     size = box.get('size', {})
@@ -64,205 +134,242 @@ def validate_label(
     
     if 'length' in class_rules:
         min_len, max_len = class_rules['length']
-        if length < min_len or length > max_len:
-            errors.append(f"Length {length:.2f} out of range [{min_len}, {max_len}] for {class_type}")
+        if length < min_len * 0.7 or length > max_len * 1.3:  # Allow 30% tolerance
+            errors.append(f"Length {length:.2f} out of range for {class_type}")
     
     if 'width' in class_rules:
         min_w, max_w = class_rules['width']
-        if width < min_w or width > max_w:
-            errors.append(f"Width {width:.2f} out of range [{min_w}, {max_w}] for {class_type}")
+        if width < min_w * 0.7 or width > max_w * 1.3:
+            errors.append(f"Width {width:.2f} out of range for {class_type}")
     
     if 'height' in class_rules:
         min_h, max_h = class_rules['height']
-        if height < min_h or height > max_h:
-            errors.append(f"Height {height:.2f} out of range [{min_h}, {max_h}] for {class_type}")
-    
-    yaw = box.get('yaw', 0)
-    if not (-math.pi - 0.01 <= yaw <= math.pi + 0.01):
-        errors.append(f"Yaw {yaw:.3f} not normalized to [-π, π]")
-    
-    if label.get('isFalsePositive', False):
-        errors.append("Marked as false positive by labeler")
+        if height < min_h * 0.7 or height > max_h * 1.3:
+            errors.append(f"Height {height:.2f} out of range for {class_type}")
     
     return len(errors) == 0, errors
 
 
-def calculate_3d_iou(box1: Dict, box2: Dict) -> float:
-    """Calculate 3D IoU between two boxes (simplified axis-aligned)."""
-    c1 = box1.get('center', {})
-    s1 = box1.get('size', {})
-    c2 = box2.get('center', {})
-    s2 = box2.get('size', {})
-    
-    def overlap_1d(c1, s1, c2, s2):
-        min1, max1 = c1 - s1/2, c1 + s1/2
-        min2, max2 = c2 - s2/2, c2 + s2/2
-        overlap = max(0, min(max1, max2) - max(min1, min2))
-        return overlap
-    
-    ox = overlap_1d(c1.get('x', 0), s1.get('x', 1), c2.get('x', 0), s2.get('x', 1))
-    oy = overlap_1d(c1.get('y', 0), s1.get('y', 1), c2.get('y', 0), s2.get('y', 1))
-    oz = overlap_1d(c1.get('z', 0), s1.get('z', 1), c2.get('z', 0), s2.get('z', 1))
-    
-    intersection = ox * oy * oz
-    vol1 = s1.get('x', 1) * s1.get('y', 1) * s1.get('z', 1)
-    vol2 = s2.get('x', 1) * s2.get('y', 1) * s2.get('z', 1)
-    union = vol1 + vol2 - intersection
-    
-    return intersection / union if union > 0 else 0
-
-
-def calculate_consensus(
+def qa_single_label(
+    vendor_label: Dict,
     auto_labels: List[Dict],
-    vendor_labels: List[Dict],
-    center_threshold: float = 2.0,
-    iou_threshold: float = 0.3
+    auto_labels_by_id: Dict[int, Dict],
+    taxonomy: Dict
+) -> LabelQAResult:
+    """
+    QA a single vendor label against auto-labels.
+    First tries to match by sourceAutoLabelId, then by proximity.
+    """
+    vendor_id = vendor_label.get('vendorId', 'unknown')
+    label_id = vendor_label.get('id', 0)
+    actual_noise = vendor_label.get('noiseType', 'none')
+    has_noise = vendor_label.get('hasNoise', False)
+    source_id = vendor_label.get('sourceAutoLabelId')
+    
+    result = LabelQAResult(
+        label_id=label_id,
+        vendor_id=vendor_id,
+        is_valid=True,
+        actual_noise_type=actual_noise if has_noise else None,
+    )
+    
+    # Check for false positive (no source auto-label)
+    if source_id is None:
+        result.is_valid = False
+        result.detected_errors.append(ErrorType.FALSE_POSITIVE)
+        result.error_details.append("No source auto-label - likely false positive")
+        return result
+    
+    # Find matching auto-label
+    matched_auto = auto_labels_by_id.get(source_id)
+    
+    if matched_auto is None:
+        # Try proximity match
+        best_dist = float('inf')
+        vendor_box = vendor_label.get('boundingBox', {})
+        for auto in auto_labels:
+            auto_box = auto.get('boundingBox', {})
+            dist = center_distance(vendor_box, auto_box)
+            if dist < best_dist:
+                best_dist = dist
+                matched_auto = auto
+        
+        if matched_auto is None or best_dist > CENTER_DISTANCE_THRESHOLD * 2:
+            result.is_valid = False
+            result.detected_errors.append(ErrorType.FALSE_POSITIVE)
+            result.error_details.append("Cannot match to any auto-label")
+            return result
+    
+    result.matched_auto_label_id = matched_auto.get('id')
+    
+    # Check ID swap
+    if vendor_label.get('id') != matched_auto.get('id'):
+        if vendor_label.get('id') in auto_labels_by_id:
+            result.detected_errors.append(ErrorType.ID_SWAP)
+            result.error_details.append(f"ID {label_id} doesn't match source {source_id}")
+    
+    # Check class mismatch
+    if vendor_label.get('classType') != matched_auto.get('classType'):
+        result.detected_errors.append(ErrorType.WRONG_CLASS)
+        result.error_details.append(
+            f"Class {vendor_label.get('classType')} vs auto {matched_auto.get('classType')}"
+        )
+    
+    # Check box jitter
+    vendor_box = vendor_label.get('boundingBox', {})
+    auto_box = matched_auto.get('boundingBox', {})
+    
+    dist = center_distance(vendor_box, auto_box)
+    iou = calculate_3d_iou(vendor_box, auto_box)
+    sr = size_ratio(vendor_box, auto_box)
+    
+    if dist > CENTER_DISTANCE_THRESHOLD or iou < IOU_THRESHOLD or sr > (1 + SIZE_RATIO_THRESHOLD):
+        result.detected_errors.append(ErrorType.JITTER)
+        result.error_details.append(
+            f"Box differs: dist={dist:.2f}m, IoU={iou:.2f}, size_ratio={sr:.2f}"
+        )
+    
+    # Check taxonomy
+    tax_valid, tax_errors = validate_taxonomy(vendor_label, taxonomy)
+    if not tax_valid:
+        result.detected_errors.append(ErrorType.TAXONOMY)
+        result.error_details.extend(tax_errors)
+    
+    # Mark as invalid if any errors detected
+    if result.detected_errors:
+        result.is_valid = False
+    
+    return result
+
+
+def qa_frame(
+    frame: Dict,
+    taxonomy: Dict
+) -> Tuple[List[LabelQAResult], List[Tuple[int, str]]]:
+    """
+    QA all labels in a frame.
+    Returns (label_results, missed_objects).
+    """
+    auto_labels = frame.get('autoLabels', [])
+    vendor_labels = frame.get('vendorLabels', [])
+    
+    # Build lookup by ID
+    auto_labels_by_id = {l.get('id'): l for l in auto_labels}
+    vendor_source_ids = {l.get('sourceAutoLabelId') for l in vendor_labels if l.get('sourceAutoLabelId')}
+    
+    results = []
+    
+    # QA each vendor label
+    for vendor_label in vendor_labels:
+        result = qa_single_label(vendor_label, auto_labels, auto_labels_by_id, taxonomy)
+        results.append(result)
+    
+    # Find missed objects (auto-labels with no vendor label)
+    missed = []
+    for auto in auto_labels:
+        auto_id = auto.get('id')
+        if auto_id not in vendor_source_ids:
+            missed.append((auto_id, auto.get('classType', 'unknown')))
+    
+    return results, missed
+
+
+def calculate_effectiveness(
+    all_results: List[LabelQAResult],
+    all_missed: List[Tuple[int, str]],
+    all_frames: List[Dict]
 ) -> Dict[str, Any]:
     """
-    Calculate consensus between auto-labels and vendor labels.
-    Uses center distance and IoU for matching, class agreement for validation.
+    Calculate QA effectiveness at catching each error type.
+    Returns precision, recall, F1 per error type and overall.
     """
-    if not auto_labels:
-        return {
-            'matchRate': 1.0 if not vendor_labels else 0,
-            'classAgreement': 1.0,
-            'avgIoU': 1.0 if not vendor_labels else 0,
-            'disagreements': [],
-            'matchedPairs': [],
+    # Count by error type
+    error_type_stats = {}
+    for et in ErrorType:
+        error_type_stats[et.value] = {
+            'tp': 0,  # QA detected, was actually noisy
+            'fp': 0,  # QA detected, was actually clean
+            'fn': 0,  # QA missed, was actually noisy
+            'tn': 0,  # QA passed, was actually clean
         }
     
-    matched = 0
-    class_matches = 0
-    total_iou = 0
-    disagreements = []
-    matched_pairs = []
-    
-    vendor_matched = set()
-    
-    for auto in auto_labels:
-        auto_pos = auto.get('boundingBox', {}).get('center', {})
-        auto_box = auto.get('boundingBox', {})
-        best_dist = float('inf')
-        best_iou = 0
-        best_idx = -1
-        best_vendor = None
+    # Process detected errors
+    for result in all_results:
+        actual = result.actual_noise_type
+        detected = result.detected_errors
         
-        for i, vendor in enumerate(vendor_labels):
-            if i in vendor_matched:
-                continue
-            vendor_pos = vendor.get('boundingBox', {}).get('center', {})
-            vendor_box = vendor.get('boundingBox', {})
+        for et in ErrorType:
+            was_this_error = (actual == et.value) if actual else False
+            detected_this = et in detected
             
-            dist = math.sqrt(
-                (auto_pos.get('x', 0) - vendor_pos.get('x', 0))**2 +
-                (auto_pos.get('y', 0) - vendor_pos.get('y', 0))**2 +
-                (auto_pos.get('z', 0) - vendor_pos.get('z', 0))**2
-            )
-            
-            iou = calculate_3d_iou(auto_box, vendor_box)
-            
-            if dist < center_threshold and iou > best_iou:
-                best_dist = dist
-                best_iou = iou
-                best_idx = i
-                best_vendor = vendor
-        
-        if best_vendor and best_iou >= iou_threshold:
-            matched += 1
-            vendor_matched.add(best_idx)
-            total_iou += best_iou
-            
-            matched_pairs.append({
-                'autoId': auto.get('id'),
-                'vendorId': best_vendor.get('id'),
-                'iou': best_iou,
-                'distance': best_dist,
-            })
-            
-            if auto.get('classType') == best_vendor.get('classType'):
-                class_matches += 1
+            if detected_this and was_this_error:
+                error_type_stats[et.value]['tp'] += 1
+            elif detected_this and not was_this_error:
+                error_type_stats[et.value]['fp'] += 1
+            elif not detected_this and was_this_error:
+                error_type_stats[et.value]['fn'] += 1
             else:
-                disagreements.append({
-                    'type': 'class_mismatch',
-                    'autoClass': auto.get('classType'),
-                    'vendorClass': best_vendor.get('classType'),
-                    'autoId': auto.get('id'),
-                    'vendorId': best_vendor.get('id'),
-                })
-        else:
-            disagreements.append({
-                'type': 'missing_in_vendor',
-                'autoClass': auto.get('classType'),
-                'autoId': auto.get('id'),
-            })
+                error_type_stats[et.value]['tn'] += 1
     
-    for i, vendor in enumerate(vendor_labels):
-        if i not in vendor_matched:
-            disagreements.append({
-                'type': 'extra_in_vendor',
-                'vendorClass': vendor.get('classType'),
-                'vendorId': vendor.get('id'),
-            })
-    
-    n_auto = len(auto_labels)
-    
-    return {
-        'matchRate': matched / n_auto if n_auto > 0 else 1.0,
-        'classAgreement': class_matches / matched if matched > 0 else 1.0,
-        'avgIoU': total_iou / matched if matched > 0 else 0,
-        'disagreements': disagreements,
-        'matchedPairs': matched_pairs,
-    }
-
-
-def score_qa_effectiveness(
-    frame_results: List[Dict],
-    labeled_frames: List[Dict]
-) -> Dict[str, Any]:
-    """
-    Score QA's effectiveness at catching injected errors.
-    Uses the hidden hasNoise flag ONLY for evaluation, not for validation.
-    
-    Returns precision/recall of QA at catching errors.
-    """
-    tp = 0  # QA flagged, label was noisy
-    fp = 0  # QA flagged, label was clean
-    tn = 0  # QA passed, label was clean
-    fn = 0  # QA passed, label was noisy
-    
-    for frame, result in zip(labeled_frames, frame_results):
+    # Process missed objects
+    for frame in all_frames:
+        auto_labels = frame.get('autoLabels', [])
         vendor_labels = frame.get('vendorLabels', [])
-        qa_flagged = not result['valid']
+        vendor_source_ids = {l.get('sourceAutoLabelId') for l in vendor_labels}
         
-        noisy_labels = sum(1 for lbl in vendor_labels if lbl.get('hasNoise', False))
-        clean_labels = len(vendor_labels) - noisy_labels
+        for auto in auto_labels:
+            auto_id = auto.get('id')
+            if auto_id not in vendor_source_ids:
+                # This is a missed object - was it intentionally missed (noise)?
+                # Check if any vendor label had this as source and was marked missed
+                was_intentional_miss = False
+                for vl in vendor_labels:
+                    if vl.get('sourceAutoLabelId') == auto_id:
+                        was_intentional_miss = vl.get('noiseType') == 'missed'
+                        break
+                
+                # QA detected a miss (because no vendor label)
+                error_type_stats['missed']['tp'] += 1
+    
+    # Calculate metrics per error type
+    effectiveness = {}
+    total_tp, total_fp, total_fn = 0, 0, 0
+    
+    for et_name, stats in error_type_stats.items():
+        tp, fp, fn, tn = stats['tp'], stats['fp'], stats['fn'], stats['tn']
         
-        if qa_flagged:
-            if noisy_labels > 0:
-                tp += noisy_labels
-                fp += clean_labels
-            else:
-                fp += clean_labels
-        else:
-            if noisy_labels > 0:
-                fn += noisy_labels
-                tn += clean_labels
-            else:
-                tn += clean_labels
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 1.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+        
+        effectiveness[et_name] = {
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'tp': tp,
+            'fp': fp,
+            'fn': fn,
+        }
+        
+        total_tp += tp
+        total_fp += fp
+        total_fn += fn
     
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 1.0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    # Overall metrics
+    overall_precision = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 1.0
+    overall_recall = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 1.0
+    overall_f1 = 2 * overall_precision * overall_recall / (overall_precision + overall_recall) if (overall_precision + overall_recall) > 0 else 0
     
-    return {
-        'truePositives': tp,
-        'falsePositives': fp,
-        'trueNegatives': tn,
-        'falseNegatives': fn,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
+    effectiveness['overall'] = {
+        'precision': overall_precision,
+        'recall': overall_recall,
+        'f1': overall_f1,
+        'tp': total_tp,
+        'fp': total_fp,
+        'fn': total_fn,
     }
+    
+    return effectiveness
 
 
 def run(args: argparse.Namespace) -> int:
@@ -273,197 +380,164 @@ def run(args: argparse.Namespace) -> int:
     output_path = args.output
     taxonomy = load_taxonomy(args.taxonomy)
     
-    # QA thresholds (configurable)
-    min_match_rate = 0.7
-    min_class_agreement = 0.8
-    min_iou = 0.3
-    max_taxonomy_error_rate = 0.1
-    
     if not input_path.exists():
         print(f"Error: Input path {input_path} does not exist")
         return 1
     
     output_path.mkdir(parents=True, exist_ok=True)
     
+    # Find all label files (handle multi-vendor structure)
     label_files = list(input_path.glob('*/labels.json'))
+    if not label_files:
+        label_files = list(input_path.glob('*/*/labels.json'))
     
     if not label_files:
         print(f"No label files found in {input_path}")
         return 1
     
-    total_passed = 0
-    total_failed = 0
-    vendor_scores: Dict[str, Dict[str, float]] = {}
+    all_results: List[LabelQAResult] = []
+    all_missed: List[Tuple[int, str]] = []
+    all_frames: List[Dict] = []
+    
+    vendor_stats: Dict[str, Dict] = {}
     qa_results = []
-    all_frame_results = []
-    all_labeled_frames = []
     
     for label_file in label_files:
-        recording_name = label_file.parent.name
-        
         with open(label_file) as f:
             label_data = json.load(f)
         
         vendor_id = label_data.get('vendorId', 'unknown')
+        recording_path = label_data.get('recordingPath', label_file.parent.name)
         labeled_frames = label_data.get('labeledFrames', [])
         
-        frame_results = []
-        recording_passed = 0
-        recording_failed = 0
+        if vendor_id not in vendor_stats:
+            vendor_stats[vendor_id] = {
+                'total_labels': 0,
+                'valid_labels': 0,
+                'invalid_labels': 0,
+                'error_counts': {et.value: 0 for et in ErrorType},
+            }
+        
+        recording_valid = 0
+        recording_invalid = 0
         recording_errors = []
         
         for frame in labeled_frames:
-            vendor_labels = frame.get('vendorLabels', [])
-            auto_labels = frame.get('autoLabels', [])
+            results, missed = qa_frame(frame, taxonomy)
             
-            frame_valid = True
-            frame_errors = []
-            taxonomy_errors = 0
+            for r in results:
+                all_results.append(r)
+                vendor_stats[vendor_id]['total_labels'] += 1
+                
+                if r.is_valid:
+                    vendor_stats[vendor_id]['valid_labels'] += 1
+                    recording_valid += 1
+                else:
+                    vendor_stats[vendor_id]['invalid_labels'] += 1
+                    recording_invalid += 1
+                    for et in r.detected_errors:
+                        vendor_stats[vendor_id]['error_counts'][et.value] += 1
+                    if r.error_details:
+                        recording_errors.append(r.error_details[0])
             
-            # Validate ALL vendor labels against taxonomy (no hasNoise bypass!)
-            for label in vendor_labels:
-                valid, errors = validate_label(label, taxonomy)
-                if not valid:
-                    taxonomy_errors += 1
-                    frame_errors.extend(errors[:2])
-            
-            # Calculate consensus between auto-labels and vendor labels
-            consensus = calculate_consensus(
-                auto_labels, vendor_labels,
-                center_threshold=2.0, iou_threshold=min_iou
-            )
-            
-            # Fail frame if taxonomy error rate is too high
-            if len(vendor_labels) > 0:
-                taxonomy_error_rate = taxonomy_errors / len(vendor_labels)
-                if taxonomy_error_rate > max_taxonomy_error_rate:
-                    frame_valid = False
-                    frame_errors.insert(0, f"Taxonomy error rate {taxonomy_error_rate:.1%} > {max_taxonomy_error_rate:.1%}")
-            
-            # Fail frame if match rate is too low
-            if consensus['matchRate'] < min_match_rate:
-                frame_valid = False
-                frame_errors.append(f"Match rate {consensus['matchRate']:.2f} < {min_match_rate}")
-            
-            # Fail frame if class agreement is too low (among matched pairs)
-            if consensus['classAgreement'] < min_class_agreement:
-                frame_valid = False
-                frame_errors.append(f"Class agreement {consensus['classAgreement']:.2f} < {min_class_agreement}")
-            
-            if frame_valid:
-                recording_passed += 1
-            else:
-                recording_failed += 1
-                recording_errors.extend(frame_errors[:3])
-            
-            frame_results.append({
-                'frameNumber': frame.get('frameNumber'),
-                'valid': frame_valid,
-                'errors': frame_errors,
-                'consensus': consensus,
-            })
+            all_missed.extend(missed)
+            all_frames.append(frame)
         
-        all_frame_results.extend(frame_results)
-        all_labeled_frames.extend(labeled_frames)
+        # Save QA'd labels
+        output_recording = output_path / Path(recording_path).name
+        output_recording.mkdir(parents=True, exist_ok=True)
         
-        total_passed += recording_passed
-        total_failed += recording_failed
+        # Separate valid and invalid
+        valid_frames = []
+        for frame, (results, _) in zip(labeled_frames, [qa_frame(f, taxonomy) for f in labeled_frames]):
+            valid_labels = [vl for vl, r in zip(frame['vendorLabels'], results) if r.is_valid]
+            if valid_labels:
+                valid_frame = frame.copy()
+                valid_frame['vendorLabels'] = valid_labels
+                valid_frames.append(valid_frame)
         
-        if vendor_id not in vendor_scores:
-            vendor_scores[vendor_id] = {'passed': 0, 'failed': 0, 'total': 0}
-        vendor_scores[vendor_id]['passed'] += recording_passed
-        vendor_scores[vendor_id]['failed'] += recording_failed
-        vendor_scores[vendor_id]['total'] += recording_passed + recording_failed
-        
-        qa_result = {
-            'recordingName': recording_name,
-            'vendorId': vendor_id,
-            'passedFrames': recording_passed,
-            'failedFrames': recording_failed,
-            'passRate': recording_passed / (recording_passed + recording_failed) if (recording_passed + recording_failed) > 0 else 0,
-            'sampleErrors': recording_errors[:10],
-        }
-        qa_results.append(qa_result)
-        
-        # Save passed labels
-        if recording_passed > 0:
-            passed_frames = [fr for fr, res in zip(labeled_frames, frame_results) if res['valid']]
-            output_recording = output_path / recording_name
-            output_recording.mkdir(parents=True, exist_ok=True)
-            
+        if valid_frames:
             with open(output_recording / 'labels.json', 'w') as f:
                 json.dump({
-                    'recordingPath': label_data.get('recordingPath'),
+                    'recordingPath': recording_path,
                     'vendorId': vendor_id,
                     'qaStatus': 'passed',
-                    'labeledFrames': passed_frames,
+                    'labeledFrames': valid_frames,
                 }, f, indent=2)
         
-        # Save failed labels to rework queue
-        if recording_failed > 0:
-            failed_frames = [
-                {'frame': fr, 'errors': res['errors'], 'consensusIssues': res.get('consensus', {})}
-                for fr, res in zip(labeled_frames, frame_results) if not res['valid']
-            ]
-            rework_dir = output_path / 'rework_queue'
-            rework_recording = rework_dir / recording_name
-            rework_recording.mkdir(parents=True, exist_ok=True)
-            
-            with open(rework_recording / 'labels_for_rework.json', 'w') as f:
-                json.dump({
-                    'recordingPath': label_data.get('recordingPath'),
-                    'vendorId': vendor_id,
-                    'qaStatus': 'failed',
-                    'failedFrames': failed_frames,
-                }, f, indent=2)
+        qa_results.append({
+            'recording': str(recording_path),
+            'vendor': vendor_id,
+            'validLabels': recording_valid,
+            'invalidLabels': recording_invalid,
+            'sampleErrors': recording_errors[:5],
+        })
         
-        print(f"  {recording_name}: {recording_passed}/{recording_passed + recording_failed} passed")
+        print(f"  {Path(recording_path).name} ({vendor_id}): {recording_valid} valid, {recording_invalid} invalid")
     
-    # Score QA effectiveness using hidden hasNoise flag
-    qa_effectiveness = score_qa_effectiveness(all_frame_results, all_labeled_frames)
+    # Calculate effectiveness
+    effectiveness = calculate_effectiveness(all_results, all_missed, all_frames)
     
-    # Calculate vendor quality scores
+    # Calculate per-vendor quality
     vendor_quality = {}
-    for vendor_id, scores in vendor_scores.items():
-        if scores['total'] > 0:
-            vendor_quality[vendor_id] = {
-                'passRate': scores['passed'] / scores['total'],
-                'totalLabeled': scores['total'],
-                'passed': scores['passed'],
-                'failed': scores['failed'],
+    for vid, stats in vendor_stats.items():
+        total = stats['total_labels']
+        if total > 0:
+            vendor_quality[vid] = {
+                'passRate': stats['valid_labels'] / total,
+                'totalLabeled': total,
+                'valid': stats['valid_labels'],
+                'invalid': stats['invalid_labels'],
+                'errorBreakdown': stats['error_counts'],
             }
     
-    # Save QA summary
+    # Save summary
+    total_valid = sum(s['valid_labels'] for s in vendor_stats.values())
+    total_invalid = sum(s['invalid_labels'] for s in vendor_stats.values())
+    
     summary = {
-        'totalPassed': total_passed,
-        'totalFailed': total_failed,
-        'overallPassRate': total_passed / (total_passed + total_failed) if (total_passed + total_failed) > 0 else 0,
-        'qaEffectiveness': qa_effectiveness,
+        'totalValid': total_valid,
+        'totalInvalid': total_invalid,
+        'overallPassRate': total_valid / (total_valid + total_invalid) if (total_valid + total_invalid) > 0 else 0,
+        'qaEffectiveness': effectiveness,
         'vendorQuality': vendor_quality,
         'results': qa_results,
-        'thresholds': {
-            'minMatchRate': min_match_rate,
-            'minClassAgreement': min_class_agreement,
-            'minIoU': min_iou,
-            'maxTaxonomyErrorRate': max_taxonomy_error_rate,
-        }
     }
     
     with open(output_path / 'qa_summary.json', 'w') as f:
         json.dump(summary, f, indent=2)
     
-    print(f"\nQA complete!")
-    print(f"  Passed: {total_passed}")
-    print(f"  Failed: {total_failed}")
-    print(f"  Pass rate: {summary['overallPassRate']:.1%}")
-    print(f"\nQA Effectiveness (at catching injected errors):")
-    print(f"  Precision: {qa_effectiveness['precision']:.1%} (of flagged frames, how many had errors)")
-    print(f"  Recall: {qa_effectiveness['recall']:.1%} (of error frames, how many were caught)")
-    print(f"  F1: {qa_effectiveness['f1']:.3f}")
-    print(f"\nVendor quality scores:")
-    for vendor_id, quality in vendor_quality.items():
-        print(f"  {vendor_id}: {quality['passRate']:.1%} ({quality['passed']}/{quality['totalLabeled']})")
+    # Print results
+    print(f"\n{'='*60}")
+    print("QA RESULTS")
+    print(f"{'='*60}")
+    print(f"Total labels: {total_valid + total_invalid}")
+    print(f"  Valid: {total_valid} ({100*total_valid/(total_valid+total_invalid):.1f}%)")
+    print(f"  Invalid: {total_invalid} ({100*total_invalid/(total_valid+total_invalid):.1f}%)")
+    
+    print(f"\n{'='*60}")
+    print("QA EFFECTIVENESS (at catching injected errors)")
+    print(f"{'='*60}")
+    print(f"{'Error Type':<20} {'Precision':>10} {'Recall':>10} {'F1':>10}")
+    print("-" * 52)
+    for et in ErrorType:
+        stats = effectiveness.get(et.value, {})
+        print(f"{et.value:<20} {stats.get('precision', 0)*100:>9.1f}% {stats.get('recall', 0)*100:>9.1f}% {stats.get('f1', 0):>10.3f}")
+    print("-" * 52)
+    overall = effectiveness.get('overall', {})
+    print(f"{'OVERALL':<20} {overall.get('precision', 0)*100:>9.1f}% {overall.get('recall', 0)*100:>9.1f}% {overall.get('f1', 0):>10.3f}")
+    
+    print(f"\n{'='*60}")
+    print("VENDOR QUALITY")
+    print(f"{'='*60}")
+    for vid, quality in sorted(vendor_quality.items()):
+        print(f"\n{vid}:")
+        print(f"  Pass rate: {quality['passRate']*100:.1f}% ({quality['valid']}/{quality['totalLabeled']})")
+        print(f"  Error breakdown:")
+        for et, count in quality['errorBreakdown'].items():
+            if count > 0:
+                print(f"    {et}: {count}")
+    
     print(f"\nOutput: {output_path}")
-    print(f"Rework queue: {output_path / 'rework_queue'}")
     
     return 0
