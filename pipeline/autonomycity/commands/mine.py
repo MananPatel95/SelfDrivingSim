@@ -299,6 +299,29 @@ def run(args: argparse.Namespace) -> int:
         
         total_triggers += len(shadow_data.get('disagreements', []))
     
+    # Mine Sim World failures if present (Waabi-style adversarial testing)
+    simworld_triggers = []
+    for simworld_file in recordings_dir.glob('simworld_failures_*.json'):
+        print(f"  Mining Sim World failures from {simworld_file.name}")
+        with open(simworld_file) as f:
+            simworld_data = json.load(f)
+        
+        for failure in simworld_data.get('failures', []):
+            simworld_triggers.append({
+                'type': 'simworld_failure',
+                'variantId': failure.get('variantId', 'unknown'),
+                'description': failure.get('description', ''),
+                'perturbationType': failure.get('perturbationType', 'unknown'),
+                'actorId': failure.get('actorId', 0),
+                'minTTC': failure.get('metrics', {}).get('minTTC', 0),
+                'maxDecel': failure.get('metrics', {}).get('maxDecel', 0),
+                'hadCollision': failure.get('metrics', {}).get('hadCollision', False),
+                'timestamp': failure.get('timestamp', 0),
+                'seed': failure.get('seed', 0),
+            })
+        
+        total_triggers += len(simworld_data.get('failures', []))
+    
     # Save per-type summaries
     trigger_counts: Dict[str, int] = {}
     for result in all_results:
@@ -310,6 +333,10 @@ def run(args: argparse.Namespace) -> int:
     if shadow_triggers:
         trigger_counts['shadow_disagreement'] = len(shadow_triggers)
     
+    # Add Sim World failures to counts
+    if simworld_triggers:
+        trigger_counts['simworld_failure'] = len(simworld_triggers)
+    
     summary_file = output_path / 'summary.json'
     with open(summary_file, 'w') as f:
         json.dump({
@@ -317,6 +344,7 @@ def run(args: argparse.Namespace) -> int:
             'totalTriggers': total_triggers,
             'triggerCounts': trigger_counts,
             'shadowDisagreements': len(shadow_triggers),
+            'simworldFailures': len(simworld_triggers),
         }, f, indent=2)
     
     # Save shadow triggers separately if any
@@ -325,6 +353,13 @@ def run(args: argparse.Namespace) -> int:
         with open(shadow_triggers_file, 'w') as f:
             json.dump({'triggers': shadow_triggers}, f, indent=2)
         print(f"  Shadow disagreements: {len(shadow_triggers)} triggers")
+    
+    # Save Sim World failures separately if any
+    if simworld_triggers:
+        simworld_triggers_file = output_path / 'simworld_triggers.json'
+        with open(simworld_triggers_file, 'w') as f:
+            json.dump({'triggers': simworld_triggers}, f, indent=2)
+        print(f"  Sim World failures: {len(simworld_triggers)} triggers")
     
     print(f"\nMining complete!")
     print(f"  Total triggers: {total_triggers}")

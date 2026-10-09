@@ -48,6 +48,22 @@ let isPaused = false;
 let currentStack: StackProfile = 'tesla';
 let compareMode = false;
 
+// Compare mode state
+let compareRenderer: THREE.WebGLRenderer | null = null;
+let compareScene: THREE.Scene | null = null;
+let compareCamera: THREE.PerspectiveCamera | null = null;
+let compareStack: StackProfile = 'waymo';
+
+// Detection timing tracking for compare mode
+interface DetectionTiming {
+  entityId: number;
+  classType: string;
+  firstDetectedByLeft: number | null;
+  firstDetectedByRight: number | null;
+}
+const detectionTimings: Map<number, DetectionTiming> = new Map();
+let compareStartTime = 0;
+
 // Human input state
 const inputState = {
   forward: false,
@@ -433,6 +449,269 @@ function switchStack(profile: StackProfile) {
   console.log(`Switched to stack: ${profile}`);
 }
 
+// Initialize compare mode renderers
+function initCompareMode() {
+  const leftCanvas = document.getElementById('compare-canvas-left') as HTMLCanvasElement;
+  const rightCanvas = document.getElementById('compare-canvas-right') as HTMLCanvasElement;
+  
+  if (!leftCanvas || !rightCanvas) return;
+  
+  // Set canvas sizes
+  const width = window.innerWidth / 2;
+  const height = window.innerHeight;
+  
+  leftCanvas.width = width;
+  leftCanvas.height = height;
+  rightCanvas.width = width;
+  rightCanvas.height = height;
+  
+  // Create compare scene (duplicate of main scene)
+  compareScene = new THREE.Scene();
+  compareScene.background = new THREE.Color(0x87ceeb);
+  compareScene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+  
+  // Lighting
+  const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+  compareScene.add(ambientLight);
+  
+  const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+  sunLight.position.set(100, 100, 100);
+  compareScene.add(sunLight);
+  
+  // Ground
+  const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+  const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+  const compareGround = new THREE.Mesh(groundGeometry, groundMaterial);
+  compareGround.rotation.x = -Math.PI / 2;
+  compareScene.add(compareGround);
+  
+  const gridHelper = new THREE.GridHelper(600, 60, 0x444444, 0x333333);
+  gridHelper.position.y = 0.01;
+  compareScene.add(gridHelper);
+  
+  // Camera
+  compareCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+  
+  // Renderer for right side
+  compareRenderer = new THREE.WebGLRenderer({ canvas: rightCanvas, antialias: true });
+  compareRenderer.setSize(width, height);
+  
+  // Reset timing tracking
+  detectionTimings.clear();
+  compareStartTime = performance.now();
+}
+
+// Update compare mode with detection timing differences
+function updateCompareMode() {
+  if (!compareMode) return;
+  
+  const state = simulation.getState();
+  const currentTime = (performance.now() - compareStartTime) / 1000;
+  
+  // Get detections from both stacks
+  const leftDetections = state.perceptionTracks.filter(t => t.missedFrames === 0);
+  
+  // Simulate right stack with different detection characteristics
+  // (In a real implementation, would run full second stack)
+  const rightDetections = simulateAlternateStackDetections(state, compareStack);
+  
+  // Track detection timing for ground truth entities
+  const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
+  
+  for (const gt of groundTruth) {
+    let timing = detectionTimings.get(gt.id);
+    if (!timing) {
+      timing = {
+        entityId: gt.id,
+        classType: gt.classType,
+        firstDetectedByLeft: null,
+        firstDetectedByRight: null,
+      };
+      detectionTimings.set(gt.id, timing);
+    }
+    
+    // Check if left stack detected it
+    if (timing.firstDetectedByLeft === null) {
+      const matched = leftDetections.find(d => {
+        const dx = d.box.center.x - gt.boundingBox.center.x;
+        const dy = d.box.center.y - gt.boundingBox.center.y;
+        return Math.sqrt(dx*dx + dy*dy) < 2;
+      });
+      if (matched) {
+        timing.firstDetectedByLeft = currentTime;
+      }
+    }
+    
+    // Check if right stack detected it
+    if (timing.firstDetectedByRight === null) {
+      const matched = rightDetections.find(d => {
+        const dx = d.center.x - gt.boundingBox.center.x;
+        const dy = d.center.y - gt.boundingBox.center.y;
+        return Math.sqrt(dx*dx + dy*dy) < 2;
+      });
+      if (matched) {
+        timing.firstDetectedByRight = currentTime;
+      }
+    }
+  }
+  
+  // Update timing display
+  updateCompareTimingDisplay(currentTime);
+  
+  // Render compare view
+  if (compareRenderer && compareScene && compareCamera) {
+    // Update compare camera to match main camera
+    compareCamera.position.copy(camera.position);
+    compareCamera.rotation.copy(camera.rotation);
+    compareRenderer.render(compareScene, compareCamera);
+  }
+}
+
+// Simulate alternate stack with different detection characteristics
+function simulateAlternateStackDetections(state: ReturnType<Simulation['getState']>, stack: StackProfile) {
+  const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
+  const detections: Array<{center: {x: number; y: number}; classType: string}> = [];
+  
+  // Different stacks have different detection characteristics
+  const detectionProbability = {
+    tesla: { pedestrian: 0.85, car: 0.95 },  // Vision-based, struggles with pedestrians
+    waymo: { pedestrian: 0.95, car: 0.98 },  // Multi-sensor fusion, best overall
+    waabi: { pedestrian: 0.90, car: 0.96 },  // Simulation-trained
+    aurora: { pedestrian: 0.88, car: 0.97 }, // FMCW radar helps
+    rail: { pedestrian: 0.70, car: 0.95 },   // Fixed path, less need for pedestrians
+    maritime: { pedestrian: 0.60, car: 0.50 }, // Ships don't encounter cars/pedestrians
+  };
+  
+  const distanceThreshold = {
+    tesla: 60,  // Cameras have good range
+    waymo: 80,  // Lidar + cameras
+    waabi: 70,  // BEV representation
+    aurora: 100, // FMCW radar long range
+    rail: 200,   // Long straight tracks
+    maritime: 500, // Long range radar
+  };
+  
+  const probs = detectionProbability[stack];
+  const maxDist = distanceThreshold[stack];
+  const egoPos = state.ego.transform.position;
+  
+  for (const gt of groundTruth) {
+    const dx = gt.transform.position.x - egoPos.x;
+    const dy = gt.transform.position.y - egoPos.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    if (dist > maxDist) continue;
+    
+    const prob = gt.classType === 'pedestrian' ? probs.pedestrian : probs.car;
+    const adjustedProb = prob * (1 - dist / maxDist * 0.3); // Decreases with distance
+    
+    if (Math.random() < adjustedProb) {
+      detections.push({
+        center: { x: gt.boundingBox.center.x, y: gt.boundingBox.center.y },
+        classType: gt.classType,
+      });
+    }
+  }
+  
+  return detections;
+}
+
+// Update the compare mode timing display
+function updateCompareTimingDisplay(currentTime: number) {
+  const leftTimingEl = document.getElementById('compare-left-timing');
+  const rightTimingEl = document.getElementById('compare-right-timing');
+  
+  if (!leftTimingEl || !rightTimingEl) return;
+  
+  // Find most recent pedestrian and vehicle for display
+  let recentPed: DetectionTiming | null = null;
+  let recentVeh: DetectionTiming | null = null;
+  
+  for (const timing of detectionTimings.values()) {
+    if (timing.classType === 'pedestrian') {
+      if (!recentPed || (timing.firstDetectedByLeft !== null && 
+          (recentPed.firstDetectedByLeft === null || 
+           timing.firstDetectedByLeft > recentPed.firstDetectedByLeft))) {
+        recentPed = timing;
+      }
+    } else if (timing.classType === 'car') {
+      if (!recentVeh || (timing.firstDetectedByLeft !== null && 
+          (recentVeh.firstDetectedByLeft === null || 
+           timing.firstDetectedByLeft > recentVeh.firstDetectedByLeft))) {
+        recentVeh = timing;
+      }
+    }
+  }
+  
+  // Update left panel
+  const leftPed1El = document.getElementById('left-ped1-time');
+  const leftVeh1El = document.getElementById('left-veh1-time');
+  
+  if (leftPed1El && recentPed) {
+    if (recentPed.firstDetectedByLeft !== null) {
+      const ago = currentTime - recentPed.firstDetectedByLeft;
+      leftPed1El.textContent = `${ago.toFixed(1)}s ago`;
+      leftPed1El.className = ago < 1 ? 'timing-early' : 'timing-late';
+    } else {
+      leftPed1El.textContent = 'Not detected';
+      leftPed1El.className = 'timing-missed';
+    }
+  }
+  
+  if (leftVeh1El && recentVeh) {
+    if (recentVeh.firstDetectedByLeft !== null) {
+      const ago = currentTime - recentVeh.firstDetectedByLeft;
+      leftVeh1El.textContent = `${ago.toFixed(1)}s ago`;
+      leftVeh1El.className = ago < 1 ? 'timing-early' : 'timing-late';
+    } else {
+      leftVeh1El.textContent = 'Not detected';
+      leftVeh1El.className = 'timing-missed';
+    }
+  }
+  
+  // Update right panel
+  const rightPed1El = document.getElementById('right-ped1-time');
+  const rightVeh1El = document.getElementById('right-veh1-time');
+  
+  if (rightPed1El && recentPed) {
+    if (recentPed.firstDetectedByRight !== null) {
+      const ago = currentTime - recentPed.firstDetectedByRight;
+      rightPed1El.textContent = `${ago.toFixed(1)}s ago`;
+      rightPed1El.className = ago < 1 ? 'timing-early' : 'timing-late';
+    } else {
+      rightPed1El.textContent = 'Not detected';
+      rightPed1El.className = 'timing-missed';
+    }
+  }
+  
+  if (rightVeh1El && recentVeh) {
+    if (recentVeh.firstDetectedByRight !== null) {
+      const ago = currentTime - recentVeh.firstDetectedByRight;
+      rightVeh1El.textContent = `${ago.toFixed(1)}s ago`;
+      rightVeh1El.className = ago < 1 ? 'timing-early' : 'timing-late';
+    } else {
+      rightVeh1El.textContent = 'Not detected';
+      rightVeh1El.className = 'timing-missed';
+    }
+  }
+  
+  // Update labels
+  const leftLabelEl = document.getElementById('compare-left-label');
+  const rightLabelEl = document.getElementById('compare-right-label');
+  
+  const stackLabels: Record<StackProfile, string> = {
+    tesla: 'F1: Tesla-style',
+    waymo: 'F2: Waymo-style',
+    waabi: 'F3: Waabi-style',
+    aurora: 'F4: Aurora FMCW',
+    rail: 'F5: Train',
+    maritime: 'F6: Ship',
+  };
+  
+  if (leftLabelEl) leftLabelEl.textContent = stackLabels[currentStack];
+  if (rightLabelEl) rightLabelEl.textContent = stackLabels[compareStack];
+}
+
 // Update minimap
 function updateMinimap() {
   const canvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -547,6 +826,16 @@ function setupInput() {
       case 'm':
         // Toggle compare mode
         compareMode = !compareMode;
+        document.getElementById('compare-container')!.classList.toggle('visible', compareMode);
+        document.getElementById('canvas-container')!.style.display = compareMode ? 'none' : 'block';
+        
+        if (compareMode) {
+          // Set compare stack to next different stack
+          const stacks: StackProfile[] = ['tesla', 'waymo', 'waabi', 'aurora', 'rail', 'maritime'];
+          const currentIdx = stacks.indexOf(currentStack);
+          compareStack = stacks[(currentIdx + 1) % stacks.length]!;
+          initCompareMode();
+        }
         console.log(`Compare mode: ${compareMode ? 'ON' : 'OFF'}`);
         break;
         
@@ -694,8 +983,22 @@ function animate(time: number) {
   updateHUD();
   updateMinimap();
   
-  // Render
-  renderer.render(scene, camera);
+  // Update compare mode if active
+  if (compareMode) {
+    updateCompareMode();
+  }
+  
+  // Render (only if not in compare mode, which has its own rendering)
+  if (!compareMode) {
+    renderer.render(scene, camera);
+  } else {
+    // Render left panel with main renderer to compare canvas
+    const leftCanvas = document.getElementById('compare-canvas-left') as HTMLCanvasElement;
+    if (leftCanvas) {
+      renderer.setSize(leftCanvas.width, leftCanvas.height);
+      renderer.render(scene, camera);
+    }
+  }
 }
 
 // Initialize and start
