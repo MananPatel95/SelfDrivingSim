@@ -279,5 +279,5 @@ autonomycity export --model models/perception_v1 --output models/perception_v1.o
 | Suite | Count |
 |-------|-------|
 | TypeScript (Vitest) | 57 |
-| Python (pytest) | 28 |
-| **Total** | **85** |
+| Python (pytest) | 44 |
+| **Total** | **101** |
