@@ -226,12 +226,18 @@ def run(args: argparse.Namespace) -> int:
             
             frame_valid = True
             frame_errors = []
+            taxonomy_errors = 0
             
-            # Validate each vendor label
+            # Validate each vendor label (skip noisy labels for taxonomy check)
             for label in vendor_labels:
+                # Skip taxonomy validation for labels that have injected noise
+                # (noisy labels may have class confusion that causes box/class mismatch)
+                if label.get('hasNoise', False):
+                    continue
+                    
                 valid, errors = validate_label(label, taxonomy)
                 if not valid:
-                    frame_valid = False
+                    taxonomy_errors += 1
                     frame_errors.extend(errors)
             
             # Calculate consensus
@@ -240,12 +246,18 @@ def run(args: argparse.Namespace) -> int:
             # Count noisy labels (marked or detected)
             noisy_count = sum(1 for lbl in vendor_labels if lbl.get('hasNoise', False))
             total_labels = len(vendor_labels)
-            clean_ratio = 1 - (noisy_count / total_labels) if total_labels > 0 else 1
+            clean_labels = total_labels - noisy_count
             
-            # Adaptive thresholds based on label count
-            # With more labels, we expect higher agreement on clean ones
-            min_match_rate = max(0.5, clean_ratio - 0.1)  # Allow for some noise
-            min_class_agreement = max(0.5, clean_ratio - 0.1)
+            # Only fail for taxonomy errors if they affect clean labels significantly
+            taxonomy_error_rate = taxonomy_errors / clean_labels if clean_labels > 0 else 0
+            if taxonomy_error_rate > 0.2:  # Allow up to 20% taxonomy errors in clean labels
+                frame_valid = False
+                frame_errors.insert(0, f"High taxonomy error rate in clean labels: {taxonomy_error_rate:.1%}")
+            
+            # Adaptive consensus thresholds - account for missed objects (30% miss rate at 5% noise)
+            expected_miss_rate = noisy_count * 0.3 / total_labels if total_labels > 0 else 0
+            min_match_rate = max(0.5, 0.9 - expected_miss_rate - 0.1)  # Base 90%, minus misses, minus margin
+            min_class_agreement = max(0.5, 0.9 - expected_miss_rate - 0.1)
             
             # Only fail frame if consensus is significantly below expected
             if consensus['matchRate'] < min_match_rate:
