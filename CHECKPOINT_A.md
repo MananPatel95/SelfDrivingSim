@@ -186,17 +186,24 @@ The F1 of 0.991 is expected in simulation for these reasons:
 
 All screenshots captured and verified at `/opt/cursor/artifacts/screenshots/`:
 
+### Core Functionality
 | Screenshot | Description | Status |
 |------------|-------------|--------|
 | 01-city-view.png | City with grounded buildings, roads, blue ego vehicle, yellow lane markings | ✓ VERIFIED |
 | 02-ai-view-gt-overlay.png | Ground truth overlay (G key) with red detection boxes on objects | ✓ VERIFIED |
 | 03-compare-mode-fixed.png | Split-screen compare mode (M key) - both panels render city scene | ✓ VERIFIED |
-| 04-waabi-stack.png | Waabi stack (F3) with detection boxes, rain weather | ✓ VERIFIED |
-| 05-aurora-fmcw.png | Aurora FMCW stack (F4) with heavy fog/degradation | ✓ VERIFIED |
-| 06-train-stack.png | Train stack (F5) with visibility reduction | ✓ VERIFIED |
-| 07-ship-stack.png | Ship stack (F6) with maritime fog effects | ✓ VERIFIED |
 | 08-rain-fog-mode.png | Night rain weather with pedestrian detection, reduced visibility | ✓ VERIFIED |
 | 09-dashboard.png | Model selector dropdown showing Heuristic/V1 options | ✓ VERIFIED |
+
+### Specialized Zones (F4/F5/F6)
+| Screenshot | Description | Status |
+|------------|-------------|--------|
+| f3-waabi-bev.png | Waabi BEV overlay with Sim World variant table (20 variants: 18 pass, 2 fail) | ✓ VERIFIED |
+| f4-trucking-highway.png | 18-wheeler truck with Aurora FMCW HUD (velocity radar, braking 85m vs detection 250m) | ✓ VERIFIED |
+| f5-train-rail.png | Blue train with Rail Operations HUD (Moving Block, Signal STOP, Level Crossing BLOCKED) | ✓ VERIFIED |
+| f6-ship-harbour.png | COLREGs Navigation HUD (Rule 14 head-on, CPA/TCPA for CARGO STAR, TANKER PRIME, FERRY SWIFT) | ⚠ PARTIAL |
+
+Note: F6 harbour zone displays COLREGs HUD correctly but 3D scene still shows city. Harbour water/buoys rendering needs work.
 
 ## Commands to Reproduce
 
@@ -227,9 +234,9 @@ autonomycity export --model models/perception_v1 --output models/perception_v1.o
 2. **Simulated noise only**: Vendor noise is synthetic (5%); real vendors have different patterns.
 3. **Perfect ground truth**: Perception accuracy wouldn't transfer to real data.
 4. **Training time**: Full training takes >5 minutes on CPU; models were created for demonstration.
-5. **BEV heatmap**: The Waabi BEV heatmap visualization is not fully implemented (stack switching works).
-6. **Specialized scenarios**: Train/ship scenarios show stack switching but not dedicated environments (all run on road scene).
-7. **Lidar point cloud**: Full lidar point cloud visualization not implemented in browser.
+5. **BEV heatmap canvas**: Waabi BEV canvas is a placeholder (Sim World variant table is populated).
+6. **Harbour zone rendering**: F6 Ship shows COLREGs HUD but 3D harbour scene (water, buoys) doesn't render correctly.
+7. **Compare mode AI views**: Both panels show same camera view (different AI view visualization not implemented).
 
 ## Tests Summary
 
