@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AUTONOMY CITY: How Machines See</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0f;
+      color: #fff;
+      overflow: hidden;
+    }
+    
+    #app {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+    
+    #canvas-container {
+      width: 100%;
+      height: 100%;
+    }
+    
+    canvas {
+      display: block;
+    }
+    
+    /* HUD overlay */
+    .hud {
+      position: absolute;
+      pointer-events: none;
+    }
+    
+    .hud-interactive {
+      pointer-events: auto;
+    }
+    
+    /* Disclaimer */
+    #disclaimer {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      font-size: 10px;
+      color: #666;
+      max-width: 400px;
+    }
+    
+    /* View switcher */
+    #view-switcher {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 4px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px;
+      border-radius: 8px;
+    }
+    
+    .view-btn {
+      padding: 8px 16px;
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    
+    .view-btn:hover {
+      background: #333;
+    }
+    
+    .view-btn.active {
+      background: #0066cc;
+      border-color: #0088ff;
+    }
+    
+    /* Speed/status panel */
+    #status-panel {
+      position: absolute;
+      bottom: 50px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 15px;
+      border-radius: 8px;
+      min-width: 200px;
+    }
+    
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+      font-size: 14px;
+    }
+    
+    .status-value {
+      font-weight: bold;
+      color: #0f0;
+    }
+    
+    .status-warning {
+      color: #ff0;
+    }
+    
+    .status-danger {
+      color: #f00;
+    }
+    
+    /* AI View panel */
+    #ai-view-panel {
+      position: absolute;
+      top: 60px;
+      right: 10px;
+      width: 320px;
+      background: rgba(0,0,0,0.9);
+      border-radius: 8px;
+      overflow: hidden;
+      display: none;
+    }
+    
+    #ai-view-panel.visible {
+      display: block;
+    }
+    
+    #ai-view-header {
+      padding: 10px;
+      background: #111;
+      border-bottom: 1px solid #333;
+      font-weight: bold;
+    }
+    
+    #ai-view-canvas {
+      width: 100%;
+      height: 240px;
+    }
+    
+    /* Controls help */
+    #controls-help {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      color: #888;
+    }
+    
+    .control-key {
+      color: #fff;
+      background: #333;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-right: 5px;
+    }
+    
+    /* Minimap */
+    #minimap {
+      position: absolute;
+      top: 60px;
+      left: 10px;
+      width: 180px;
+      height: 180px;
+      background: rgba(0,0,0,0.8);
+      border-radius: 8px;
+      border: 2px solid #333;
+    }
+    
+    /* Ride request popup */
+    #ride-request {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      padding: 20px;
+      border-radius: 12px;
+      border: 2px solid #0066cc;
+      display: none;
+      min-width: 300px;
+    }
+    
+    #ride-request.visible {
+      display: block;
+    }
+    
+    #ride-request h3 {
+      margin-bottom: 15px;
+      color: #0088ff;
+    }
+    
+    .ride-btn {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    
+    .ride-btn-accept {
+      background: #0066cc;
+      color: white;
+    }
+    
+    .ride-btn-decline {
+      background: #333;
+      color: #888;
+    }
+    
+    /* Takeover reason menu */
+    #takeover-menu {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.95);
+      padding: 20px;
+      border-radius: 12px;
+      border: 2px solid #ff6600;
+      display: none;
+    }
+    
+    #takeover-menu.visible {
+      display: block;
+    }
+    
+    .takeover-btn {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      background: #222;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 6px;
+      cursor: pointer;
+      text-align: left;
+    }
+    
+    .takeover-btn:hover {
+      background: #333;
+      border-color: #ff6600;
+    }
+    
+    /* InfoCard panel */
+    #info-card {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      width: 350px;
+      background: rgba(0,0,0,0.95);
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #444;
+      display: none;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    #info-card.visible {
+      display: block;
+    }
+    
+    .info-section {
+      margin: 15px 0;
+    }
+    
+    .info-section h4 {
+      color: #0088ff;
+      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    
+    .info-section p {
+      color: #ccc;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    
+    .info-strengths {
+      color: #4a4 !important;
+    }
+    
+    .info-weaknesses {
+      color: #a44 !important;
+    }
+
+    /* Model selector */
+    #model-selector {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      border-radius: 8px;
+    }
+    
+    #model-selector select {
+      background: #222;
+      color: #fff;
+      border: 1px solid #444;
+      padding: 5px 10px;
+      border-radius: 4px;
+    }
+    
+    #shadow-mode {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    
+    /* Recording indicator */
+    #recording-indicator {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: rgba(200,0,0,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    
+    #recording-indicator.visible {
+      display: flex;
+    }
+    
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      background: #f00;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    
+    /* Loading screen */
+    #loading {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: #0a0a0f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    
+    #loading h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+    
+    #loading p {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    
+    .loader {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #333;
+      border-top-color: #0088ff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    #loading.hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="loading">
+      <h1>AUTONOMY CITY</h1>
+      <p>How Machines See</p>
+      <div class="loader"></div>
+    </div>
+    
+    <div id="canvas-container"></div>
+    
+    <!-- View Switcher -->
+    <div id="view-switcher" class="hud hud-interactive">
+      <button class="view-btn active" data-profile="baseline_lidar">F1: Lidar Baseline</button>
+      <button class="view-btn" data-profile="tesla">F2: Tesla-style</button>
+      <button class="view-btn" data-profile="waymo">F3: Waymo-style</button>
+      <button class="view-btn" data-profile="waabi">F4: Waabi-style</button>
+      <button class="view-btn" data-profile="aurora">F5: Aurora-style</button>
+      <button class="view-btn" data-profile="rail">F6: Rail</button>
+      <button class="view-btn" data-profile="maritime">F7: Maritime</button>
+    </div>
+    
+    <!-- Status Panel -->
+    <div id="status-panel" class="hud">
+      <div class="status-row">
+        <span>Speed</span>
+        <span class="status-value" id="speed-value">0 km/h</span>
+      </div>
+      <div class="status-row">
+        <span>Stopping Dist</span>
+        <span class="status-value" id="stopping-dist">0 m</span>
+      </div>
+      <div class="status-row">
+        <span>Control</span>
+        <span class="status-value" id="control-source">Policy</span>
+      </div>
+      <div class="status-row">
+        <span>Detections</span>
+        <span class="status-value" id="detection-count">0</span>
+      </div>
+    </div>
+    
+    <!-- Minimap -->
+    <canvas id="minimap" class="hud" width="180" height="180"></canvas>
+    
+    <!-- AI View Panel -->
+    <div id="ai-view-panel" class="hud">
+      <div id="ai-view-header">AI View (G for Ground Truth Overlay)</div>
+      <canvas id="ai-view-canvas" width="320" height="240"></canvas>
+    </div>
+    
+    <!-- Model Selector -->
+    <div id="model-selector" class="hud hud-interactive">
+      <select id="perception-model">
+        <option value="heuristic">Perception: Heuristic</option>
+        <option value="v1">Perception: v1</option>
+      </select>
+      <div id="shadow-mode">
+        <input type="checkbox" id="shadow-toggle">
+        <label for="shadow-toggle">Shadow Mode</label>
+      </div>
+    </div>
+    
+    <!-- Recording Indicator -->
+    <div id="recording-indicator" class="hud">
+      <div class="rec-dot"></div>
+      <span>REC</span>
+    </div>
+    
+    <!-- Controls Help -->
+    <div id="controls-help" class="hud">
+      <div><span class="control-key">WASD</span> Drive (when in takeover)</div>
+      <div><span class="control-key">T</span> Takeover / Release</div>
+      <div><span class="control-key">C</span> Camera mode</div>
+      <div><span class="control-key">V</span> AI View panel</div>
+      <div><span class="control-key">G</span> Ground Truth overlay</div>
+      <div><span class="control-key">I</span> Info Card</div>
+      <div><span class="control-key">R</span> Record</div>
+      <div><span class="control-key">N</span> Day/Night</div>
+      <div><span class="control-key">1-5</span> Inject scenario</div>
+    </div>
+    
+    <!-- Ride Request Popup -->
+    <div id="ride-request" class="hud hud-interactive">
+      <h3>New Ride Request</h3>
+      <div class="status-row">
+        <span>Passenger</span>
+        <span id="ride-passenger">John Smith</span>
+      </div>
+      <div class="status-row">
+        <span>Fare</span>
+        <span id="ride-fare">$12.50</span>
+      </div>
+      <button class="ride-btn ride-btn-accept" id="accept-ride">Accept Ride</button>
+      <button class="ride-btn ride-btn-decline" id="decline-ride">Decline</button>
+    </div>
+    
+    <!-- Takeover Menu -->
+    <div id="takeover-menu" class="hud hud-interactive">
+      <h3>Takeover Reason</h3>
+      <button class="takeover-btn" data-reason="perception_miss">Perception Miss</button>
+      <button class="takeover-btn" data-reason="planning_too_cautious">Planning Too Cautious</button>
+      <button class="takeover-btn" data-reason="planning_unsafe">Planning Unsafe</button>
+      <button class="takeover-btn" data-reason="other">Other</button>
+    </div>
+    
+    <!-- Info Card -->
+    <div id="info-card" class="hud hud-interactive">
+      <h2 id="info-title">Baseline Lidar Stack</h2>
+      <div class="info-section">
+        <h4>Sensors</h4>
+        <p id="info-sensors">32-beam spinning lidar, 360° coverage, 100m range</p>
+      </div>
+      <div class="info-section">
+        <h4>Internal Representation</h4>
+        <p id="info-internals">Point cloud clustering, box fitting, Kalman tracking</p>
+      </div>
+      <div class="info-section">
+        <h4>Strengths</h4>
+        <p id="info-strengths" class="info-strengths">Precise 3D geometry, works in darkness</p>
+      </div>
+      <div class="info-section">
+        <h4>Weaknesses</h4>
+        <p id="info-weaknesses" class="info-weaknesses">No color/texture, affected by rain/snow, sparse at distance</p>
+      </div>
+      <div class="info-section">
+        <h4>Real-world Example</h4>
+        <p id="info-example">This is a simplified educational model demonstrating classical lidar-based perception.</p>
+      </div>
+    </div>
+    
+    <!-- Disclaimer -->
+    <div id="disclaimer" class="hud">
+      Simplified educational models based on public information. 
+      Not affiliated with or endorsed by any company named.
+    </div>
+  </div>
+  
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "description": "Baseline metrics for gate comparison (heuristic classifier)",
+  "modelType": "perception",
+  "overall": {
+    "precision": 0.65,
+    "recall": 0.60,
+    "f1": 0.62
+  },
+  "perClass": {
+    "car": {
+      "precision": 0.75,
+      "recall": 0.70,
+      "f1": 0.72
+    },
+    "truck": {
+      "precision": 0.60,
+      "recall": 0.55,
+      "f1": 0.57
+    },
+    "pedestrian": {
+      "precision": 0.50,
+      "recall": 0.45,
+      "f1": 0.47
+    },
+    "cyclist": {
+      "precision": 0.45,
+      "recall": 0.40,
+      "f1": 0.42
+    }
+  }
+}

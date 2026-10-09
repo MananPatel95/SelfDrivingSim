@@ -1,0 +1,27 @@
+{
+  "description": "Frozen benchmark scenario seeds - never use for training",
+  "version": "1.0.0",
+  "seeds": [100, 101, 102, 103, 104],
+  "scenarios": [
+    {
+      "seed": 100,
+      "description": "Standard city driving with light traffic"
+    },
+    {
+      "seed": 101,
+      "description": "Jaywalker scenario"
+    },
+    {
+      "seed": 102,
+      "description": "Occluded pedestrian behind parked truck"
+    },
+    {
+      "seed": 103,
+      "description": "Vehicle cut-in on highway"
+    },
+    {
+      "seed": 104,
+      "description": "Night driving with rain"
+    }
+  ]
+}
