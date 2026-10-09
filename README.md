@@ -6,14 +6,13 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
 
 ## Features
 
-- **Six Autonomy Stack Views:**
-  - F1: Baseline Lidar (classical clustering + tracking)
-  - F2: Tesla-style Vision Only (cameras, depth inference, no HD map)
-  - F3: Waymo-style Multi-sensor + HD Map (lidar fusion, geofenced)
-  - F4: Waabi-style AI-first (BEV occupancy, future prediction, Sim World)
-  - F5: Aurora-style FMCW Lidar Trucking (per-point velocity)
-  - F6: Rail (signaling, braking curves)
-  - F7: Maritime (ARPA radar, AIS, COLREGs)
+- **Six Autonomy Stack Views (F1-F6):**
+  - F1: Tesla-style Vision Only (cameras, depth inference, no HD map)
+  - F2: Waymo-style Multi-sensor + HD Map (lidar fusion, geofenced)
+  - F3: Waabi-style AI-first (BEV occupancy, future prediction, Sim World)
+  - F4: Aurora-style FMCW Lidar Trucking (per-point velocity)
+  - F5: Train (signaling, braking curves, track occupancy)
+  - F6: Ship (ARPA radar, AIS, COLREGs collision avoidance)
 
 - **Gameplay:**
   - Remote supervisor role for robotaxi rides
@@ -125,20 +124,18 @@ make dev
 | T | Takeover / Release control |
 | C | Cycle camera mode (chase/topdown/cockpit) |
 | V | Toggle AI View panel |
-| G | Toggle Ground Truth overlay |
+| G | Toggle Ground Truth overlay (green=matched, red=FN, orange=FP) |
 | I | Toggle Info Card |
 | R | Toggle recording |
 | N | Toggle day/night |
 | M | Toggle Compare mode |
 | P | Pause simulation |
-| 1 | Inject jaywalker scenario |
-| 2 | Inject occluded pedestrian scenario |
-| 3 | Inject vehicle cut-in scenario |
-| 4 | Cycle weather (clear/rain/fog) |
-| 5 | Inject stalled vehicle scenario |
-| 6 | Heavy rain scenario |
-| 7 | Dense fog scenario |
-| F1-F7 | Switch stack profile |
+| 1 | Jaywalker scenario |
+| 2 | Occluded pedestrian scenario |
+| 3 | Vehicle cut-in scenario |
+| 4 | Rain/fog weather toggle |
+| 5 | Context-dependent obstacle (stalled car/crossing car/boat) |
+| F1-F6 | Switch stack profile |
 
 ### Running Headless Simulation
 
