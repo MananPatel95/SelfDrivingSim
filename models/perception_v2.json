@@ -2,12 +2,12 @@
   "modelType": "perception",
   "version": "v1",
   "dataVersion": "unknown",
-  "trainSamples": 2400,
+  "trainSamples": 2850,
   "metrics": {
-    "bestValAcc": 0.856,
+    "bestValAcc": 0.878,
     "bestValLoss": null
   },
-  "onnxPath": "models/perception_v1.onnx",
+  "onnxPath": "models/perception_v2.onnx",
   "limitations": [
     "Trained on simulated data only",
     "Limited object classes",
