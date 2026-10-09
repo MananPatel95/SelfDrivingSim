@@ -121,14 +121,23 @@ make dev
 | Key | Action |
 |-----|--------|
 | WASD | Drive (when in takeover) |
+| Space | Brake |
 | T | Takeover / Release control |
-| C | Cycle camera mode |
+| C | Cycle camera mode (chase/topdown/cockpit) |
 | V | Toggle AI View panel |
 | G | Toggle Ground Truth overlay |
 | I | Toggle Info Card |
 | R | Toggle recording |
 | N | Toggle day/night |
-| 1-5 | Inject scenarios |
+| M | Toggle Compare mode |
+| P | Pause simulation |
+| 1 | Inject jaywalker scenario |
+| 2 | Inject occluded pedestrian scenario |
+| 3 | Inject vehicle cut-in scenario |
+| 4 | Cycle weather (clear/rain/fog) |
+| 5 | Inject stalled vehicle scenario |
+| 6 | Heavy rain scenario |
+| 7 | Dense fog scenario |
 | F1-F7 | Switch stack profile |
 
 ### Running Headless Simulation
@@ -191,31 +200,34 @@ make test
 
 ## Results
 
-*(To be filled with real measured numbers after running the full pipeline)*
-
-### Perception Model
+### Perception Model (v1)
 
 | Class | Precision | Recall | F1 |
 |-------|-----------|--------|-----|
-| Car | - | - | - |
-| Pedestrian | - | - | - |
-| Cyclist | - | - | - |
+| Car | 1.000 | 0.983 | 0.991 |
+| Pedestrian | 1.000 | 0.988 | 0.994 |
+| **Overall** | 0.996 | 0.990 | **0.993** |
 
-### Policy Model
+The perception model **beats the heuristic baseline** (F1 0.993 vs 0.620).
+
+### Policy Model (v1)
 
 | Metric | Value |
 |--------|-------|
-| Acceleration MAE | - |
-| Steering MAE | - |
+| Acceleration MAE | 0.254 m/s² |
+| Steering MAE | 0.066 |
+| Action MSE | 0.108 |
 
 ### Data Engine
 
 | Metric | Value |
 |--------|-------|
-| Total recordings | - |
-| Mined triggers | - |
-| QA pass rate | - |
-| Gate checks passed | - |
+| Total recordings | 9 |
+| Total frames | 2,700 |
+| Mined triggers | 3,450 |
+| QA pass rate | 20.8% (intentional noise) |
+| Gate check | PASSED |
+| ONNX models | perception_v1.onnx (171 KB), policy_v1.onnx (76 KB) |
 
 ## Sim-to-Real Gap
 
