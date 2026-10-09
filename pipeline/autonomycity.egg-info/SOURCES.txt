@@ -9,6 +9,7 @@ autonomycity.egg-info/requires.txt
 autonomycity.egg-info/top_level.txt
 autonomycity/commands/__init__.py
 autonomycity/commands/compare.py
+autonomycity/commands/dagger.py
 autonomycity/commands/embed.py
 autonomycity/commands/evaluate.py
 autonomycity/commands/export.py
@@ -23,6 +24,10 @@ autonomycity/commands/train_perception.py
 autonomycity/commands/train_policy.py
 autonomycity/commands/validate.py
 tests/__init__.py
+tests/test_embed.py
+tests/test_gate.py
+tests/test_label.py
 tests/test_mine.py
 tests/test_qa.py
+tests/test_split.py
 tests/test_validate.py

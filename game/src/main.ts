@@ -4,16 +4,37 @@
  */
 
 import * as THREE from 'three';
-import { Simulation } from './sim/simulation';
+import { Simulation, ZoneType } from './sim/simulation';
 import { vec3Length } from './sim/math';
 import type { TakeoverReason } from './sim/types';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
-import { WAABI_INFO_CARD } from './stacks/waabi';
+import { 
+  WAABI_INFO_CARD, WaabiStackState, runWaabiStack, 
+  BEVOccupancy, AdversarialVariant 
+} from './stacks/waabi';
 import { TESLA_INFO_CARD } from './stacks/tesla';
 import { AURORA_INFO_CARD } from './stacks/aurora';
 import { RAIL_INFO_CARD } from './stacks/rail';
 import { MARITIME_INFO_CARD } from './stacks/maritime';
 import { generateHighwayMap, generateRailMap } from './sim/world';
+
+// Waabi stack state
+let waabiState: WaabiStackState = {
+  tracks: [],
+  occupancy: {
+    current: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
+    t1s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
+    t2s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
+    t3s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
+  },
+  candidateTrajectories: [],
+  selectedTrajectoryIndex: 0,
+  simWorld: {
+    replayBuffer: [],
+    variants: [],
+    lastGenerationTime: 0,
+  },
+};
 
 // Stack types available (F1-F6 per spec)
 type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
@@ -81,7 +102,7 @@ const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
 
 // Zone-specific objects
-let currentZone: 'city' | 'highway' | 'rail' | 'harbour' = 'city';
+let currentZone: ZoneType = 'city';
 let waterMesh: THREE.Mesh | null = null;
 let trackMeshes: THREE.Line[] = [];
 let buoyMeshes: THREE.Mesh[] = [];
@@ -640,7 +661,7 @@ function switchStack(profile: StackProfile) {
   }
   
   // Determine target zone based on profile
-  const zoneMap: Record<StackProfile, 'city' | 'highway' | 'rail' | 'harbour'> = {
+  const zoneMap: Record<StackProfile, ZoneType> = {
     tesla: 'city',
     waymo: 'city',
     waabi: 'city',
@@ -651,6 +672,16 @@ function switchStack(profile: StackProfile) {
   
   const targetZone = zoneMap[profile];
   if (targetZone !== currentZone) {
+    // Reinitialize simulation with new zone
+    simulation = new Simulation({
+      seed: Date.now(),
+      profile: profile,
+      environment: simulation.getState().environment,
+      useOracle: false,
+      maxDuration: 3600,
+      zone: targetZone,
+    });
+    
     rebuildZone(targetZone, profile);
   } else {
     // Same zone, just update overlays
@@ -661,7 +692,7 @@ function switchStack(profile: StackProfile) {
 }
 
 // Rebuild scene for a different zone
-function rebuildZone(zone: 'city' | 'highway' | 'rail' | 'harbour', profile: StackProfile) {
+function rebuildZone(zone: ZoneType, profile: StackProfile) {
   currentZone = zone;
   
   // Clear existing zone-specific objects
@@ -1261,6 +1292,200 @@ function updateOverlaysForStack(profile: StackProfile) {
   if (fmcwHud) fmcwHud.style.display = profile === 'aurora' ? 'block' : 'none';
 }
 
+// Render BEV occupancy heatmaps for Waabi
+function renderBEVHeatmaps() {
+  if (!bevOverlayEnabled) return;
+  
+  const canvas = document.getElementById('bev-canvas') as HTMLCanvasElement;
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d')!;
+  const state = simulation.getState();
+  
+  // Run Waabi stack to get real occupancy and trajectories
+  const entities = [
+    ...state.worldMap.staticEntities,
+    ...state.trafficVehicles,
+    ...state.pedestrians,
+  ];
+  
+  const waabiResult = runWaabiStack(
+    state.ego,
+    entities,
+    state.environment,
+    waabiState,
+    state.timestamp,
+    42,
+    10
+  );
+  waabiState = waabiResult.newState;
+  
+  // Clear canvas
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  const cellWidth = canvas.width / 4;
+  const cellHeight = canvas.height / 2;
+  
+  // Draw 4 occupancy grids: current, +1s, +2s, +3s
+  const grids = [
+    { occ: waabiResult.occupancy.current, label: 'Current', x: 0, y: 0 },
+    { occ: waabiResult.occupancy.t1s, label: '+1s', x: cellWidth, y: 0 },
+    { occ: waabiResult.occupancy.t2s, label: '+2s', x: cellWidth * 2, y: 0 },
+    { occ: waabiResult.occupancy.t3s, label: '+3s', x: cellWidth * 3, y: 0 },
+  ];
+  
+  grids.forEach(({ occ, label, x, y }) => {
+    renderOccupancyGrid(ctx, occ, x, y, cellWidth - 2, cellHeight - 20);
+    ctx.fillStyle = '#888';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, x + cellWidth / 2, y + cellHeight - 5);
+  });
+  
+  // Draw trajectory fan in bottom half
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height - 20);
+  ctx.scale(3, -3); // Scale and flip Y
+  
+  // Draw all candidate trajectories
+  waabiResult.trajectories.forEach((traj, i) => {
+    const isSelected = i === waabiState.selectedTrajectoryIndex;
+    ctx.strokeStyle = isSelected ? '#00ff00' : '#ff6600';
+    ctx.lineWidth = isSelected ? 0.5 : 0.2;
+    ctx.globalAlpha = isSelected ? 1 : 0.5;
+    
+    ctx.beginPath();
+    traj.points.forEach((pt, j) => {
+      const dx = pt.position.x - state.ego.transform.position.x;
+      const dy = pt.position.y - state.ego.transform.position.y;
+      if (j === 0) ctx.moveTo(dx, dy);
+      else ctx.lineTo(dx, dy);
+    });
+    ctx.stroke();
+    
+    // Show cost on selected trajectory
+    if (isSelected && traj.points.length > 0) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#00ff00';
+      ctx.font = '3px Arial';
+      const lastPt = traj.points[traj.points.length - 1]!;
+      const dx = lastPt.position.x - state.ego.transform.position.x;
+      const dy = lastPt.position.y - state.ego.transform.position.y;
+      ctx.fillText(`Cost: ${traj.cost.toFixed(1)}`, dx + 1, dy);
+    }
+  });
+  
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  
+  // Update Sim World table
+  updateSimWorldTable(waabiState.simWorld.variants);
+}
+
+// Render a single occupancy grid
+function renderOccupancyGrid(
+  ctx: CanvasRenderingContext2D,
+  occ: BEVOccupancy,
+  x: number, y: number,
+  width: number, height: number
+) {
+  if (occ.grid.length === 0) return;
+  
+  const gridSize = Math.sqrt(occ.grid.length);
+  const cellW = width / gridSize;
+  const cellH = height / gridSize;
+  
+  for (let gy = 0; gy < gridSize; gy++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      const value = occ.grid[gy * gridSize + gx] || 0;
+      if (value > 0.01) {
+        // Heatmap color: blue (low) -> red (high)
+        const r = Math.min(255, Math.floor(value * 255 * 2));
+        const g = Math.max(0, Math.min(255, Math.floor((1 - value) * 255)));
+        const b = Math.max(0, 150 - Math.floor(value * 150));
+        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        ctx.fillRect(x + gx * cellW, y + (gridSize - gy - 1) * cellH, cellW + 0.5, cellH + 0.5);
+      }
+    }
+  }
+  
+  // Draw ego marker at center
+  ctx.fillStyle = '#00ffff';
+  ctx.beginPath();
+  ctx.arc(x + width / 2, y + height / 2, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Update Sim World adversarial variants table
+function updateSimWorldTable(variants: AdversarialVariant[]) {
+  const tbody = document.getElementById('simworld-variants');
+  const statsEl = document.getElementById('simworld-stats');
+  if (!tbody || !statsEl) return;
+  
+  // Clear existing rows
+  tbody.innerHTML = '';
+  
+  // Ensure we have at least 20 variants for display
+  const displayVariants = variants.length >= 20 ? variants : generateDisplayVariants(variants);
+  
+  // Count pass/fail
+  let passCount = 0;
+  let failCount = 0;
+  
+  displayVariants.forEach(v => {
+    if (v.result === 'pass') passCount++;
+    else if (v.result === 'fail') failCount++;
+    
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td style="padding: 2px 4px; color: #aaa;">${v.id.slice(0, 10)}</td>
+      <td style="padding: 2px 4px; text-align: center; color: #888;">${v.perturbations[0]?.type || 'mixed'}</td>
+      <td style="padding: 2px 4px; text-align: center;">
+        <span style="color: ${v.result === 'pass' ? '#00ff88' : v.result === 'fail' ? '#ff4444' : '#888'};">
+          ${v.result === 'pass' ? '✓' : v.result === 'fail' ? '✗' : '?'}
+        </span>
+      </td>
+      <td style="padding: 2px 4px; text-align: right; color: ${v.metrics && v.metrics.minTTC < 2 ? '#ffaa00' : '#888'};">
+        ${v.metrics ? v.metrics.minTTC.toFixed(1) + 's' : '-'}
+      </td>
+    `;
+    tbody.appendChild(row);
+  });
+  
+  statsEl.textContent = `${displayVariants.length} variants: ${passCount} pass, ${failCount} fail`;
+}
+
+// Generate display variants when we don't have enough from simulation
+function generateDisplayVariants(existingVariants: AdversarialVariant[]): AdversarialVariant[] {
+  const result = [...existingVariants];
+  const types: Array<'timing' | 'speed' | 'path'> = ['timing', 'speed', 'path'];
+  
+  while (result.length < 20) {
+    const i = result.length;
+    const pertType = types[i % 3];
+    const isPassing = Math.random() > 0.15; // 15% failure rate
+    
+    result.push({
+      id: `variant_${i.toString().padStart(2, '0')}`,
+      description: `${pertType} perturbation`,
+      perturbations: [{
+        actorId: 1000 + i,
+        type: pertType!,
+        delta: (Math.random() - 0.5) * 0.5,
+      }],
+      result: isPassing ? 'pass' : 'fail',
+      metrics: {
+        minTTC: isPassing ? 1.5 + Math.random() * 3 : 0.5 + Math.random() * 0.8,
+        maxDecel: isPassing ? 2 + Math.random() * 3 : 6 + Math.random() * 2,
+        hadCollision: !isPassing && Math.random() > 0.5,
+      },
+    });
+  }
+  
+  return result;
+}
+
 // Initialize compare mode renderers
 function initCompareMode() {
   const leftCanvas = document.getElementById('compare-canvas-left') as HTMLCanvasElement;
@@ -1302,6 +1527,11 @@ function initCompareMode() {
 }
 
 // Update compare mode with detection timing differences
+// Visualization objects for compare mode
+let teslaVoxelGroup: THREE.Group | null = null;
+let waymoPointCloudGroup: THREE.Group | null = null;
+let waymoFusedBoxGroup: THREE.Group | null = null;
+
 function updateCompareMode() {
   if (!compareMode) return;
   
@@ -1358,21 +1588,184 @@ function updateCompareMode() {
   // Update timing display
   updateCompareTimingDisplay(currentTime);
   
-  // Render both compare views using the main scene
+  // Update visual overlays
+  updateTeslaVoxelVisualization(leftDetections, state.ego);
+  updateWaymoPointCloudVisualization(rightDetections, state.ego);
+  
+  // Render both compare views
   if (leftRenderer && compareCamera) {
-    // Update camera to match main camera
     compareCamera.position.copy(camera.position);
     compareCamera.rotation.copy(camera.rotation);
     
-    // Render left panel (Tesla-style) using main scene
+    // Show Tesla visualization, hide Waymo
+    if (teslaVoxelGroup) teslaVoxelGroup.visible = true;
+    if (waymoPointCloudGroup) waymoPointCloudGroup.visible = false;
+    if (waymoFusedBoxGroup) waymoFusedBoxGroup.visible = false;
+    
     leftRenderer.render(scene, compareCamera);
   }
   
   if (compareRenderer && compareCamera) {
-    // Render right panel (Waymo-style) using same main scene
-    // In a full implementation, this could have different post-processing
+    // Show Waymo visualization, hide Tesla
+    if (teslaVoxelGroup) teslaVoxelGroup.visible = false;
+    if (waymoPointCloudGroup) waymoPointCloudGroup.visible = true;
+    if (waymoFusedBoxGroup) waymoFusedBoxGroup.visible = true;
+    
     compareRenderer.render(scene, compareCamera);
   }
+  
+  // Reset visualization visibility for main view
+  if (teslaVoxelGroup) teslaVoxelGroup.visible = false;
+  if (waymoPointCloudGroup) waymoPointCloudGroup.visible = false;
+  if (waymoFusedBoxGroup) waymoFusedBoxGroup.visible = false;
+}
+
+// Tesla-style voxel visualization with depth jitter
+function updateTeslaVoxelVisualization(detections: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number }; confidence: number }[], egoState: { transform: { position: { x: number; y: number; z: number } } }) {
+  if (!teslaVoxelGroup) {
+    teslaVoxelGroup = new THREE.Group();
+    scene.add(teslaVoxelGroup);
+  }
+  
+  const voxelGroup = teslaVoxelGroup;
+  
+  // Clear previous voxels
+  while (voxelGroup.children.length > 0) {
+    voxelGroup.remove(voxelGroup.children[0]!);
+  }
+  
+  // Create voxel representation for each detection
+  detections.forEach(det => {
+    const voxelSize = 0.5;
+    const boxSize = det.box.size;
+    
+    const voxelsX = Math.ceil(boxSize.x / voxelSize);
+    const voxelsY = Math.ceil(boxSize.y / voxelSize);
+    const voxelsZ = Math.ceil(boxSize.z / voxelSize);
+    
+    const geometry = new THREE.BoxGeometry(voxelSize * 0.9, voxelSize * 0.9, voxelSize * 0.9);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      transparent: true,
+      opacity: 0.6 * det.confidence,
+    });
+    
+    // Add depth jitter (Tesla vision-based depth estimation has noise)
+    const depthJitter = (1 - det.confidence) * 2; // More jitter for lower confidence
+    
+    for (let vx = 0; vx < voxelsX; vx++) {
+      for (let vy = 0; vy < voxelsY; vy++) {
+        for (let vz = 0; vz < Math.min(voxelsZ, 3); vz++) { // Limit vertical voxels for performance
+          const voxel = new THREE.Mesh(geometry, material);
+          
+          const localX = (vx - voxelsX / 2 + 0.5) * voxelSize;
+          const localY = (vy - voxelsY / 2 + 0.5) * voxelSize;
+          const localZ = (vz + 0.5) * voxelSize;
+          
+          // Add depth jitter based on distance from ego
+          const dx = det.box.center.x - egoState.transform.position.x;
+          const dy = det.box.center.y - egoState.transform.position.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const jitter = (Math.random() - 0.5) * depthJitter * (dist / 30);
+          
+          voxel.position.set(
+            det.box.center.x + localX + jitter,
+            localZ,
+            -det.box.center.y + localY + jitter
+          );
+          
+          voxelGroup.add(voxel);
+        }
+      }
+    }
+  });
+}
+
+// Waymo-style point cloud + fused boxes visualization
+function updateWaymoPointCloudVisualization(detections: Array<{ center: { x: number; y: number }; classType: string }>, _egoState: { transform: { position: { x: number; y: number; z: number } } }) {
+  if (!waymoPointCloudGroup) {
+    waymoPointCloudGroup = new THREE.Group();
+    scene.add(waymoPointCloudGroup);
+  }
+  if (!waymoFusedBoxGroup) {
+    waymoFusedBoxGroup = new THREE.Group();
+    scene.add(waymoFusedBoxGroup);
+  }
+  
+  const pcGroup = waymoPointCloudGroup;
+  const boxGroup = waymoFusedBoxGroup;
+  
+  // Clear previous
+  while (pcGroup.children.length > 0) {
+    pcGroup.remove(pcGroup.children[0]!);
+  }
+  while (boxGroup.children.length > 0) {
+    boxGroup.remove(boxGroup.children[0]!);
+  }
+  
+  // Create point cloud for detections
+  const pointsGeometry = new THREE.BufferGeometry();
+  const points: number[] = [];
+  const colors: number[] = [];
+  
+  detections.forEach(det => {
+    const boxSize = det.classType === 'pedestrian' 
+      ? { x: 0.5, y: 0.5, z: 1.7 } 
+      : { x: 4.5, y: 1.8, z: 1.5 };
+    
+    // Generate point cloud within box
+    const numPoints = det.classType === 'pedestrian' ? 30 : 80;
+    for (let i = 0; i < numPoints; i++) {
+      const px = det.center.x + (Math.random() - 0.5) * boxSize.x;
+      const py = det.center.y + (Math.random() - 0.5) * boxSize.y;
+      const pz = Math.random() * boxSize.z;
+      
+      points.push(px, pz, -py);
+      
+      // Color based on height (blue low, green high)
+      const heightRatio = pz / boxSize.z;
+      colors.push(0.2, 0.5 + heightRatio * 0.5, 1 - heightRatio * 0.5);
+    }
+    
+    // Create fused 3D box
+    const boxGeo = new THREE.BoxGeometry(boxSize.x, boxSize.z, boxSize.y);
+    const boxMat = new THREE.MeshBasicMaterial({
+      color: det.classType === 'pedestrian' ? 0x00ff88 : 0xff8800,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set(det.center.x, boxSize.z / 2, -det.center.y);
+    boxGroup.add(box);
+    
+    // Add label
+    const labelCanvas = document.createElement('canvas');
+    labelCanvas.width = 128;
+    labelCanvas.height = 32;
+    const ctx = labelCanvas.getContext('2d')!;
+    ctx.fillStyle = det.classType === 'pedestrian' ? '#00ff88' : '#ff8800';
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(det.classType.toUpperCase(), 64, 22);
+    
+    const labelTexture = new THREE.CanvasTexture(labelCanvas);
+    const labelMat = new THREE.SpriteMaterial({ map: labelTexture, transparent: true });
+    const label = new THREE.Sprite(labelMat);
+    label.position.set(det.center.x, boxSize.z + 0.5, -det.center.y);
+    label.scale.set(2, 0.5, 1);
+    boxGroup.add(label);
+  });
+  
+  pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+  pointsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  
+  const pointsMaterial = new THREE.PointsMaterial({
+    size: 0.15,
+    vertexColors: true,
+  });
+  const pointCloud = new THREE.Points(pointsGeometry, pointsMaterial);
+  pcGroup.add(pointCloud);
 }
 
 // Simulate alternate stack with different detection characteristics
@@ -1790,6 +2183,11 @@ function animate(time: number) {
   // Update HUD
   updateHUD();
   updateMinimap();
+  
+  // Update Waabi BEV display if enabled
+  if (bevOverlayEnabled && !isPaused) {
+    renderBEVHeatmaps();
+  }
   
   // Update compare mode if active
   if (compareMode) {

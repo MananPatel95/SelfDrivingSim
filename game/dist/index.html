@@ -480,7 +480,7 @@
       height: 100%;
     }
   </style>
-  <script type="module" crossorigin src="./assets/index-BLzxRwaJ.js"></script>
+  <script type="module" crossorigin src="./assets/index-DVNZhim2.js"></script>
 </head>
 <body>
   <div id="app">
@@ -652,6 +652,106 @@
       <div class="info-section">
         <h4>Real-world Example</h4>
         <p id="info-example">This is a simplified educational model demonstrating classical lidar-based perception.</p>
+      </div>
+    </div>
+    
+    <!-- BEV Overlay (Waabi) -->
+    <div id="bev-overlay" class="hud" style="display: none; right: 20px; top: 200px; width: 320px;">
+      <h4 style="margin: 0 0 10px 0; color: #00ffff;">Waabi BEV + Sim World</h4>
+      <canvas id="bev-canvas" width="300" height="200" style="background: #1a1a2e; border: 1px solid #333;"></canvas>
+      <div id="simworld-table" style="margin-top: 10px; font-size: 11px; max-height: 150px; overflow-y: auto;">
+        <table style="width: 100%; border-collapse: collapse; color: #ccc;">
+          <thead>
+            <tr style="border-bottom: 1px solid #444;">
+              <th style="text-align: left; padding: 4px;">Variant</th>
+              <th style="text-align: center;">Type</th>
+              <th style="text-align: center;">Result</th>
+              <th style="text-align: right;">TTC</th>
+            </tr>
+          </thead>
+          <tbody id="simworld-variants">
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top: 8px; font-size: 11px; color: #888;">
+        <span id="simworld-stats">20 variants: 18 pass, 2 fail</span>
+      </div>
+    </div>
+    
+    <!-- COLREGs Display (Maritime) -->
+    <div id="colregs-display" class="hud" style="display: none; right: 20px; top: 200px; width: 280px;">
+      <h4 style="margin: 0 0 10px 0; color: #00ff88;">COLREGs Navigation</h4>
+      <div style="background: #0a2840; padding: 10px; border-radius: 5px; border: 1px solid #1a5276;">
+        <div id="colregs-situation" style="font-size: 14px; color: #fff; margin-bottom: 8px;">
+          Head-on situation with CARGO STAR
+        </div>
+        <div id="colregs-rule" style="font-size: 12px; color: #00ffaa; margin-bottom: 8px;">
+          Rule 14: Head-on - Both vessels alter to starboard
+        </div>
+        <div id="colregs-action" style="font-size: 12px; color: #ffaa00;">
+          ACTION: Alter course 20° to starboard
+        </div>
+        <div style="margin-top: 10px; border-top: 1px solid #1a5276; padding-top: 8px;">
+          <div style="font-size: 11px; color: #888;">Target Vessels:</div>
+          <div id="ais-targets" style="font-size: 11px; color: #ccc; margin-top: 4px;">
+            <div>CARGO STAR - CPA: 150m, TCPA: 2:30</div>
+            <div>TANKER PRIME - CPA: 800m, TCPA: 5:45</div>
+            <div>FERRY SWIFT - CPA: 1200m, TCPA: 8:15</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Rail Display -->
+    <div id="rail-display" class="hud" style="display: none; right: 20px; top: 200px; width: 280px;">
+      <h4 style="margin: 0 0 10px 0; color: #ffaa00;">Rail Operations</h4>
+      <div style="background: #1a1a2e; padding: 10px; border-radius: 5px; border: 1px solid #444;">
+        <div id="rail-mode" style="font-size: 12px; color: #888; margin-bottom: 8px;">Mode: Moving Block</div>
+        <div id="rail-signal" style="font-size: 14px; margin-bottom: 8px;">
+          <span style="color: #ff4444;">●</span> Signal: STOP
+        </div>
+        <div id="rail-speed" style="font-size: 14px; color: #00ff88; margin-bottom: 8px;">
+          Permitted: 0 km/h
+        </div>
+        <div id="rail-distance" style="font-size: 12px; color: #ccc;">
+          Distance to signal: 200m
+        </div>
+        <div id="rail-crossing" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #444;">
+          <div style="color: #ff6600; font-size: 12px;">⚠ LEVEL CROSSING BLOCKED</div>
+          <div style="color: #888; font-size: 11px; margin-top: 4px;">Stalled vehicle detected on crossing</div>
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; color: #888;">
+          Control: BRAKE ONLY (safety mode)
+        </div>
+      </div>
+    </div>
+    
+    <!-- FMCW Display (Aurora Trucking) -->
+    <div id="fmcw-display" class="hud" style="display: none; right: 20px; top: 200px; width: 300px;">
+      <h4 style="margin: 0 0 10px 0; color: #ff6600;">Aurora FMCW Trucking</h4>
+      <div style="background: #1a1a2e; padding: 10px; border-radius: 5px; border: 1px solid #444;">
+        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">Velocity-Colored Radar Returns</div>
+        <canvas id="fmcw-canvas" width="280" height="100" style="background: #0a0a15; border: 1px solid #333;"></canvas>
+        <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 10px; color: #888;">
+          <span style="color: #00ff00;">← Approaching</span>
+          <span style="color: #888888;">Static</span>
+          <span style="color: #ff0000;">Receding →</span>
+        </div>
+        <div id="fmcw-braking" style="margin-top: 12px; border-top: 1px solid #444; padding-top: 8px;">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">Braking Distance vs Detection Range</div>
+          <div style="height: 30px; background: #1a1a1a; border-radius: 3px; position: relative; overflow: hidden;">
+            <div id="brake-bar" style="position: absolute; left: 0; height: 100%; background: #ff4444; width: 30%;"></div>
+            <div id="detect-bar" style="position: absolute; left: 0; height: 100%; background: rgba(0,255,0,0.3); width: 80%;"></div>
+            <div style="position: absolute; left: 30%; top: 0; height: 100%; width: 2px; background: #fff;"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #888; margin-top: 4px;">
+            <span>Brake: 85m</span>
+            <span>Detection: 250m</span>
+          </div>
+        </div>
+        <div style="margin-top: 8px; padding: 8px; background: #0a2a0a; border-radius: 3px; color: #00ff00; font-size: 12px;">
+          ✓ Safe: Detection range > Braking distance
+        </div>
       </div>
     </div>
     
