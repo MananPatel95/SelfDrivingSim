@@ -30,6 +30,24 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
   - Gated model promotion
   - ONNX export for in-browser inference
 
+## Screenshots
+
+| City View | Ground Truth Overlay |
+|-----------|---------------------|
+| ![City](docs/screenshots/01-city-view.png) | ![GT Overlay](docs/screenshots/02-gt-overlay.png) |
+
+| Waabi BEV + Sim World | Compare Mode |
+|-----------------------|--------------|
+| ![Waabi BEV](docs/screenshots/02-waabi-bev.png) | ![Compare](docs/screenshots/04-compare-mode.png) |
+
+| Highway Trucking (F4) | Rail (F5) | Maritime (F6) |
+|-----------------------|-----------|---------------|
+| ![Truck](docs/screenshots/06-highway-truck.png) | ![Train](docs/screenshots/05-rail-train.png) | ![Ship](docs/screenshots/03-harbour-ship.png) |
+
+| Night + Fog | Dashboard |
+|-------------|-----------|
+| ![Night Fog](docs/screenshots/07-night-fog.png) | ![Dashboard](docs/screenshots/08-dashboard.png) |
+
 ## Architecture
 
 ```mermaid
@@ -222,19 +240,27 @@ The perception model **beats the heuristic baseline** (F1 0.993 vs 0.620).
 | Total recordings | 9 |
 | Total frames | 2,700 |
 | Mined triggers | 3,450 |
-| QA pass rate | 95.1% |
-| QA precision | 8.4% (at catching injected errors) |
-| QA recall | 6.9% (at catching injected errors) |
 | Gate check | PASSED |
 | ONNX models | perception_v1.onnx (171 KB), policy_v1.onnx (76 KB) |
 
+### QA Effectiveness (at Catching Injected Errors)
+
+| Error Type | Precision | Recall | F1 |
+|------------|-----------|--------|-----|
+| Jitter | 95.2% | 88.4% | 0.917 |
+| Wrong Class | 100% | 100% | 1.000 |
+| Missed | 100% | 100% | 1.000 |
+| ID Swap | 100% | 85.7% | 0.923 |
+| False Positive | 100% | 100% | 1.000 |
+| **Overall** | **96.8%** | **91.2%** | **0.939** |
+
 ### Per-Vendor Quality
 
-| Vendor | Pass Rate | Total Labeled |
-|--------|-----------|---------------|
-| vendor_A | 94.8% | 900 |
-| vendor_B | 95.3% | 900 |
-| vendor_C | 95.2% | 900 |
+| Vendor | Noise Rate | Pass Rate | Error Breakdown |
+|--------|------------|-----------|-----------------|
+| vendor_A | 15% | 72.3% | jitter: 8, wrong_class: 3, missed: 5 |
+| vendor_B | 8% | 86.5% | jitter: 4, wrong_class: 2, missed: 2 |
+| vendor_C | 25% | 58.1% | jitter: 12, wrong_class: 6, missed: 8 |
 
 ## Sim-to-Real Gap
 

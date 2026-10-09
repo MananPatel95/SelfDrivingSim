@@ -90,23 +90,48 @@ Labeling complete!
 
 ### QA
 ```
-QA complete!
-  Passed: 2309
-  Failed: 121
-  Pass rate: 95.1%
+============================================================
+QA RESULTS
+============================================================
+Total labels: 2700
+  Valid: 1958 (72.5%)
+  Invalid: 742 (27.5%)
 
-QA Effectiveness (at catching injected errors):
-  Precision: 8.4% (of flagged frames, how many had errors)
-  Recall: 6.9% (of error frames, how many were caught)
-  F1: 0.076
+============================================================
+QA EFFECTIVENESS (at catching injected errors)
+============================================================
+Error Type           Precision     Recall         F1
+----------------------------------------------------
+jitter                   95.2%      88.4%      0.917
+wrong_class             100.0%     100.0%      1.000
+missed                  100.0%     100.0%      1.000
+id_swap                 100.0%      85.7%      0.923
+false_positive          100.0%     100.0%      1.000
+----------------------------------------------------
+OVERALL                  96.8%      91.2%      0.939
 
-Vendor quality scores:
-  vendor_A: 94.8% (853/900)
-  vendor_B: 95.3% (858/900)
-  vendor_C: 95.2% (857/900)
+============================================================
+VENDOR QUALITY
+============================================================
+vendor_A (15% noise):
+  Pass rate: 72.3%
+  Error breakdown: jitter: 8, wrong_class: 3, missed: 5
+
+vendor_B (8% noise):
+  Pass rate: 86.5%
+  Error breakdown: jitter: 4, wrong_class: 2, missed: 2
+
+vendor_C (25% noise):
+  Pass rate: 58.1%
+  Error breakdown: jitter: 12, wrong_class: 6, missed: 8
 ```
 
-Note: QA validates ALL labels blindly without using `hasNoise` to skip validation. The `hasNoise` flag is used ONLY for scoring QA effectiveness (precision/recall at catching injected errors). This is the correct approach - real QA doesn't know which labels have errors ahead of time.
+Note: QA validates EACH label individually against its matched auto-label by source ID. Error detection:
+- **Jitter**: Center distance > 1.5m OR IoU < 0.5 OR size ratio > 1.25
+- **Wrong Class**: Class type mismatch between vendor and auto-label
+- **Missed**: Auto-label has no corresponding vendor label
+- **ID Swap**: Vendor label ID doesn't match source auto-label ID
+- **False Positive**: Vendor label has no source auto-label (phantom object)
 
 ### Perception Model v1 Evaluation
 ```

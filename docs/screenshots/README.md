@@ -1,37 +1,54 @@
 # AUTONOMY CITY Screenshots
 
-Documentation screenshots showing the game's key features.
+Screenshots demonstrating the key features of AUTONOMY CITY.
 
-## Screenshots
+## Core Features
 
-### 1. Main Game View (Tesla-style)
-![Main Game View](01-main-game-view-tesla-style.webp)
+### 01-city-view.png
+Default city view with blue ego vehicle, buildings, roads, and traffic.
 
-3D city view with F1: Tesla-style vision-only approach selected. Shows the blue autonomous vehicle in the urban environment.
+### 02-gt-overlay.png
+Ground truth overlay (G key) showing detection boxes:
+- Green = matched detections
+- Red = false negatives
+- Orange = false positives
 
-### 2. Info Card Panel
-![Info Card](02-info-card-tesla-style.webp)
+### 02-waabi-bev.png
+Waabi-style BEV overlay (F3) showing:
+- Occupancy heatmaps (current, +1s, +2s, +3s)
+- Sim World variant table (20+ variants with pass/fail)
 
-Info Card (toggled with 'I' key) showing detailed information about the Tesla-style approach:
-- Sensors used
-- Internal representation
-- Strengths and weaknesses
-- Real-world example
+### 04-compare-mode.png
+Compare mode (M key) split-screen:
+- Left: Tesla-style voxels with depth jitter
+- Right: Waymo-style point cloud + fused boxes
+- Detection timing differences shown
 
-### 3. Compare Mode (Split Screen)
-![Compare Mode](03-compare-mode-split-screen.webp)
+## Specialized Zones
 
-Compare Mode (toggled with 'M' key) showing split-screen view with:
-- F1: Tesla-style on the left
-- F2: Waymo-style on the right
-- Detection timing information for both approaches
+### 05-rail-train.png
+Rail zone (F5) showing:
+- Blue train on tracks
+- Moving Block signaling HUD
+- Level crossing warning
 
-### 4. Waymo-style View
-![Waymo Style](04-waymo-style-view.webp)
+### 06-highway-truck.png
+Highway zone (F4) showing:
+- 18-wheeler truck
+- FMCW radar HUD with velocity coloring
+- Braking distance vs detection range
 
-F2: Waymo-style multi-sensor approach with lidar/radar visualization and HD map integration.
+### 03-harbour-ship.png
+Harbour zone (F6) showing:
+- Container ship on water
+- Navigation buoys
+- COLREGs HUD (Rule 14 head-on)
+- AIS target tracking (CPA/TCPA)
 
-### 5. Occluded Pedestrian Scenario
-![Occluded Pedestrian](05-occluded-pedestrian-scenario.webp)
+## Environment Effects
 
-Scenario #2 (triggered with '2' key) demonstrating the occluded pedestrian challenge - a pedestrian about to emerge from behind an obstacle vehicle.
+### 07-night-fog.png
+Night mode with fog showing degraded visibility.
+
+### 08-dashboard.png
+Dashboard with model selector showing learned models.
