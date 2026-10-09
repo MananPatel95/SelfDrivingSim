@@ -412,13 +412,12 @@
     
     <!-- View Switcher -->
     <div id="view-switcher" class="hud hud-interactive">
-      <button class="view-btn active" data-profile="baseline_lidar">F1: Lidar Baseline</button>
-      <button class="view-btn" data-profile="tesla">F2: Tesla-style</button>
-      <button class="view-btn" data-profile="waymo">F3: Waymo-style</button>
-      <button class="view-btn" data-profile="waabi">F4: Waabi-style</button>
-      <button class="view-btn" data-profile="aurora">F5: Aurora-style</button>
-      <button class="view-btn" data-profile="rail">F6: Rail</button>
-      <button class="view-btn" data-profile="maritime">F7: Maritime</button>
+      <button class="view-btn active" data-profile="tesla">F1: Tesla-style</button>
+      <button class="view-btn" data-profile="waymo">F2: Waymo-style</button>
+      <button class="view-btn" data-profile="waabi">F3: Waabi-style</button>
+      <button class="view-btn" data-profile="aurora">F4: Aurora FMCW</button>
+      <button class="view-btn" data-profile="rail">F5: Train</button>
+      <button class="view-btn" data-profile="maritime">F6: Ship</button>
     </div>
     
     <!-- Status Panel -->
@@ -483,10 +482,12 @@
       <div><span class="control-key">R</span> Record</div>
       <div><span class="control-key">N</span> Day/Night</div>
       <div><span class="control-key">M</span> Compare Mode</div>
-      <div><span class="control-key">F1-F7</span> Switch Stack</div>
-      <div><span class="control-key">1-3</span> Scenarios (jaywalker, occluded, cut-in)</div>
-      <div><span class="control-key">4</span> Cycle Weather</div>
-      <div><span class="control-key">5-7</span> More scenarios (stalled, rain, fog)</div>
+      <div><span class="control-key">F1-F6</span> Switch Stack</div>
+      <div><span class="control-key">1</span> Jaywalker</div>
+      <div><span class="control-key">2</span> Occluded pedestrian</div>
+      <div><span class="control-key">3</span> Vehicle cut-in</div>
+      <div><span class="control-key">4</span> Rain/Fog weather</div>
+      <div><span class="control-key">5</span> Context obstacle</div>
     </div>
     
     <!-- Ride Request Popup -->

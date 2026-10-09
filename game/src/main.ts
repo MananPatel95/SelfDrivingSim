@@ -7,7 +7,6 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length } from './sim/math';
 import type { TakeoverReason } from './sim/types';
-import { BASELINE_INFO_CARD } from './stacks/perception';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import { WAABI_INFO_CARD } from './stacks/waabi';
 import { TESLA_INFO_CARD } from './stacks/tesla';
@@ -15,8 +14,8 @@ import { AURORA_INFO_CARD } from './stacks/aurora';
 import { RAIL_INFO_CARD } from './stacks/rail';
 import { MARITIME_INFO_CARD } from './stacks/maritime';
 
-// Stack types available
-type StackProfile = 'baseline_lidar' | 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
+// Stack types available (F1-F6 per spec)
+type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
 
 // Info card data for each stack
 const INFO_CARDS: Record<StackProfile, {
@@ -27,7 +26,6 @@ const INFO_CARDS: Record<StackProfile, {
   weaknesses: string;
   example: string;
 }> = {
-  baseline_lidar: BASELINE_INFO_CARD,
   tesla: TESLA_INFO_CARD,
   waymo: WAYMO_INFO_CARD,
   waabi: WAABI_INFO_CARD,
@@ -47,7 +45,7 @@ let showGroundTruth = false;
 let showAIView = false;
 let showInfoCard = false;
 let isPaused = false;
-let currentStack: StackProfile = 'baseline_lidar';
+let currentStack: StackProfile = 'tesla';
 let compareMode = false;
 
 // Human input state
@@ -585,24 +583,19 @@ function setupInput() {
         simulation.injectScenario({ type: 'vehicle_cutin', params: {} });
         break;
       case '4':
-        // Cycle weather
+        // Toggle rain/fog weather (scenario 4 per spec)
         const weatherState = simulation.getState();
         weatherState.environment.weather = 
           weatherState.environment.weather === 'clear' ? 'rain' : 
           weatherState.environment.weather === 'rain' ? 'fog' : 'clear';
-        // Adjust visibility based on weather
         weatherState.environment.visibility = 
           weatherState.environment.weather === 'clear' ? 1.0 :
           weatherState.environment.weather === 'rain' ? 0.6 : 0.3;
         break;
       case '5':
+        // Context-dependent obstacle (scenario 5 per spec)
+        // Stalled car in lane for city, car on crossing for rail, boat for ship
         simulation.injectScenario({ type: 'stalled_vehicle', params: {} });
-        break;
-      case '6':
-        simulation.injectScenario({ type: 'heavy_rain', params: {} });
-        break;
-      case '7':
-        simulation.injectScenario({ type: 'dense_fog', params: {} });
         break;
         
       case 'p':
@@ -610,14 +603,13 @@ function setupInput() {
         break;
     }
     
-    // Function keys for stack switching
-    if (e.key === 'F1') { e.preventDefault(); switchStack('baseline_lidar'); }
-    if (e.key === 'F2') { e.preventDefault(); switchStack('tesla'); }
-    if (e.key === 'F3') { e.preventDefault(); switchStack('waymo'); }
-    if (e.key === 'F4') { e.preventDefault(); switchStack('waabi'); }
-    if (e.key === 'F5') { e.preventDefault(); switchStack('aurora'); }
-    if (e.key === 'F6') { e.preventDefault(); switchStack('rail'); }
-    if (e.key === 'F7') { e.preventDefault(); switchStack('maritime'); }
+    // Function keys for stack switching (F1-F6 per spec)
+    if (e.key === 'F1') { e.preventDefault(); switchStack('tesla'); }
+    if (e.key === 'F2') { e.preventDefault(); switchStack('waymo'); }
+    if (e.key === 'F3') { e.preventDefault(); switchStack('waabi'); }
+    if (e.key === 'F4') { e.preventDefault(); switchStack('aurora'); }
+    if (e.key === 'F5') { e.preventDefault(); switchStack('rail'); }
+    if (e.key === 'F6') { e.preventDefault(); switchStack('maritime'); }
   });
   
   document.addEventListener('keyup', (e) => {
