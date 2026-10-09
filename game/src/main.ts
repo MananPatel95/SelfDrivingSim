@@ -13,7 +13,7 @@ import { TESLA_INFO_CARD } from './stacks/tesla';
 import { AURORA_INFO_CARD } from './stacks/aurora';
 import { RAIL_INFO_CARD } from './stacks/rail';
 import { MARITIME_INFO_CARD } from './stacks/maritime';
-import { generateHighwayMap, generateRailMap, generateHarbourMap } from './sim/world';
+import { generateHighwayMap, generateRailMap } from './sim/world';
 
 // Stack types available (F1-F6 per spec)
 type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
@@ -707,51 +707,64 @@ function clearZoneObjects() {
 
 // Setup harbour zone with water, buoys, ships
 function setupHarbourZone() {
-  const harbourMap = generateHarbourMap(Date.now());
+  // Hide city ground, use water instead
+  groundMesh.visible = false;
   
-  // Water surface
-  const waterGeo = new THREE.PlaneGeometry(1200, 2200);
+  // Water surface - large ocean-like area
+  const waterGeo = new THREE.PlaneGeometry(2000, 2000);
   const waterMat = new THREE.MeshStandardMaterial({
     color: 0x1a5276,
-    roughness: 0.1,
-    metalness: 0.3,
+    roughness: 0.2,
+    metalness: 0.4,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.95,
   });
   waterMesh = new THREE.Mesh(waterGeo, waterMat);
   waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.y = -0.5;
+  waterMesh.position.set(0, -1, 0);
   scene.add(waterMesh);
   
-  // Update ground to look like quay
-  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x555555);
-  groundMesh.position.x = -600;
+  // Add buoys closer to origin for visibility (scale down positions)
+  const buoyPositions = [
+    { x: -30, z: -50, type: 'port' as const },
+    { x: 30, z: -50, type: 'starboard' as const },
+    { x: -30, z: 50, type: 'port' as const },
+    { x: 30, z: 50, type: 'starboard' as const },
+    { x: 0, z: 0, type: 'fairway' as const },
+  ];
   
-  // Add buoys
-  harbourMap.buoys.forEach(buoy => {
-    const buoyGeo = new THREE.ConeGeometry(2, 4, 8);
+  buoyPositions.forEach(buoy => {
+    const buoyGeo = new THREE.ConeGeometry(2, 6, 8);
     const buoyMat = new THREE.MeshStandardMaterial({
       color: buoy.type === 'port' ? 0xff0000 : (buoy.type === 'starboard' ? 0x00ff00 : 0xffff00),
+      emissive: buoy.type === 'port' ? 0x330000 : (buoy.type === 'starboard' ? 0x003300 : 0x333300),
     });
-    const buoyMesh = new THREE.Mesh(buoyGeo, buoyMat);
-    buoyMesh.position.set(buoy.position.x, 2, buoy.position.y);
-    buoyMesh.castShadow = true;
-    scene.add(buoyMesh);
-    buoyMeshes.push(buoyMesh);
+    const buoyMeshObj = new THREE.Mesh(buoyGeo, buoyMat);
+    buoyMeshObj.position.set(buoy.x, 2, buoy.z);
+    buoyMeshObj.castShadow = true;
+    scene.add(buoyMeshObj);
+    buoyMeshes.push(buoyMeshObj);
   });
   
-  // Add ships from AIS targets
-  harbourMap.aisTargets.forEach((target, i) => {
+  // Add other ships (scaled down for visibility)
+  const shipPositions = [
+    { x: -80, z: 100, heading: Math.PI / 4, name: 'CARGO STAR' },
+    { x: 60, z: -80, heading: -Math.PI / 3, name: 'TANKER PRIME' },
+    { x: 100, z: 150, heading: Math.PI, name: 'FERRY SWIFT' },
+  ];
+  
+  shipPositions.forEach((target, i) => {
     const shipGroup = createShipMesh();
-    shipGroup.position.set(target.position.x, 1, target.position.y);
+    shipGroup.scale.set(0.1, 0.1, 0.1); // Scale down to 10%
+    shipGroup.position.set(target.x, 1, target.z);
     shipGroup.rotation.y = -target.heading + Math.PI / 2;
     scene.add(shipGroup);
     entityMeshes.set(5000 + i, shipGroup as unknown as THREE.Mesh);
   });
   
-  // Update sky color for harbour
-  scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 200, 1500);
+  // Sky and fog for maritime
+  scene.background = new THREE.Color(0x6699cc);
+  scene.fog = new THREE.Fog(0x6699cc, 100, 800);
 }
 
 // Create ship mesh
@@ -920,8 +933,9 @@ function setupHighwayZone() {
   const highwayMap = generateHighwayMap(Date.now());
   
   // Update ground to highway asphalt
+  groundMesh.visible = true;
   (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x2a2a2a);
-  groundMesh.position.x = 0;
+  groundMesh.position.set(0, 0, 0);
   
   // Draw highway lanes with markings
   const laneWidth = 3.7;
@@ -979,8 +993,10 @@ function setupHighwayZone() {
 
 // Setup city zone (default)
 function setupCityZone() {
+  groundMesh.visible = true;
   (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x333333);
-  groundMesh.position.x = 0;
+  groundMesh.position.set(0, 0, 0);
+  scene.background = new THREE.Color(0x87ceeb);
   scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
 }
 
@@ -992,12 +1008,19 @@ function updateEgoVehicle(profile: StackProfile) {
   switch (profile) {
     case 'aurora':
       egoMesh = createTruckMesh() as unknown as THREE.Mesh;
+      // Position on highway
+      egoMesh.position.set(5, 0, 0);
       break;
     case 'rail':
       egoMesh = createTrainMesh() as unknown as THREE.Mesh;
+      // Position on rail
+      egoMesh.position.set(0, 0, 0);
       break;
     case 'maritime':
       egoMesh = createOwnShipMesh() as unknown as THREE.Mesh;
+      // Position in harbour - scale down for visibility
+      egoMesh.scale.set(0.1, 0.1, 0.1);
+      egoMesh.position.set(0, 1, 0);
       break;
     default:
       // Car for tesla, waymo, waabi
@@ -1007,6 +1030,18 @@ function updateEgoVehicle(profile: StackProfile) {
   }
   
   scene.add(egoMesh);
+  
+  // Update camera to view the new ego vehicle
+  if (profile === 'maritime') {
+    camera.position.set(0, 50, 100);
+    camera.lookAt(0, 0, 0);
+  } else if (profile === 'rail') {
+    camera.position.set(0, 20, 50);
+    camera.lookAt(0, 0, -50);
+  } else if (profile === 'aurora') {
+    camera.position.set(5, 15, 30);
+    camera.lookAt(5, 0, -50);
+  }
 }
 
 // Create truck mesh for Aurora FMCW
