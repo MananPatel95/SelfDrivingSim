@@ -347,7 +347,48 @@ export class Simulation {
       case 'vehicle_cutin':
         this.spawnCutinVehicle();
         break;
+      case 'stalled_vehicle':
+        this.spawnStalledVehicle();
+        break;
+      case 'heavy_rain':
+        this.setWeather('rain', 0.5);
+        break;
+      case 'dense_fog':
+        this.setWeather('fog', 0.3);
+        break;
     }
+  }
+  
+  // Set weather conditions
+  private setWeather(weather: Environment['weather'], visibility: number): void {
+    this.state.environment.weather = weather;
+    this.state.environment.visibility = visibility;
+  }
+  
+  // Spawn a stalled vehicle in the lane ahead
+  private spawnStalledVehicle(): void {
+    const egoPos = this.state.ego.transform.position;
+    const egoYaw = this.state.ego.transform.rotation;
+    
+    // Spawn 30-40m ahead in the lane
+    const dist = 30 + this.rng.nextFloat(0, 10);
+    const spawnX = egoPos.x + Math.cos(egoYaw) * dist;
+    const spawnY = egoPos.y + Math.sin(egoYaw) * dist;
+    
+    // Add a stalled car with hazard lights (static)
+    this.state.worldMap.staticEntities.push({
+      id: this.entityIdCounter++,
+      classType: 'car',
+      transform: { position: vec3(spawnX, spawnY, 0.75), rotation: egoYaw },
+      boundingBox: {
+        center: vec3(spawnX, spawnY, 0.75),
+        size: vec3(4.5, 1.8, 1.5),
+        yaw: egoYaw,
+      },
+      velocity: vec3(0, 0, 0),
+      isStatic: true,
+      occlusionLevel: 0,
+    });
   }
   
   private spawnJaywalker(): void {

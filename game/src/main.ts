@@ -399,6 +399,19 @@ function updateHUD() {
   document.getElementById('detection-count')!.textContent = 
     String(state.perceptionTracks.filter(t => t.missedFrames === 0).length);
   
+  // Update weather status
+  const weatherText = state.environment.weather.charAt(0).toUpperCase() + 
+    state.environment.weather.slice(1) + 
+    (state.environment.timeOfDay === 'night' ? ' (Night)' : '');
+  document.getElementById('weather-status')!.textContent = weatherText;
+  
+  // Update weather styling
+  const weatherEl = document.getElementById('weather-status')!;
+  weatherEl.className = 'status-value';
+  if (state.environment.weather !== 'clear') {
+    weatherEl.classList.add('status-warning');
+  }
+  
   // Update control source styling
   const controlEl = document.getElementById('control-source')!;
   controlEl.className = 'status-value';
@@ -590,13 +603,24 @@ function setupInput() {
         simulation.injectScenario({ type: 'vehicle_cutin', params: {} });
         break;
       case '4':
+        // Cycle weather
         const weatherState = simulation.getState();
         weatherState.environment.weather = 
           weatherState.environment.weather === 'clear' ? 'rain' : 
           weatherState.environment.weather === 'rain' ? 'fog' : 'clear';
+        // Adjust visibility based on weather
+        weatherState.environment.visibility = 
+          weatherState.environment.weather === 'clear' ? 1.0 :
+          weatherState.environment.weather === 'rain' ? 0.6 : 0.3;
         break;
       case '5':
         simulation.injectScenario({ type: 'stalled_vehicle', params: {} });
+        break;
+      case '6':
+        simulation.injectScenario({ type: 'heavy_rain', params: {} });
+        break;
+      case '7':
+        simulation.injectScenario({ type: 'dense_fog', params: {} });
         break;
         
       case 'p':

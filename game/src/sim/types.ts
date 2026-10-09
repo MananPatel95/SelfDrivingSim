@@ -122,6 +122,8 @@ export type ScenarioType =
   | 'vehicle_cutin'
   | 'weather_change'
   | 'stalled_vehicle'
+  | 'heavy_rain'
+  | 'dense_fog'
   | 'level_crossing_blocked'
   | 'small_boat_crossing';
 
