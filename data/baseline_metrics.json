@@ -23,9 +23,10 @@
       "f1": 0.47
     },
     "cyclist": {
-      "precision": 0.45,
-      "recall": 0.40,
-      "f1": 0.42
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0
     }
-  }
+  },
+  "note": "Cyclist baseline set to 0 as simulation currently does not generate cyclist scenarios"
 }

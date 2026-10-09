@@ -1,0 +1,9 @@
+{
+  "totalRecordings": 9,
+  "totalTriggers": 3450,
+  "triggerCounts": {
+    "false_negative": 1389,
+    "rare_scenario": 2025,
+    "disengagement": 36
+  }
+}

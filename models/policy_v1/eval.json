@@ -1,0 +1,7 @@
+{
+  "modelType": "policy",
+  "totalFrames": 100,
+  "accelMAE": 0.25428658473596977,
+  "steerMAE": 0.06637550385797202,
+  "actionMSE": 0.10839231857937529
+}

@@ -1,0 +1,22 @@
+{
+  "version": "1.0.0",
+  "profile": "baseline_lidar",
+  "scenarioSeed": 1,
+  "startTimestamp": 1791510728425,
+  "environment": {
+    "timeOfDay": "day",
+    "weather": "clear",
+    "visibility": 1
+  },
+  "metadata": {
+    "totalFrames": 300,
+    "duration": 29.9,
+    "totalTakeovers": 0,
+    "totalCollisions": 0,
+    "distanceTraveled": 300.78279400315984,
+    "scenarios": [
+      "jaywalker"
+    ]
+  },
+  "frameCount": 300
+}

@@ -1,0 +1,16 @@
+{
+  "modelType": "perception",
+  "version": "v1",
+  "dataVersion": "unknown",
+  "trainSamples": 25632,
+  "metrics": {
+    "bestValAcc": 1.0,
+    "bestValLoss": null
+  },
+  "onnxPath": "models/perception_v1.onnx",
+  "limitations": [
+    "Trained on simulated data only",
+    "Limited object classes",
+    "Does not generalize to real-world data without fine-tuning"
+  ]
+}

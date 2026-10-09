@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AUTONOMY CITY - Metrics Report</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header {
+            background: linear-gradient(135deg, #0066cc, #004499);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        header p { opacity: 0.8; }
+        .section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section h2 {
+            color: #0066cc;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #0066cc;
+        }
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .bar {
+            height: 20px;
+            background: #0066cc;
+            border-radius: 4px;
+        }
+        .bar-container {
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .disclaimer {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>AUTONOMY CITY</h1>
+        <p>How Machines See - Metrics Report</p>
+        <p>Generated: 2026-10-09 02:03:06</p>
+    </header>
+    
+    <div class="container">
+        <div class="disclaimer">
+            <strong>Disclaimer:</strong> Simplified educational models based on public information. 
+            Not affiliated with or endorsed by any company named. 
+            These models are trained on simulated data and would not transfer to real-world applications without significant additional work.
+        </div>
+        
+        <div class="section">
+            <h2>Overview</h2>
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-value">2</div>
+                    <div class="metric-label">Model Versions</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">25,632</div>
+                    <div class="metric-label">Training Samples</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">1</div>
+                    <div class="metric-label">Gates Passed</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Perception Model</h2>
+            <table>
+                <tr>
+                    <th>Class</th>
+                    <th>Precision</th>
+                    <th>Recall</th>
+                    <th>F1 Score</th>
+                </tr>
+
+                <tr>
+                    <td>car</td>
+                    <td>1.000</td>
+                    <td>0.983</td>
+                    <td>0.991</td>
+                </tr>
+
+                <tr>
+                    <td>truck</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                </tr>
+
+                <tr>
+                    <td>bus</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                </tr>
+
+                <tr>
+                    <td>pedestrian</td>
+                    <td>1.000</td>
+                    <td>0.988</td>
+                    <td>0.994</td>
+                </tr>
+
+                <tr>
+                    <td>cyclist</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                </tr>
+
+                <tr>
+                    <td>bicycle</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                </tr>
+
+                <tr>
+                    <td>motorcycle</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                    <td>0.000</td>
+                </tr>
+
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>Policy Model</h2>
+            <div class="metric-grid">
+                <div class="metric-card">
+                    <div class="metric-value">0.254</div>
+                    <div class="metric-label">Acceleration MAE (m/s²)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">0.066</div>
+                    <div class="metric-label">Steering MAE</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Sim-to-Real Gap</h2>
+            <p>These models are trained entirely on simulated data and would require significant additional work to transfer to real-world autonomous driving:</p>
+            <ul style="margin: 15px 0; padding-left: 20px;">
+                <li><strong>Sensor simulation fidelity:</strong> Real lidar, radar, and cameras have noise characteristics, artifacts, and failure modes not captured here.</li>
+                <li><strong>Domain shift:</strong> Real-world scenes have vastly more variety in lighting, weather, object appearances, and road conditions.</li>
+                <li><strong>Edge cases:</strong> The simulated scenarios cover only a tiny fraction of the challenging situations encountered in real driving.</li>
+                <li><strong>Safety validation:</strong> Real autonomous systems require extensive real-world testing, formal verification, and regulatory approval.</li>
+            </ul>
+        </div>
+    </div>
+    
+    <footer>
+        <p>AUTONOMY CITY - Educational Autonomous Vehicle Simulation</p>
+        <p>Simplified educational models based on public information. Not affiliated with or endorsed by any company named.</p>
+    </footer>
+</body>
+</html>

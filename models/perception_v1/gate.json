@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "name": "overall_f1",
+      "passed": true,
+      "candidate": 0.992831541218638,
+      "baseline": 0.62,
+      "message": "Overall F1: 0.993 vs baseline 0.620"
+    },
+    {
+      "name": "pedestrian_recall_safety",
+      "passed": true,
+      "candidate": 0.9875735775016351,
+      "baseline": 0.45,
+      "tolerance": 0.02,
+      "message": "Pedestrian recall: 0.988 vs baseline 0.450 (tolerance=0.02)"
+    },
+    {
+      "name": "cyclist_recall_safety",
+      "passed": true,
+      "candidate": 0,
+      "baseline": 0.0,
+      "tolerance": 0.02,
+      "message": "Cyclist recall: 0.000 vs baseline 0.000"
+    }
+  ],
+  "candidate": "models/perception_v1/eval.json",
+  "baseline": "data/baseline_metrics.json"
+}

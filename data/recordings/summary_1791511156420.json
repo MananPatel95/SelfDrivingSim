@@ -1,0 +1,94 @@
+{
+  "profile": "baseline_lidar",
+  "scenarios": [
+    "all"
+  ],
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "seconds": 30,
+  "oracleSupervisor": true,
+  "results": [
+    {
+      "seed": 1,
+      "environment": "day_clear",
+      "frames": 300,
+      "takeovers": 0,
+      "distance": 300.78279400315984,
+      "filename": "baseline_lidar_seed1_day_clear_1791510771420"
+    },
+    {
+      "seed": 1,
+      "environment": "day_rain",
+      "frames": 300,
+      "takeovers": 0,
+      "distance": 300.78279400315984,
+      "filename": "baseline_lidar_seed1_day_rain_1791510818765"
+    },
+    {
+      "seed": 1,
+      "environment": "night_clear",
+      "frames": 300,
+      "takeovers": 0,
+      "distance": 300.78279400315984,
+      "filename": "baseline_lidar_seed1_night_clear_1791510865786"
+    },
+    {
+      "seed": 2,
+      "environment": "day_clear",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed2_day_clear_1791510914106"
+    },
+    {
+      "seed": 2,
+      "environment": "day_rain",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed2_day_rain_1791510961910"
+    },
+    {
+      "seed": 2,
+      "environment": "night_clear",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed2_night_clear_1791511010232"
+    },
+    {
+      "seed": 3,
+      "environment": "day_clear",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed3_day_clear_1791511059071"
+    },
+    {
+      "seed": 3,
+      "environment": "day_rain",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed3_day_rain_1791511107048"
+    },
+    {
+      "seed": 3,
+      "environment": "night_clear",
+      "frames": 300,
+      "takeovers": 6,
+      "distance": 298.68084871183635,
+      "filename": "baseline_lidar_seed3_night_clear_1791511156310"
+    }
+  ],
+  "summary": {
+    "completedRuns": 9,
+    "totalRuns": 9,
+    "totalFrames": 2700,
+    "totalTakeovers": 36,
+    "totalDistance": 2694.433474280498
+  }
+}

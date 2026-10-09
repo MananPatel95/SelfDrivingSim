@@ -1,0 +1,104 @@
+{
+  "modelType": "perception",
+  "totalFrames": 100,
+  "overall": {
+    "precision": 1.0,
+    "recall": 0.9857651245551602,
+    "f1": 0.992831541218638,
+    "tp": 4986,
+    "fp": 0,
+    "fn": 72
+  },
+  "perClass": {
+    "car": {
+      "precision": 1.0,
+      "recall": 0.983,
+      "f1": 0.9914271306101865,
+      "tp": 1966,
+      "fp": 0,
+      "fn": 34
+    },
+    "truck": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "bus": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "pedestrian": {
+      "precision": 1.0,
+      "recall": 0.9875735775016351,
+      "f1": 0.993747943402435,
+      "tp": 3020,
+      "fp": 0,
+      "fn": 38
+    },
+    "cyclist": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "bicycle": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "motorcycle": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    }
+  },
+  "perDistance": {
+    "0-10m": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "tp": 4986,
+      "fp": 0,
+      "fn": 0
+    },
+    "10-20m": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "20-30m": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    },
+    "30-50m": {
+      "precision": 0,
+      "recall": 0,
+      "f1": 0,
+      "tp": 0,
+      "fp": 0,
+      "fn": 0
+    }
+  }
+}
