@@ -150,45 +150,234 @@ function initThreeJS() {
   });
 }
 
-// Create mesh for entity
-function createEntityMesh(classType: string): THREE.Mesh {
-  let geometry: THREE.BufferGeometry;
-  let color: number;
-  
+// Create mesh for entity with proper styling
+function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x: number; y: number; z: number } } }): THREE.Mesh | THREE.Group {
   switch (classType) {
-    case 'car':
-      geometry = new THREE.BoxGeometry(4.5, 1.8, 1.5);
-      color = 0x888888;
-      break;
-    case 'truck':
-      geometry = new THREE.BoxGeometry(10, 2.5, 3);
-      color = 0x996633;
-      break;
-    case 'pedestrian':
-      geometry = new THREE.CapsuleGeometry(0.25, 1.2, 4, 8);
-      color = 0xff6600;
-      break;
-    case 'building':
-      geometry = new THREE.BoxGeometry(20, 20, 30);
-      color = 0x666666;
-      break;
-    case 'tree':
-      geometry = new THREE.ConeGeometry(2, 6, 8);
-      color = 0x228b22;
-      break;
-    case 'pole':
-      geometry = new THREE.CylinderGeometry(0.15, 0.15, 8, 8);
-      color = 0x444444;
-      break;
-    default:
-      geometry = new THREE.BoxGeometry(2, 2, 2);
-      color = 0x999999;
+    case 'car': {
+      // Create a more detailed car mesh
+      const group = new THREE.Group();
+      
+      // Body
+      const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.6);
+      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3366cc, metalness: 0.6, roughness: 0.4 });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.6;
+      body.castShadow = true;
+      group.add(body);
+      
+      // Cabin
+      const cabinGeo = new THREE.BoxGeometry(2.2, 0.8, 1.4);
+      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.2, roughness: 0.5 });
+      const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+      cabin.position.set(-0.3, 1.3, 0);
+      cabin.castShadow = true;
+      group.add(cabin);
+      
+      // Wheels
+      const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+      const wheelPositions: [number, number, number][] = [[1.2, 0.35, 0.8], [1.2, 0.35, -0.8], [-1.2, 0.35, 0.8], [-1.2, 0.35, -0.8]];
+      for (const [wx, wy, wz] of wheelPositions) {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.position.set(wx, wy, wz);
+        wheel.rotation.x = Math.PI / 2;
+        group.add(wheel);
+      }
+      
+      return group as unknown as THREE.Mesh;
+    }
+    
+    case 'truck': {
+      const group = new THREE.Group();
+      
+      // Cab
+      const cabGeo = new THREE.BoxGeometry(3, 2.2, 2.4);
+      const cabMat = new THREE.MeshStandardMaterial({ color: 0xcc6633, metalness: 0.4, roughness: 0.5 });
+      const cab = new THREE.Mesh(cabGeo, cabMat);
+      cab.position.set(2.5, 1.3, 0);
+      cab.castShadow = true;
+      group.add(cab);
+      
+      // Trailer
+      const trailerGeo = new THREE.BoxGeometry(7, 2.8, 2.4);
+      const trailerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+      const trailer = new THREE.Mesh(trailerGeo, trailerMat);
+      trailer.position.set(-1.5, 1.6, 0);
+      trailer.castShadow = true;
+      group.add(trailer);
+      
+      return group as unknown as THREE.Mesh;
+    }
+    
+    case 'pedestrian': {
+      const group = new THREE.Group();
+      
+      // Body
+      const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.8, 4, 8);
+      const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066];
+      const bodyMat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      body.position.y = 0.8;
+      body.castShadow = true;
+      group.add(body);
+      
+      // Head
+      const headGeo = new THREE.SphereGeometry(0.15, 8, 8);
+      const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
+      const head = new THREE.Mesh(headGeo, headMat);
+      head.position.y = 1.45;
+      group.add(head);
+      
+      return group as unknown as THREE.Mesh;
+    }
+    
+    case 'building': {
+      const group = new THREE.Group();
+      const size = entity?.boundingBox.size ?? { x: 20, y: 20, z: 30 };
+      
+      // Main building body
+      const buildingGeo = new THREE.BoxGeometry(size.x, size.z, size.y);
+      const buildingColors = [0x606070, 0x707080, 0x556065, 0x4a5560, 0x505a60];
+      const buildingMat = new THREE.MeshStandardMaterial({ 
+        color: buildingColors[Math.floor(Math.random() * buildingColors.length)],
+        roughness: 0.8 
+      });
+      const building = new THREE.Mesh(buildingGeo, buildingMat);
+      building.position.y = size.z / 2;
+      building.castShadow = true;
+      building.receiveShadow = true;
+      group.add(building);
+      
+      // Windows (grid pattern)
+      const windowMat = new THREE.MeshStandardMaterial({ color: 0x88bbff, emissive: 0x223344, emissiveIntensity: 0.3 });
+      const windowHeight = 2;
+      const windowWidth = 1.5;
+      const floors = Math.floor(size.z / 4);
+      const windowsPerSide = Math.floor(size.x / 3);
+      
+      for (let floor = 1; floor < floors; floor++) {
+        for (let w = 0; w < windowsPerSide; w++) {
+          const windowGeo = new THREE.PlaneGeometry(windowWidth, windowHeight);
+          
+          // Front face
+          const windowFront = new THREE.Mesh(windowGeo, windowMat);
+          windowFront.position.set(
+            (w - windowsPerSide / 2 + 0.5) * 3,
+            floor * 4,
+            size.y / 2 + 0.01
+          );
+          group.add(windowFront);
+          
+          // Back face
+          const windowBack = new THREE.Mesh(windowGeo, windowMat);
+          windowBack.position.set(
+            (w - windowsPerSide / 2 + 0.5) * 3,
+            floor * 4,
+            -size.y / 2 - 0.01
+          );
+          windowBack.rotation.y = Math.PI;
+          group.add(windowBack);
+        }
+      }
+      
+      return group as unknown as THREE.Mesh;
+    }
+    
+    case 'tree': {
+      const group = new THREE.Group();
+      
+      // Trunk
+      const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 2, 8);
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 1;
+      trunk.castShadow = true;
+      group.add(trunk);
+      
+      // Foliage
+      const foliageGeo = new THREE.ConeGeometry(2, 5, 8);
+      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+      const foliage = new THREE.Mesh(foliageGeo, foliageMat);
+      foliage.position.y = 4.5;
+      foliage.castShadow = true;
+      group.add(foliage);
+      
+      return group as unknown as THREE.Mesh;
+    }
+    
+    case 'pole': {
+      const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 8, 8);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.y = 4;
+      pole.castShadow = true;
+      return pole;
+    }
+    
+    default: {
+      const geometry = new THREE.BoxGeometry(2, 2, 2);
+      const material = new THREE.MeshStandardMaterial({ color: 0x999999 });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.castShadow = true;
+      return mesh;
+    }
+  }
+}
+
+// Create road network visualization
+function createRoads(worldMap: { lanes: Array<{ points: Array<{ position: { x: number; y: number }; width: number }> }> }) {
+  const roadGroup = new THREE.Group();
+  
+  // Road material
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
+  const laneMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+  
+  // Create road segments from lanes
+  const processedRoads = new Set<string>();
+  
+  for (const lane of worldMap.lanes) {
+    if (lane.points.length < 2) continue;
+    
+    for (let i = 0; i < lane.points.length - 1; i++) {
+      const p1 = lane.points[i]!;
+      const p2 = lane.points[i + 1]!;
+      
+      const key = `${Math.round(p1.position.x)},${Math.round(p1.position.y)}-${Math.round(p2.position.x)},${Math.round(p2.position.y)}`;
+      if (processedRoads.has(key)) continue;
+      processedRoads.add(key);
+      
+      const dx = p2.position.x - p1.position.x;
+      const dy = p2.position.y - p1.position.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      if (length < 0.1) continue;
+      
+      const angle = Math.atan2(dy, dx);
+      const midX = (p1.position.x + p2.position.x) / 2;
+      const midY = (p1.position.y + p2.position.y) / 2;
+      
+      // Road surface
+      const roadWidth = (p1.width ?? 3.5) * 4;
+      const roadGeo = new THREE.PlaneGeometry(length, roadWidth);
+      const road = new THREE.Mesh(roadGeo, roadMat);
+      road.position.set(midX, 0.02, -midY);
+      road.rotation.x = -Math.PI / 2;
+      road.rotation.z = -angle;
+      road.receiveShadow = true;
+      roadGroup.add(road);
+      
+      // Lane markings (dashed center line)
+      if (i % 3 === 0) {
+        const lineGeo = new THREE.PlaneGeometry(length * 0.6, 0.15);
+        const line = new THREE.Mesh(lineGeo, laneMat);
+        line.position.set(midX, 0.03, -midY);
+        line.rotation.x = -Math.PI / 2;
+        line.rotation.z = -angle;
+        roadGroup.add(line);
+      }
+    }
   }
   
-  const material = new THREE.MeshStandardMaterial({ color });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  return mesh;
+  return roadGroup;
 }
 
 // Update entity meshes from simulation state
@@ -216,27 +405,23 @@ function updateEntityMeshes() {
     let mesh = entityMeshes.get(entity.id);
     
     if (!mesh) {
-      mesh = createEntityMesh(entity.classType);
+      mesh = createEntityMesh(entity.classType, entity) as THREE.Mesh;
       scene.add(mesh);
       entityMeshes.set(entity.id, mesh);
     }
     
-    // Update position and rotation
+    // Convert simulation coords (X=east, Y=north, Z=up) to Three.js (X=east, Y=up, Z=south)
+    // For buildings, transform.position.z is already at height/2, don't add more
+    const yOffset = entity.classType === 'building' ? 0 : 
+                    entity.classType === 'tree' ? 0 :
+                    entity.classType === 'pole' ? 0 : 0;
+    
     mesh.position.set(
       entity.transform.position.x,
-      entity.transform.position.z + entity.boundingBox.size.z / 2,
+      yOffset,
       -entity.transform.position.y
     );
     mesh.rotation.y = -entity.transform.rotation;
-    
-    // Scale for buildings (variable size)
-    if (entity.classType === 'building') {
-      mesh.scale.set(
-        entity.boundingBox.size.x / 20,
-        entity.boundingBox.size.z / 30,
-        entity.boundingBox.size.y / 20
-      );
-    }
   }
 }
 
@@ -1001,6 +1186,59 @@ function animate(time: number) {
   }
 }
 
+// Create a more detailed ego vehicle mesh
+function createEgoVehicle(): THREE.Group {
+  const group = new THREE.Group();
+  
+  // Main body
+  const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.8);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0066cc, metalness: 0.7, roughness: 0.3 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 0.6;
+  body.castShadow = true;
+  group.add(body);
+  
+  // Cabin with windows
+  const cabinGeo = new THREE.BoxGeometry(2.4, 0.9, 1.6);
+  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.3, roughness: 0.4 });
+  const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+  cabin.position.set(-0.2, 1.35, 0);
+  cabin.castShadow = true;
+  group.add(cabin);
+  
+  // Roof sensor dome (lidar)
+  const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
+  const lidarMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  const lidar = new THREE.Mesh(lidarGeo, lidarMat);
+  lidar.position.set(0, 1.9, 0);
+  group.add(lidar);
+  
+  // Wheels
+  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const egoWheelPositions: [number, number, number][] = [[1.3, 0.35, 0.9], [1.3, 0.35, -0.9], [-1.3, 0.35, 0.9], [-1.3, 0.35, -0.9]];
+  for (const [wx, wy, wz] of egoWheelPositions) {
+    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+    wheel.position.set(wx, wy, wz);
+    wheel.rotation.x = Math.PI / 2;
+    group.add(wheel);
+  }
+  
+  // Headlights
+  const lightGeo = new THREE.CircleGeometry(0.15, 8);
+  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
+  const headlightL = new THREE.Mesh(lightGeo, lightMat);
+  headlightL.position.set(2.1, 0.6, 0.6);
+  headlightL.rotation.y = Math.PI / 2;
+  group.add(headlightL);
+  const headlightR = new THREE.Mesh(lightGeo, lightMat);
+  headlightR.position.set(2.1, 0.6, -0.6);
+  headlightR.rotation.y = Math.PI / 2;
+  group.add(headlightR);
+  
+  return group;
+}
+
 // Initialize and start
 async function init() {
   console.log('Initializing AUTONOMY CITY...');
@@ -1016,6 +1254,17 @@ async function init() {
     useOracle: false,
     maxDuration: 3600, // 1 hour
   });
+  
+  // Replace the basic ego mesh with a detailed one
+  scene.remove(egoMesh);
+  const egoGroup = createEgoVehicle();
+  scene.add(egoGroup);
+  egoMesh = egoGroup as unknown as THREE.Mesh;
+  
+  // Add road network
+  const state = simulation.getState();
+  const roads = createRoads(state.worldMap);
+  scene.add(roads);
   
   // Setup input handlers
   setupInput();

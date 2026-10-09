@@ -27,7 +27,7 @@ from typing import List, Optional
 from autonomycity.commands import (
     validate, mine, label, qa, split,
     train_perception, train_policy, evaluate, gate, export,
-    embed, search, compare, report
+    embed, search, compare, report, dagger
 )
 
 
@@ -145,6 +145,18 @@ def create_parser() -> argparse.ArgumentParser:
     p_report.add_argument("--metrics-dir", type=Path, required=True)
     p_report.add_argument("--output", type=Path, required=True)
     
+    # dagger
+    p_dagger = subparsers.add_parser("dagger", help="DAgger iteration for model improvement")
+    p_dagger.add_argument("--model", type=Path, required=True, help="Current model to improve")
+    p_dagger.add_argument("--dataset", type=Path, required=True, help="Existing dataset")
+    p_dagger.add_argument("--output", type=Path, required=True, help="Output directory for v2 model")
+    p_dagger.add_argument("--model-type", choices=["perception", "policy"], required=True)
+    p_dagger.add_argument("--episodes", type=int, default=10, help="Number of simulation episodes")
+    p_dagger.add_argument("--seed", type=int, default=42)
+    p_dagger.add_argument("--epochs", type=int, default=50)
+    p_dagger.add_argument("--batch-size", type=int, default=32)
+    p_dagger.add_argument("--lr", type=float, default=0.001)
+    
     return parser
 
 
@@ -172,6 +184,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "search": search.run,
         "compare": compare.run,
         "report": report.run,
+        "dagger": dagger.run,
     }
     
     try:

@@ -398,8 +398,89 @@
     #loading.hidden {
       display: none;
     }
+    
+    /* Compare mode split screen */
+    #compare-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: none;
+      z-index: 5;
+    }
+    
+    #compare-container.visible {
+      display: flex;
+    }
+    
+    .compare-panel {
+      flex: 1;
+      position: relative;
+      border: 2px solid #333;
+    }
+    
+    .compare-panel:first-child {
+      border-right: 1px solid #333;
+    }
+    
+    .compare-panel:last-child {
+      border-left: 1px solid #333;
+    }
+    
+    .compare-label {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: bold;
+      z-index: 10;
+    }
+    
+    .compare-detection-time {
+      position: absolute;
+      bottom: 60px;
+      left: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 12px;
+      border-radius: 6px;
+      z-index: 10;
+      min-width: 200px;
+    }
+    
+    .compare-detection-time h4 {
+      color: #0088ff;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    
+    .detection-timing-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0;
+      font-size: 12px;
+    }
+    
+    .timing-early {
+      color: #0f0;
+    }
+    
+    .timing-late {
+      color: #f80;
+    }
+    
+    .timing-missed {
+      color: #f00;
+    }
+    
+    .compare-canvas {
+      width: 100%;
+      height: 100%;
+    }
   </style>
-  <script type="module" crossorigin src="./assets/index-BhleqZm0.js"></script>
+  <script type="module" crossorigin src="./assets/index-CLxj-_Pg.js"></script>
 </head>
 <body>
   <div id="app">
@@ -410,6 +491,40 @@
     </div>
     
     <div id="canvas-container"></div>
+    
+    <!-- Compare Mode Split Screen -->
+    <div id="compare-container">
+      <div class="compare-panel" id="compare-left">
+        <div class="compare-label" id="compare-left-label">F1: Tesla-style</div>
+        <div class="compare-detection-time" id="compare-left-timing">
+          <h4>Detection Timing</h4>
+          <div class="detection-timing-row">
+            <span>Pedestrian #1</span>
+            <span class="timing-early" id="left-ped1-time">2.1s ago</span>
+          </div>
+          <div class="detection-timing-row">
+            <span>Vehicle #1</span>
+            <span class="timing-early" id="left-veh1-time">3.5s ago</span>
+          </div>
+        </div>
+        <canvas class="compare-canvas" id="compare-canvas-left"></canvas>
+      </div>
+      <div class="compare-panel" id="compare-right">
+        <div class="compare-label" id="compare-right-label">F2: Waymo-style</div>
+        <div class="compare-detection-time" id="compare-right-timing">
+          <h4>Detection Timing</h4>
+          <div class="detection-timing-row">
+            <span>Pedestrian #1</span>
+            <span class="timing-late" id="right-ped1-time">0.8s ago</span>
+          </div>
+          <div class="detection-timing-row">
+            <span>Vehicle #1</span>
+            <span class="timing-early" id="right-veh1-time">3.5s ago</span>
+          </div>
+        </div>
+        <canvas class="compare-canvas" id="compare-canvas-right"></canvas>
+      </div>
+    </div>
     
     <!-- View Switcher -->
     <div id="view-switcher" class="hud hud-interactive">

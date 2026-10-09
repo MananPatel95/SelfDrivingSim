@@ -94,16 +94,59 @@ loop: sample-data
 		--candidate models/perception_v1/eval.json \
 		--baseline data/baseline_metrics.json \
 		--output models/perception_v1/gate.json
-	@echo "Step 10: Exporting to ONNX..."
+	@echo "Step 10: DAgger iteration for perception v2..."
+	autonomycity dagger \
+		--model models/perception_v1 \
+		--dataset data/splits \
+		--output models/dagger_perception \
+		--model-type perception \
+		--episodes 5
+	@echo "Step 11: Evaluating perception v2..."
+	autonomycity eval \
+		--model models/dagger_perception/perception_v2 \
+		--benchmark data/splits/benchmark \
+		--output models/dagger_perception/perception_v2/eval.json \
+		--model-type perception
+	@echo "Step 12: Gate check v2 vs v1..."
+	autonomycity gate \
+		--candidate models/dagger_perception/perception_v2/eval.json \
+		--baseline models/perception_v1/eval.json \
+		--output models/dagger_perception/perception_v2/gate.json
+	@echo "Step 13: DAgger iteration for policy v2..."
+	autonomycity dagger \
+		--model models/policy_v1 \
+		--dataset data/splits \
+		--output models/dagger_policy \
+		--model-type policy \
+		--episodes 5
+	@echo "Step 14: Evaluating policy v2..."
+	autonomycity eval \
+		--model models/dagger_policy/policy_v2 \
+		--benchmark data/splits/benchmark \
+		--output models/dagger_policy/policy_v2/eval.json \
+		--model-type policy
+	@echo "Step 15: Exporting to ONNX..."
 	autonomycity export \
 		--model models/perception_v1 \
 		--output models/perception_v1.onnx \
 		--model-type perception
-	@echo "Step 11: Generating report..."
+	autonomycity export \
+		--model models/dagger_perception/perception_v2 \
+		--output models/perception_v2.onnx \
+		--model-type perception
+	autonomycity export \
+		--model models/policy_v1 \
+		--output models/policy_v1.onnx \
+		--model-type policy
+	autonomycity export \
+		--model models/dagger_policy/policy_v2 \
+		--output models/policy_v2.onnx \
+		--model-type policy
+	@echo "Step 16: Generating report..."
 	autonomycity report \
 		--metrics-dir models \
 		--output data/reports/report.html
-	@echo "Data engine loop complete!"
+	@echo "Data engine loop complete! (v1 + v2 models created)"
 
 # Run validation on recordings
 validate:
