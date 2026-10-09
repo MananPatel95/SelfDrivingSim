@@ -190,21 +190,19 @@ function initThreeJS() {
   sunLight.shadow.camera.bottom = -200;
   scene.add(sunLight);
   
-  // Ground
+  // Ground - grass/terrain base
   const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
   const groundMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x333333,
-    roughness: 0.9,
+    color: 0x2d5a27, // Grass green
+    roughness: 0.95,
   });
   groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
   groundMesh.rotation.x = -Math.PI / 2;
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
   
-  // Grid helper for roads
-  const gridHelper = new THREE.GridHelper(600, 60, 0x444444, 0x333333);
-  gridHelper.position.y = 0.01;
-  scene.add(gridHelper);
+  // Build proper city roads, sidewalks, crosswalks
+  buildCityRoads();
   
   // Ego vehicle
   const egoGeometry = new THREE.BoxGeometry(4.5, 1.8, 1.5);
@@ -220,6 +218,310 @@ function initThreeJS() {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+}
+
+// City road infrastructure meshes
+let cityRoadMeshes: THREE.Object3D[] = [];
+
+// Build proper city roads with lanes, sidewalks, crosswalks
+function buildCityRoads() {
+  // Clear any existing road meshes
+  for (const mesh of cityRoadMeshes) {
+    scene.remove(mesh);
+  }
+  cityRoadMeshes = [];
+  
+  const gridSize = 6;
+  const blockSize = 100;
+  const roadWidth = 14; // Total road width (2 lanes each direction + markings)
+  const sidewalkWidth = 3;
+  const laneWidth = 3.5;
+  const halfSize = (gridSize * blockSize) / 2;
+  
+  // Materials
+  const asphaltMat = new THREE.MeshStandardMaterial({ 
+    color: 0x1a1a1a, // Dark asphalt
+    roughness: 0.9,
+  });
+  const sidewalkMat = new THREE.MeshStandardMaterial({ 
+    color: 0x999999, // Concrete gray
+    roughness: 0.8,
+  });
+  const curbMat = new THREE.MeshStandardMaterial({ 
+    color: 0x888888,
+    roughness: 0.7,
+  });
+  const laneMarkingMat = new THREE.MeshStandardMaterial({ 
+    color: 0xffffcc, // Yellow center line
+    roughness: 0.5,
+  });
+  const whiteMarkingMat = new THREE.MeshStandardMaterial({ 
+    color: 0xffffff, // White lane lines
+    roughness: 0.5,
+  });
+  const crosswalkMat = new THREE.MeshStandardMaterial({ 
+    color: 0xffffff,
+    roughness: 0.6,
+  });
+  
+  // Create road segments for the grid
+  for (let i = 0; i <= gridSize; i++) {
+    const pos = -halfSize + i * blockSize;
+    
+    // North-South roads
+    const nsRoadGeo = new THREE.PlaneGeometry(roadWidth, gridSize * blockSize);
+    const nsRoad = new THREE.Mesh(nsRoadGeo, asphaltMat);
+    nsRoad.rotation.x = -Math.PI / 2;
+    nsRoad.position.set(pos, 0.01, 0);
+    nsRoad.receiveShadow = true;
+    scene.add(nsRoad);
+    cityRoadMeshes.push(nsRoad);
+    
+    // East-West roads  
+    const ewRoadGeo = new THREE.PlaneGeometry(gridSize * blockSize, roadWidth);
+    const ewRoad = new THREE.Mesh(ewRoadGeo, asphaltMat);
+    ewRoad.rotation.x = -Math.PI / 2;
+    ewRoad.position.set(0, 0.01, -pos);
+    ewRoad.receiveShadow = true;
+    scene.add(ewRoad);
+    cityRoadMeshes.push(ewRoad);
+    
+    // Center line markings (yellow dashed)
+    for (let j = 0; j < gridSize; j++) {
+      const segmentStart = -halfSize + j * blockSize + 10;
+      const segmentLength = blockSize - 20;
+      
+      // NS road center line
+      for (let k = 0; k < segmentLength; k += 6) {
+        const markGeo = new THREE.PlaneGeometry(0.15, 4);
+        const mark = new THREE.Mesh(markGeo, laneMarkingMat);
+        mark.rotation.x = -Math.PI / 2;
+        mark.position.set(pos, 0.02, -(segmentStart + k));
+        scene.add(mark);
+        cityRoadMeshes.push(mark);
+      }
+      
+      // EW road center line
+      for (let k = 0; k < segmentLength; k += 6) {
+        const markGeo = new THREE.PlaneGeometry(4, 0.15);
+        const mark = new THREE.Mesh(markGeo, laneMarkingMat);
+        mark.rotation.x = -Math.PI / 2;
+        mark.position.set(segmentStart + k, 0.02, -pos);
+        scene.add(mark);
+        cityRoadMeshes.push(mark);
+      }
+    }
+    
+    // White lane lines (between lanes)
+    for (let lane = 1; lane < 2; lane++) {
+      const offset = lane * laneWidth;
+      
+      // NS road white lines
+      for (let j = 0; j < gridSize; j++) {
+        const segmentStart = -halfSize + j * blockSize + 10;
+        for (let k = 0; k < blockSize - 20; k += 8) {
+          const markGeo = new THREE.PlaneGeometry(0.1, 3);
+          const markL = new THREE.Mesh(markGeo, whiteMarkingMat);
+          markL.rotation.x = -Math.PI / 2;
+          markL.position.set(pos - offset, 0.02, -(segmentStart + k));
+          scene.add(markL);
+          cityRoadMeshes.push(markL);
+          
+          const markR = new THREE.Mesh(markGeo, whiteMarkingMat);
+          markR.rotation.x = -Math.PI / 2;
+          markR.position.set(pos + offset, 0.02, -(segmentStart + k));
+          scene.add(markR);
+          cityRoadMeshes.push(markR);
+        }
+      }
+    }
+    
+    // Sidewalks along roads
+    // Left sidewalk (NS roads)
+    const swLeftGeo = new THREE.BoxGeometry(sidewalkWidth, 0.15, gridSize * blockSize);
+    const swLeft = new THREE.Mesh(swLeftGeo, sidewalkMat);
+    swLeft.position.set(pos - roadWidth / 2 - sidewalkWidth / 2, 0.075, 0);
+    swLeft.receiveShadow = true;
+    scene.add(swLeft);
+    cityRoadMeshes.push(swLeft);
+    
+    // Right sidewalk
+    const swRight = new THREE.Mesh(swLeftGeo, sidewalkMat);
+    swRight.position.set(pos + roadWidth / 2 + sidewalkWidth / 2, 0.075, 0);
+    swRight.receiveShadow = true;
+    scene.add(swRight);
+    cityRoadMeshes.push(swRight);
+    
+    // Curbs
+    const curbGeo = new THREE.BoxGeometry(0.2, 0.2, gridSize * blockSize);
+    const curbL = new THREE.Mesh(curbGeo, curbMat);
+    curbL.position.set(pos - roadWidth / 2, 0.1, 0);
+    scene.add(curbL);
+    cityRoadMeshes.push(curbL);
+    
+    const curbR = new THREE.Mesh(curbGeo, curbMat);
+    curbR.position.set(pos + roadWidth / 2, 0.1, 0);
+    scene.add(curbR);
+    cityRoadMeshes.push(curbR);
+  }
+  
+  // Crosswalks at intersections
+  for (let i = 0; i <= gridSize; i++) {
+    for (let j = 0; j <= gridSize; j++) {
+      const x = -halfSize + i * blockSize;
+      const z = -(-halfSize + j * blockSize);
+      
+      // Draw crosswalk stripes
+      const numStripes = 8;
+      const stripeWidth = 0.5;
+      const stripeLength = roadWidth - 2;
+      const stripeGap = 0.4;
+      
+      // NS crosswalk (crosses EW road)
+      for (let s = 0; s < numStripes; s++) {
+        const stripe = new THREE.Mesh(
+          new THREE.PlaneGeometry(stripeWidth, stripeLength),
+          crosswalkMat
+        );
+        stripe.rotation.x = -Math.PI / 2;
+        stripe.position.set(x - (numStripes / 2) * (stripeWidth + stripeGap) + s * (stripeWidth + stripeGap), 0.025, z + roadWidth / 2 + 2);
+        scene.add(stripe);
+        cityRoadMeshes.push(stripe);
+        
+        const stripe2 = stripe.clone();
+        stripe2.position.z = z - roadWidth / 2 - 2;
+        scene.add(stripe2);
+        cityRoadMeshes.push(stripe2);
+      }
+      
+      // EW crosswalk (crosses NS road)
+      for (let s = 0; s < numStripes; s++) {
+        const stripe = new THREE.Mesh(
+          new THREE.PlaneGeometry(stripeLength, stripeWidth),
+          crosswalkMat
+        );
+        stripe.rotation.x = -Math.PI / 2;
+        stripe.position.set(x + roadWidth / 2 + 2, 0.025, z - (numStripes / 2) * (stripeWidth + stripeGap) + s * (stripeWidth + stripeGap));
+        scene.add(stripe);
+        cityRoadMeshes.push(stripe);
+        
+        const stripe2 = stripe.clone();
+        stripe2.position.x = x - roadWidth / 2 - 2;
+        scene.add(stripe2);
+        cityRoadMeshes.push(stripe2);
+      }
+    }
+  }
+  
+  // Street lights at intersections
+  const lightPoleMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
+  const lightGlowMat = new THREE.MeshStandardMaterial({ 
+    color: 0xffffaa, 
+    emissive: 0xffffaa, 
+    emissiveIntensity: 0.5 
+  });
+  
+  for (let i = 0; i <= gridSize; i++) {
+    for (let j = 0; j <= gridSize; j++) {
+      const x = -halfSize + i * blockSize;
+      const z = -(-halfSize + j * blockSize);
+      
+      // Four corners of intersection
+      const corners: Array<[number, number]> = [
+        [roadWidth / 2 + 2, roadWidth / 2 + 2],
+        [roadWidth / 2 + 2, -roadWidth / 2 - 2],
+        [-roadWidth / 2 - 2, roadWidth / 2 + 2],
+        [-roadWidth / 2 - 2, -roadWidth / 2 - 2],
+      ];
+      
+      corners.forEach(([dx, dz]: [number, number]) => {
+        // Pole
+        const pole = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.15, 6, 8),
+          lightPoleMat
+        );
+        pole.position.set(x + dx, 3, z + dz);
+        pole.castShadow = true;
+        scene.add(pole);
+        cityRoadMeshes.push(pole);
+        
+        // Light fixture
+        const fixture = new THREE.Mesh(
+          new THREE.BoxGeometry(0.4, 0.15, 0.4),
+          lightGlowMat
+        );
+        fixture.position.set(x + dx, 6, z + dz);
+        scene.add(fixture);
+        cityRoadMeshes.push(fixture);
+      });
+    }
+  }
+  
+  // Traffic light posts at major intersections
+  const trafficLightMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  for (let i = 1; i < gridSize; i++) {
+    for (let j = 1; j < gridSize; j++) {
+      const x = -halfSize + i * blockSize;
+      const z = -(-halfSize + j * blockSize);
+      
+      // Traffic light on each corner
+      const positions = [
+        { x: x + roadWidth / 2 + 1, z: z + roadWidth / 2 + 1, rotY: -Math.PI / 4 },
+        { x: x - roadWidth / 2 - 1, z: z - roadWidth / 2 - 1, rotY: Math.PI * 3 / 4 },
+      ];
+      
+      positions.forEach(pos => {
+        const tlGroup = new THREE.Group();
+        
+        // Post
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.08, 4, 8),
+          trafficLightMat
+        );
+        post.position.y = 2;
+        tlGroup.add(post);
+        
+        // Light box
+        const lightBox = new THREE.Mesh(
+          new THREE.BoxGeometry(0.3, 0.8, 0.2),
+          trafficLightMat
+        );
+        lightBox.position.y = 4.2;
+        tlGroup.add(lightBox);
+        
+        // Red light
+        const redLight = new THREE.Mesh(
+          new THREE.CircleGeometry(0.08, 16),
+          new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.3 })
+        );
+        redLight.position.set(0, 4.45, 0.11);
+        tlGroup.add(redLight);
+        
+        // Yellow light  
+        const yellowLight = new THREE.Mesh(
+          new THREE.CircleGeometry(0.08, 16),
+          new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x444400, emissiveIntensity: 0.1 })
+        );
+        yellowLight.position.set(0, 4.2, 0.11);
+        tlGroup.add(yellowLight);
+        
+        // Green light
+        const greenLight = new THREE.Mesh(
+          new THREE.CircleGeometry(0.08, 16),
+          new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.3 })
+        );
+        greenLight.position.set(0, 3.95, 0.11);
+        tlGroup.add(greenLight);
+        
+        tlGroup.position.set(pos.x, 0, pos.z);
+        tlGroup.rotation.y = pos.rotY;
+        scene.add(tlGroup);
+        cityRoadMeshes.push(tlGroup);
+      });
+    }
+  }
+  
+  console.log(`Built city roads: ${cityRoadMeshes.length} meshes`);
 }
 
 // Create mesh for entity with proper styling
@@ -493,9 +795,23 @@ function updateEntityMeshes() {
       yOffset,
       -entity.transform.position.y
     );
-    mesh.rotation.y = -entity.transform.rotation;
+    // Add Math.PI for vehicles so they face their direction of travel
+    const isVehicle = entity.classType === 'car' || entity.classType === 'truck' || 
+                      entity.classType === 'bus' || entity.classType === 'motorcycle';
+    mesh.rotation.y = -entity.transform.rotation + (isVehicle ? Math.PI : 0);
   }
 }
+
+// Detection box colors by class
+const DETECTION_COLORS: Record<string, number> = {
+  car: 0x00ff00,       // Green
+  truck: 0x00cc00,     // Dark green
+  bus: 0x00aa00,       // Darker green  
+  pedestrian: 0xff00ff, // Magenta
+  cyclist: 0x00ffff,   // Cyan
+  motorcycle: 0xffff00, // Yellow
+  default: 0x00ff00,   // Green fallback
+};
 
 // Update detection visualization
 function updateDetectionMeshes() {
@@ -505,45 +821,31 @@ function updateDetectionMeshes() {
   }
   detectionMeshes.length = 0;
   
-  if (!showGroundTruth) return;
-  
   const state = simulation.getState();
   
-  // Get perception detections
+  // Get perception detections - ALWAYS show these
   const detections = state.perceptionTracks.filter(t => t.missedFrames === 0);
   
-  // Get ground truth
+  // Get ground truth for matching (used for GT overlay mode)
   const groundTruth = [
     ...state.trafficVehicles,
     ...state.pedestrians,
   ];
   
-  // Match detections to ground truth
+  // Always render detection boxes (color-coded by class)
   for (const det of detections) {
-    // Find matching ground truth
-    let matched = false;
-    for (const gt of groundTruth) {
-      const dx = det.box.center.x - gt.boundingBox.center.x;
-      const dy = det.box.center.y - gt.boundingBox.center.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < 2) {
-        matched = true;
-        break;
-      }
-    }
+    const boxColor = DETECTION_COLORS[det.classType] ?? DETECTION_COLORS.default;
     
-    // Create visualization box
     const geometry = new THREE.BoxGeometry(
       det.box.size.x,
       det.box.size.z,
       det.box.size.y
     );
     const material = new THREE.MeshBasicMaterial({
-      color: matched ? 0x00ff00 : 0xff8800, // Green = matched, Orange = false positive
+      color: boxColor,
       wireframe: true,
       transparent: true,
-      opacity: 0.8,
+      opacity: 0.9,
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(
@@ -556,40 +858,42 @@ function updateDetectionMeshes() {
     detectionMeshes.push(mesh);
   }
   
-  // Show false negatives (ground truth not detected)
-  for (const gt of groundTruth) {
-    let detected = false;
-    for (const det of detections) {
-      const dx = det.box.center.x - gt.boundingBox.center.x;
-      const dy = det.box.center.y - gt.boundingBox.center.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 2) {
-        detected = true;
-        break;
+  // In Ground Truth mode (G key), also show false negatives in red
+  if (showGroundTruth) {
+    for (const gt of groundTruth) {
+      let detected = false;
+      for (const det of detections) {
+        const dx = det.box.center.x - gt.boundingBox.center.x;
+        const dy = det.box.center.y - gt.boundingBox.center.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 2) {
+          detected = true;
+          break;
+        }
       }
-    }
-    
-    if (!detected) {
-      const geometry = new THREE.BoxGeometry(
-        gt.boundingBox.size.x,
-        gt.boundingBox.size.z,
-        gt.boundingBox.size.y
-      );
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xff0000, // Red = false negative
-        wireframe: true,
-        transparent: true,
-        opacity: 0.8,
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        gt.boundingBox.center.x,
-        gt.boundingBox.center.z + gt.boundingBox.size.z / 2,
-        -gt.boundingBox.center.y
-      );
-      mesh.rotation.y = -gt.boundingBox.yaw;
-      scene.add(mesh);
-      detectionMeshes.push(mesh);
+      
+      if (!detected) {
+        const geometry = new THREE.BoxGeometry(
+          gt.boundingBox.size.x,
+          gt.boundingBox.size.z,
+          gt.boundingBox.size.y
+        );
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xff0000, // Red = false negative (missed by perception)
+          wireframe: true,
+          transparent: true,
+          opacity: 0.8,
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(
+          gt.boundingBox.center.x,
+          gt.boundingBox.center.z + gt.boundingBox.size.z / 2,
+          -gt.boundingBox.center.y
+        );
+        mesh.rotation.y = -gt.boundingBox.yaw;
+        scene.add(mesh);
+        detectionMeshes.push(mesh);
+      }
     }
   }
 }
@@ -2521,9 +2825,10 @@ function animate(time: number) {
     simulation.step(dt, humanInput);
     
     // Update ego mesh
+    // Add Math.PI to flip the car so we see its rear (not headlights) from chase camera
     const egoPos = state.ego.transform.position;
     egoMesh.position.set(egoPos.x, 0.75, -egoPos.y);
-    egoMesh.rotation.y = -state.ego.transform.rotation;
+    egoMesh.rotation.y = -state.ego.transform.rotation + Math.PI;
     
     // Update other meshes
     updateEntityMeshes();

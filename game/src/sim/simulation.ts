@@ -333,23 +333,42 @@ export class Simulation {
   private spawnPedestrians(_worldMap: WorldMap, count: number): Pedestrian[] {
     const pedestrians: Pedestrian[] = [];
     
+    // City grid parameters (must match rendering)
+    const gridSize = 6;
+    const blockSize = 100;
+    const halfSize = (gridSize * blockSize) / 2;
+    const roadWidth = 14;
+    const sidewalkOffset = roadWidth / 2 + 1.5; // Place on sidewalk
+    
     for (let i = 0; i < count; i++) {
-      const x = this.rng.nextFloat(-200, 200);
-      const y = this.rng.nextFloat(-200, 200);
+      // Pick a random road to place pedestrian on sidewalk
+      const roadIndex = this.rng.nextInt(0, gridSize);
+      const roadPos = -halfSize + roadIndex * blockSize;
+      const alongRoad = this.rng.nextFloat(-halfSize + 20, halfSize - 20);
+      
+      // Randomly choose NS or EW road, left or right sidewalk
+      const isNSRoad = this.rng.nextFloat(0, 1) > 0.5;
+      const isLeftSide = this.rng.nextFloat(0, 1) > 0.5;
+      const sideOffset = isLeftSide ? -sidewalkOffset : sidewalkOffset;
+      
+      const x = isNSRoad ? roadPos + sideOffset : alongRoad;
+      const y = isNSRoad ? alongRoad : roadPos + sideOffset;
+      
+      const walkDir = isNSRoad ? (isLeftSide ? -Math.PI / 2 : Math.PI / 2) : (isLeftSide ? Math.PI : 0);
       
       pedestrians.push({
         id: this.entityIdCounter++,
         classType: 'pedestrian',
-        transform: { position: vec3(x, y, 0.9), rotation: this.rng.nextFloat(0, Math.PI * 2) },
+        transform: { position: vec3(x, y, 0.9), rotation: walkDir + this.rng.nextFloat(-0.3, 0.3) },
         boundingBox: {
           center: vec3(x, y, 0.9),
           size: vec3(0.5, 0.5, 1.7),
           yaw: 0,
         },
-        velocity: vec3(0, 0, 0),
+        velocity: vec3(Math.cos(walkDir) * 1.2, Math.sin(walkDir) * 1.2, 0), // Walking speed ~1.2 m/s
         isStatic: false,
         occlusionLevel: 0,
-        targetPosition: vec3(x + this.rng.nextFloat(-30, 30), y + this.rng.nextFloat(-30, 30), 0),
+        targetPosition: vec3(x + Math.cos(walkDir) * 50, y + Math.sin(walkDir) * 50, 0),
         state: 'walking',
         waitTime: 0,
       });
