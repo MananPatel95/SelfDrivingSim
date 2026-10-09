@@ -7,6 +7,52 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length } from './sim/math';
 import type { TakeoverReason } from './sim/types';
+import { BASELINE_INFO_CARD } from './stacks/perception';
+import { WAYMO_INFO_CARD } from './stacks/waymo';
+import { WAABI_INFO_CARD } from './stacks/waabi';
+import { TESLA_INFO_CARD } from './stacks/tesla';
+
+// Stack types available
+type StackProfile = 'baseline_lidar' | 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
+
+// Info card data for each stack
+const INFO_CARDS: Record<StackProfile, {
+  name: string;
+  sensors: string;
+  internals: string;
+  strengths: string;
+  weaknesses: string;
+  example: string;
+}> = {
+  baseline_lidar: BASELINE_INFO_CARD,
+  tesla: TESLA_INFO_CARD,
+  waymo: WAYMO_INFO_CARD,
+  waabi: WAABI_INFO_CARD,
+  aurora: {
+    name: 'Aurora-style: Trucking First',
+    sensors: 'Publicly described: long-range lidar, cameras, radar optimized for highway',
+    internals: 'Highway-focused perception, longer prediction horizons for trucking speeds, map-based routing',
+    strengths: 'Optimized for highway driving, longer range detection for high-speed operations',
+    weaknesses: 'Less focus on dense urban environments, requires detailed highway maps',
+    example: 'Aurora focuses on autonomous trucking with the Aurora Driver, emphasizing highway safety.',
+  },
+  rail: {
+    name: 'Rail: Fixed-path Autonomy',
+    sensors: 'Forward-facing lidar/radar, track circuit sensors, wayside signals',
+    internals: 'Fixed-path motion, signal-based control, track occupancy detection',
+    strengths: 'Simplified path planning (fixed track), centralized control possible',
+    weaknesses: 'Cannot avoid obstacles laterally, long stopping distances',
+    example: 'Rail autonomy uses fixed infrastructure and signaling for safe operations.',
+  },
+  maritime: {
+    name: 'Maritime: Open Water Autonomy',
+    sensors: 'Marine radar, AIS transponders, cameras, sonar',
+    internals: 'Long-range detection, collision regulations (COLREGS), sea clutter filtering',
+    strengths: 'More time to react due to slow speeds, existing maritime regulations',
+    weaknesses: 'Sea clutter, weather dependency, limited maneuverability of large vessels',
+    example: 'Maritime autonomy follows COLREGS collision avoidance rules on open water.',
+  },
+};
 
 // Game state
 let simulation: Simulation;
@@ -19,6 +65,8 @@ let showGroundTruth = false;
 let showAIView = false;
 let showInfoCard = false;
 let isPaused = false;
+let currentStack: StackProfile = 'baseline_lidar';
+let compareMode = false;
 
 // Human input state
 const inputState = {
@@ -359,6 +407,39 @@ function updateHUD() {
   }
 }
 
+// Update info card for current stack
+function updateInfoCard() {
+  const card = INFO_CARDS[currentStack];
+  document.getElementById('info-title')!.textContent = card.name;
+  document.getElementById('info-sensors')!.textContent = card.sensors;
+  document.getElementById('info-internals')!.textContent = card.internals;
+  document.getElementById('info-strengths')!.textContent = card.strengths;
+  document.getElementById('info-weaknesses')!.textContent = card.weaknesses;
+  document.getElementById('info-example')!.textContent = card.example;
+}
+
+// Switch to a different stack profile
+function switchStack(profile: StackProfile) {
+  if (profile === currentStack) return;
+  
+  currentStack = profile;
+  
+  // Update view switcher buttons
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    const btnProfile = (btn as HTMLElement).dataset['profile'] as StackProfile;
+    btn.classList.toggle('active', btnProfile === profile);
+  });
+  
+  // Update info card if visible
+  if (showInfoCard) {
+    updateInfoCard();
+  }
+  
+  // Note: actual stack switching would require restarting simulation
+  // For now we just update the visual indicators
+  console.log(`Switched to stack: ${profile}`);
+}
+
 // Update minimap
 function updateMinimap() {
   const canvas = document.getElementById('minimap') as HTMLCanvasElement;
@@ -464,7 +545,16 @@ function setupInput() {
       case 'i':
         // Toggle info card
         showInfoCard = !showInfoCard;
+        if (showInfoCard) {
+          updateInfoCard();
+        }
         document.getElementById('info-card')!.classList.toggle('visible', showInfoCard);
+        break;
+        
+      case 'm':
+        // Toggle compare mode
+        compareMode = !compareMode;
+        console.log(`Compare mode: ${compareMode ? 'ON' : 'OFF'}`);
         break;
         
       case 'r':
@@ -513,6 +603,15 @@ function setupInput() {
         isPaused = !isPaused;
         break;
     }
+    
+    // Function keys for stack switching
+    if (e.key === 'F1') { e.preventDefault(); switchStack('baseline_lidar'); }
+    if (e.key === 'F2') { e.preventDefault(); switchStack('tesla'); }
+    if (e.key === 'F3') { e.preventDefault(); switchStack('waymo'); }
+    if (e.key === 'F4') { e.preventDefault(); switchStack('waabi'); }
+    if (e.key === 'F5') { e.preventDefault(); switchStack('aurora'); }
+    if (e.key === 'F6') { e.preventDefault(); switchStack('rail'); }
+    if (e.key === 'F7') { e.preventDefault(); switchStack('maritime'); }
   });
   
   document.addEventListener('keyup', (e) => {
@@ -545,6 +644,14 @@ function setupInput() {
   
   document.getElementById('decline-ride')!.addEventListener('click', () => {
     document.getElementById('ride-request')!.classList.remove('visible');
+  });
+  
+  // View switcher buttons
+  document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const profile = (btn as HTMLElement).dataset['profile'] as StackProfile;
+      switchStack(profile);
+    });
   });
 }
 

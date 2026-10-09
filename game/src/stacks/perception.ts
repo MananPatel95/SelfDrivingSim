@@ -500,3 +500,13 @@ export function runPerception(
   
   return { detections, tracks };
 }
+
+// Info card for baseline lidar stack
+export const BASELINE_INFO_CARD = {
+  name: 'Baseline Lidar Stack',
+  sensors: '32-beam spinning lidar, 360° coverage, 100m range, 10 Hz rotation',
+  internals: 'RANSAC ground removal, DBSCAN-like clustering, oriented bounding box fitting, Kalman filter tracking with velocity estimation',
+  strengths: 'Precise 3D geometry, works in darkness, instant depth measurements, no learned components (fully interpretable)',
+  weaknesses: 'No color or texture information, affected by rain/snow/fog, sparse at distance, expensive sensor',
+  example: 'This demonstrates a classical lidar perception pipeline without neural networks, using geometric algorithms only.',
+};
