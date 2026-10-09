@@ -293,6 +293,28 @@ def run(args: argparse.Namespace) -> int:
                     'labeledFrames': passed_frames,
                 }, f, indent=2)
         
+        # Save failed labels to rework queue
+        if recording_failed > 0:
+            failed_frames = [
+                {'frame': fr, 'errors': res['errors'], 'consensusIssues': res.get('consensus', {})}
+                for fr, res in zip(labeled_frames, frame_results) if not res['valid']
+            ]
+            rework_dir = output_path / 'rework_queue'
+            rework_recording = rework_dir / recording_name
+            rework_recording.mkdir(parents=True, exist_ok=True)
+            
+            with open(rework_recording / 'labels_for_rework.json', 'w') as f:
+                json.dump({
+                    'recordingPath': label_data.get('recordingPath'),
+                    'vendorId': vendor_id,
+                    'qaStatus': 'failed',
+                    'failedFrames': failed_frames,
+                    'reasonSummary': {
+                        'validationErrors': sum(1 for fr in frame_results if fr.get('errors')),
+                        'consensusIssues': sum(1 for fr in frame_results if not fr.get('valid') and not fr.get('errors')),
+                    }
+                }, f, indent=2)
+        
         print(f"  {recording_name}: {recording_passed}/{recording_passed + recording_failed} passed")
     
     # Calculate vendor quality scores
