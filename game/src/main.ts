@@ -160,8 +160,7 @@ function initThreeJS() {
   renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.enabled = false;
   container.appendChild(renderer.domElement);
   
   // Scene
@@ -256,8 +255,8 @@ function buildCityRoads() {
   const halfSize = (gridSize * blockSize) / 2;
 
   const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.8 });
-  const curbMat = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.7 });
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.85 });
+  const curbMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.7 });
   const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffee66, roughness: 0.5 });
   const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.6 });
@@ -686,10 +685,12 @@ function updateCamera() {
   
   switch (cameraMode) {
     case 'chase':
+      const chaseBack = state.ego.vehicleType === 'ship' ? 40 : 18;
+      const chaseHeight = state.ego.vehicleType === 'ship' ? 16 : 8;
       const chaseOffset = {
-        x: -Math.cos(egoYaw) * 12,
-        y: -Math.sin(egoYaw) * 12,
-        z: 6,
+        x: -Math.cos(egoYaw) * chaseBack,
+        y: -Math.sin(egoYaw) * chaseBack,
+        z: chaseHeight,
       };
       camera.position.set(
         egoPos.x + chaseOffset.x,
@@ -1218,13 +1219,13 @@ function setupHarbourZone() {
     { x: -45, z: -50, heading: 0, name: 'FERRY SWIFT' },
   ];
   
-  shipPositions.forEach((target, i) => {
+  shipPositions.forEach((target) => {
     const shipGroup = createShipMesh();
-    shipGroup.scale.set(0.18, 0.18, 0.18);
+    shipGroup.scale.set(0.22, 0.22, 0.22);
     shipGroup.position.set(target.x, 1, target.z);
     shipGroup.rotation.y = -target.heading + Math.PI / 2;
     scene.add(shipGroup);
-    entityMeshes.set(5000 + i, shipGroup as unknown as THREE.Mesh);
+    buoyMeshes.push(shipGroup as unknown as THREE.Mesh);
   });
   
   maritimeState.aisTargets = [
@@ -1490,8 +1491,7 @@ function updateEgoVehicle(profile: StackProfile) {
       break;
     case 'maritime':
       egoMesh = createOwnShipMesh() as unknown as THREE.Mesh;
-      // Position in harbour - scale down for visibility
-      egoMesh.scale.set(0.1, 0.1, 0.1);
+      egoMesh.scale.set(0.05, 0.05, 0.05);
       egoMesh.position.set(0, 1, 0);
       break;
     default:

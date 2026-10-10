@@ -254,7 +254,8 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
   }
   
   // Spawn at the center intersection so the first view is a real street
-  spawnPoints.push(vec3(config.laneWidth, 8, 0));
+  // Face an intersection so crosswalks and sidewalks are in the first shot
+  spawnPoints.push(vec3(config.laneWidth, -22, 0));
   for (let i = 1; i < config.gridSize; i++) {
     spawnPoints.push(vec3(-halfSize + i * config.blockSize + config.laneWidth, -halfSize + 10, 0));
   }

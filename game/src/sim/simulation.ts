@@ -5,7 +5,7 @@
 
 import type {
   Entity, EgoState, Environment, Scenario,
-  RideRequest, TakeoverEvent, Vec3, VehicleType
+  RideRequest, TakeoverEvent, Vec3, VehicleType, LidarPoint
 } from './types';
 import { 
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
@@ -75,6 +75,7 @@ export class Simulation {
   private recorder: Recorder;
   private rng: SeededRandom;
   private entityIdCounter: number = 0;
+  private lastLidarPoints: LidarPoint[] = [];
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -459,19 +460,23 @@ export class Simulation {
         })
       : allEntities;
     
-    // Simulate lidar
-    const lidarScan = simulateLidarScan(
-      lidarConfig,
-      this.state.ego,
-      senseEntities,
-      this.state.environment,
-      this.state.timestamp,
-      this.config.seed
-    );
+    // Browser: lidar every other frame to keep the render loop interactive.
+    // Reuse the previous point cloud on skipped frames so tracks do not die.
+    const runLidar = !inBrowser || (this.state.frameNumber % 2 === 0);
+    if (runLidar) {
+      this.lastLidarPoints = simulateLidarScan(
+        lidarConfig,
+        this.state.ego,
+        senseEntities,
+        this.state.environment,
+        this.state.timestamp,
+        this.config.seed
+      ).points;
+    }
     
     // Run perception (boxes are in ego frame; convert for planning / display)
     const { detections, tracks } = runPerception(
-      lidarScan.points,
+      this.lastLidarPoints,
       this.state.perceptionTracks,
       dt
     );
@@ -569,7 +574,7 @@ export class Simulation {
       this.state.ego,
       allEntities,
       trafficLights,
-      { lidarPoints: lidarScan.points },
+      { lidarPoints: this.lastLidarPoints },
       { timestamp: this.state.timestamp, detections },
       plannerInput,
       plannerOutput,
