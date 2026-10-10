@@ -171,7 +171,7 @@ pub fn step_vehicle(
     } else {
         0.0
     };
-    let mut accel = if brake > 0.0 {
+    let accel = if brake > 0.0 {
         -max_decel * brake
     } else {
         throttle * max_accel
@@ -179,7 +179,6 @@ pub fn step_vehicle(
     let mut new_speed = (signed + accel * dt).clamp(-max_speed * 0.3, max_speed);
     if new_speed.abs() < 0.1 && throttle.abs() < 0.1 {
         new_speed = 0.0;
-        accel = 0.0;
     }
     let steer_angle = steering * std::f32::consts::FRAC_PI_6;
     let yaw_rate = if new_speed.abs() > 0.1 {

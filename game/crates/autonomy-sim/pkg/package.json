@@ -1,1 +1,15 @@
-{ "name": "autonomy-sim", "type": "module", "main": "autonomy_sim.js" }
+{
+  "name": "autonomy-sim",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "autonomy_sim_bg.wasm",
+    "autonomy_sim.js",
+    "autonomy_sim.d.ts"
+  ],
+  "main": "autonomy_sim.js",
+  "types": "autonomy_sim.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
