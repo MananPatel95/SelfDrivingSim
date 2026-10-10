@@ -9,7 +9,7 @@ import type {
 } from '../sim/types';
 import { 
   vec3, vec3Sub, vec3Length, vec3Distance, 
-  rotateVec3, normalizeAngle, calculateTTC, clamp 
+  normalizeAngle, calculateTTC, clamp 
 } from '../sim/math';
 import { VEHICLE_PARAMS } from '../sim/vehicle';
 
@@ -101,7 +101,7 @@ export function planTrajectory(
     if (isVulnerableRoadUser(det.classType)) {
       const ttc = calculateTTC(
         egoState.transform.position,
-        rotateVec3(egoState.velocity, egoState.transform.rotation),
+        egoState.velocity,
         det.boundingBox.center,
         det.velocity || vec3(0, 0, 0),
         Math.max(det.boundingBox.size.x, det.boundingBox.size.y) / 2 + 2
@@ -336,7 +336,7 @@ export function oracleSupervisor(
     // Calculate TTC
     const ttc = calculateTTC(
       ego.transform.position,
-      rotateVec3(ego.velocity, ego.transform.rotation),
+      ego.velocity,
       obj.boundingBox.center,
       obj.velocity || vec3(0, 0, 0),
       Math.max(obj.boundingBox.size.x, obj.boundingBox.size.y) / 2 + 1

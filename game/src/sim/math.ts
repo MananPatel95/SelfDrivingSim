@@ -72,6 +72,12 @@ export function rotateVec3(v: Vec3, yaw: number): Vec3 {
   };
 }
 
+/** Transform a point from ego frame into world frame. */
+export function egoToWorld(local: Vec3, egoPos: Vec3, egoYaw: number): Vec3 {
+  const rotated = rotateVec3(local, egoYaw);
+  return { x: egoPos.x + rotated.x, y: egoPos.y + rotated.y, z: egoPos.z + rotated.z };
+}
+
 export function normalizeAngle(angle: number): number {
   while (angle > Math.PI) angle -= 2 * Math.PI;
   while (angle < -Math.PI) angle += 2 * Math.PI;

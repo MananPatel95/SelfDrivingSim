@@ -15,7 +15,7 @@ import {
 
 // Zone types for different simulation environments
 export type ZoneType = 'city' | 'highway' | 'rail' | 'harbour';
-import { vec3, vec3Distance, SeededRandom } from './math';
+import { vec3, vec3Distance, SeededRandom, egoToWorld } from './math';
 import { createEgoState, updateVehicle, VehicleInput } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
@@ -106,6 +106,10 @@ export class Simulation {
     const egoType = this.getEgoTypeForZone();
     const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
     const ego = createEgoState(egoType, spawnPoint, Math.PI / 2);
+    if (egoType === 'ship') {
+      // ~12 knots along heading so the COLREGs HUD is never stuck at 0
+      ego.velocity = vec3(0, 6, 0);
+    }
     
     // Create zone-appropriate traffic (no traffic for rail/harbour)
     const trafficVehicles = this.spawnZoneTraffic(worldMap);
@@ -340,6 +344,31 @@ export class Simulation {
     const roadWidth = 14;
     const sidewalkOffset = roadWidth / 2 + 1.5; // Place on sidewalk
     
+    const nearSpawn: Array<[number, number, number]> = [
+      [8.5, 18, Math.PI / 2],
+      [-8.5, 22, -Math.PI / 2],
+      [8.5, -12, Math.PI / 2],
+      [-8.5, 6, Math.PI],
+      [10, 30, 0],
+      [-10, 14, Math.PI],
+      [7, 40, Math.PI / 2],
+      [-7, -8, -Math.PI / 2],
+    ];
+    for (const [px, py, dir] of nearSpawn) {
+      pedestrians.push({
+        id: this.entityIdCounter++,
+        classType: 'pedestrian',
+        transform: { position: vec3(px, py, 0.9), rotation: dir },
+        boundingBox: { center: vec3(px, py, 0.9), size: vec3(0.5, 0.5, 1.7), yaw: dir },
+        velocity: vec3(Math.cos(dir) * 1.2, Math.sin(dir) * 1.2, 0),
+        isStatic: false,
+        occlusionLevel: 0,
+        targetPosition: vec3(px + Math.cos(dir) * 40, py + Math.sin(dir) * 40, 0),
+        state: 'walking',
+        waitTime: 0,
+      });
+    }
+    
     for (let i = 0; i < count; i++) {
       // Pick a random road to place pedestrian on sidewalk
       const roadIndex = this.rng.nextInt(0, gridSize);
@@ -418,17 +447,29 @@ export class Simulation {
       ...this.state.pedestrians,
     ];
     
+    const inBrowser = typeof window !== 'undefined';
+    const lidarConfig = inBrowser ? LIDAR_CONFIGS['browserLite']! : LIDAR_CONFIGS['roofLidar']!;
+    const egoPos = this.state.ego.transform.position;
+    const senseEntities = inBrowser
+      ? allEntities.filter(e => {
+          const dx = e.boundingBox.center.x - egoPos.x;
+          const dy = e.boundingBox.center.y - egoPos.y;
+          const range = e.classType === 'building' ? 60 : 80;
+          return dx * dx + dy * dy < range * range;
+        })
+      : allEntities;
+    
     // Simulate lidar
     const lidarScan = simulateLidarScan(
-      LIDAR_CONFIGS['roofLidar']!,
+      lidarConfig,
       this.state.ego,
-      allEntities,
+      senseEntities,
       this.state.environment,
       this.state.timestamp,
       this.config.seed
     );
     
-    // Run perception
+    // Run perception (boxes are in ego frame; convert for planning / display)
     const { detections, tracks } = runPerception(
       lidarScan.points,
       this.state.perceptionTracks,
@@ -436,10 +477,20 @@ export class Simulation {
     );
     this.state.perceptionTracks = tracks;
     
+    const yaw = this.state.ego.transform.rotation;
+    const worldDetections = detections.map(d => ({
+      ...d,
+      boundingBox: {
+        ...d.boundingBox,
+        center: egoToWorld(d.boundingBox.center, egoPos, yaw),
+        yaw: d.boundingBox.yaw + yaw,
+      },
+    }));
+    
     // Plan trajectory
     const plannerInput = {
       egoState: this.state.ego,
-      detections,
+      detections: worldDetections,
       route: this.state.route,
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
     };

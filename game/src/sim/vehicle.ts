@@ -81,49 +81,51 @@ export function updateVehicle(
   // Calculate steering angle
   const steeringAngle = steering * params.maxSteeringAngle;
   
+  const heading = state.transform.rotation;
+  const worldSpeed = Math.sqrt(state.velocity.x ** 2 + state.velocity.y ** 2);
+  const forward = state.velocity.x * Math.cos(heading) + state.velocity.y * Math.sin(heading);
+  const signedSpeed = worldSpeed > 0.05
+    ? worldSpeed * Math.sign(forward || 1)
+    : state.velocity.x;
+  
   // Calculate acceleration
   let accel = 0;
   if (brake > 0) {
-    // Braking
     const brakeAccel = (params.brakeForce * brake) / params.mass;
-    accel = -Math.sign(state.velocity.x) * brakeAccel;
+    accel = -Math.sign(signedSpeed || 1) * brakeAccel;
   } else {
-    // Throttle
     accel = throttle > 0 
       ? throttle * params.maxAccel 
       : throttle * params.maxDecel;
   }
   
-  // Add drag
-  const speed = Math.sqrt(state.velocity.x ** 2 + state.velocity.y ** 2);
-  const dragForce = 0.5 * params.dragCoeff * speed * speed;
+  const dragForce = 0.5 * params.dragCoeff * worldSpeed * worldSpeed;
   const dragAccel = dragForce / params.mass;
-  if (speed > 0.1) {
-    accel -= dragAccel * Math.sign(state.velocity.x);
+  if (worldSpeed > 0.1) {
+    accel -= dragAccel * Math.sign(signedSpeed || 1);
   }
   
-  // Update velocity
-  let newVelX = state.velocity.x + accel * dt;
+  let newSpeed = signedSpeed + accel * dt;
+  newSpeed = clamp(newSpeed, -params.maxSpeed * 0.3, params.maxSpeed);
   
-  // Clamp to max speed
-  newVelX = clamp(newVelX, -params.maxSpeed * 0.3, params.maxSpeed);
+  // Ships keep a cruise speed unless the operator is braking
+  if (state.vehicleType === 'ship' && brake < 0.05 && newSpeed < 6) {
+    newSpeed = Math.min(6, newSpeed + params.maxAccel * dt);
+  }
   
-  // Stop completely if very slow and no throttle
-  if (Math.abs(newVelX) < 0.1 && Math.abs(throttle) < 0.1) {
-    newVelX = 0;
+  if (Math.abs(newSpeed) < 0.1 && Math.abs(throttle) < 0.1 && state.vehicleType !== 'ship') {
+    newSpeed = 0;
   }
   
   // Kinematic bicycle model
   let yawRate = 0;
-  if (Math.abs(newVelX) > 0.1 && state.vehicleType !== 'train') {
-    yawRate = (newVelX / params.wheelbase) * Math.tan(steeringAngle);
+  if (Math.abs(newSpeed) > 0.1 && state.vehicleType !== 'train') {
+    yawRate = (newSpeed / params.wheelbase) * Math.tan(steeringAngle);
   }
   
-  // Update position and heading
   const newYaw = normalizeAngle(state.transform.rotation + yawRate * dt);
-  
-  const vx = newVelX * Math.cos(newYaw);
-  const vy = newVelX * Math.sin(newYaw);
+  const vx = newSpeed * Math.cos(newYaw);
+  const vy = newSpeed * Math.sin(newYaw);
   
   const newPos: Vec3 = {
     x: state.transform.position.x + vx * dt,
@@ -131,8 +133,7 @@ export function updateVehicle(
     z: state.transform.position.z,
   };
   
-  // Calculate stopping distance
-  const stoppingDistance = (speed * speed) / (2 * params.maxDecel);
+  const stoppingDistance = (newSpeed * newSpeed) / (2 * params.maxDecel);
   
   return {
     ...state,
@@ -140,7 +141,7 @@ export function updateVehicle(
       position: newPos,
       rotation: newYaw,
     },
-    velocity: vec3(newVelX, 0, 0), // velocity in local frame
+    velocity: vec3(vx, vy, 0),
     acceleration: vec3(accel, 0, 0),
     steering: steeringAngle,
     throttle,
@@ -253,7 +254,12 @@ export function updateShip(
     accel = -params.maxDecel * input.brake;
   }
   
-  let newSpeed = state.velocity.x + accel * dt;
+  const currentSpeed = Math.sqrt(state.velocity.x ** 2 + state.velocity.y ** 2) || state.velocity.x;
+  let newSpeed = currentSpeed + accel * dt;
+  // Cruise at ~12 knots unless braking
+  if (input.brake < 0.05 && newSpeed < 6) {
+    newSpeed = Math.min(6, newSpeed + params.maxAccel * 2 * dt);
+  }
   newSpeed = clamp(newSpeed, -params.maxSpeed * 0.1, params.maxSpeed);
   
   // Large turning circle - yaw rate depends on speed and rudder
@@ -278,7 +284,11 @@ export function updateShip(
   return {
     ...state,
     transform: { position: newPos, rotation: newYaw },
-    velocity: vec3(newSpeed - dragDecel * dt * Math.sign(newSpeed), 0, 0),
+    velocity: vec3(
+      (newSpeed - dragDecel * dt * Math.sign(newSpeed || 1)) * Math.cos(newYaw),
+      (newSpeed - dragDecel * dt * Math.sign(newSpeed || 1)) * Math.sin(newYaw),
+      0
+    ),
     acceleration: vec3(accel, 0, 0),
     steering: rudder,
     throttle: input.throttle,

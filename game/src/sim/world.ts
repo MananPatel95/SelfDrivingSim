@@ -253,7 +253,8 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
     }
   }
   
-  // Spawn points
+  // Spawn at the center intersection so the first view is a real street
+  spawnPoints.push(vec3(config.laneWidth, 8, 0));
   for (let i = 1; i < config.gridSize; i++) {
     spawnPoints.push(vec3(-halfSize + i * config.blockSize + config.laneWidth, -halfSize + 10, 0));
   }
@@ -857,7 +858,7 @@ export function generateHarbourMap(_seed: number): HarbourMap {
     intersections: [],
     trafficLights: [],
     staticEntities,
-    spawnPoints: [vec3(0, -harbourLength / 2 + 100, 0)],
+    spawnPoints: [vec3(0, 0, 0)],
     pickupPoints: [],
     waterBoundary,
     buoys,
