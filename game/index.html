@@ -122,11 +122,12 @@
       position: absolute;
       top: 60px;
       right: 10px;
-      width: 320px;
-      background: rgba(0,0,0,0.9);
+      width: 380px;
+      background: rgba(0,0,0,0.92);
       border-radius: 8px;
       overflow: hidden;
       display: none;
+      border: 1px solid #2a4a5a;
     }
     
     #ai-view-panel.visible {
@@ -134,15 +135,69 @@
     }
     
     #ai-view-header {
-      padding: 10px;
+      padding: 8px 10px;
       background: #111;
       border-bottom: 1px solid #333;
       font-weight: bold;
+      font-size: 12px;
     }
     
-    #ai-view-canvas {
+    #ai-view-insets {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+    }
+    
+    #ai-view-insets .inset {
+      flex: 1;
+    }
+    
+    #ai-view-insets .inset-label {
+      font-size: 10px;
+      color: #8ab;
+      padding: 2px 4px;
+    }
+    
+    #raw-camera-canvas, #ai-view-canvas {
       width: 100%;
-      height: 240px;
+      height: 140px;
+      background: #0b0f18;
+      display: block;
+    }
+    
+    #decision-banner {
+      position: absolute;
+      bottom: 86px;
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 420px;
+      max-width: 80%;
+      padding: 8px 16px;
+      background: rgba(0, 20, 10, 0.88);
+      border: 1px solid #2f8;
+      border-radius: 6px;
+      color: #bfffce;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      z-index: 20;
+      display: none;
+    }
+    
+    #decision-banner.visible {
+      display: block;
+    }
+    
+    #decision-banner.slow {
+      border-color: #fa0;
+      color: #ffe0a0;
+      background: rgba(40, 24, 0, 0.88);
+    }
+    
+    #decision-banner.brake {
+      border-color: #f44;
+      color: #ffc0c0;
+      background: rgba(40, 0, 0, 0.88);
     }
     
     /* Controls help */
@@ -567,10 +622,21 @@
     <canvas id="minimap" class="hud" width="180" height="180"></canvas>
     
     <!-- AI View Panel -->
-    <div id="ai-view-panel" class="hud">
-      <div id="ai-view-header">AI View (G for Ground Truth Overlay)</div>
-      <canvas id="ai-view-canvas" width="320" height="240"></canvas>
+    <div id="ai-view-panel" class="hud visible">
+      <div id="ai-view-header">AI View — what this stack consumes (V to hide, G = GT)</div>
+      <div id="ai-view-insets">
+        <div class="inset">
+          <div class="inset-label">Raw ego camera</div>
+          <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
+        </div>
+        <div class="inset">
+          <div class="inset-label">Perception output</div>
+          <canvas id="ai-view-canvas" width="320" height="180"></canvas>
+        </div>
+      </div>
     </div>
+    
+    <div id="decision-banner" class="visible">Cruising: lane clear</div>
     
     <!-- Model Selector -->
     <div id="model-selector" class="hud hud-interactive">
@@ -661,7 +727,7 @@
     <!-- BEV Overlay (Waabi) -->
     <div id="bev-overlay" class="hud" style="display: none; right: 20px; top: 200px; width: 320px;">
       <h4 style="margin: 0 0 10px 0; color: #00ffff;">Waabi BEV + Sim World</h4>
-      <canvas id="bev-canvas" width="300" height="200" style="background: #1a1a2e; border: 1px solid #333;"></canvas>
+      <canvas id="bev-canvas" width="360" height="240" style="background: #1a1a2e; border: 1px solid #333;"></canvas>
       <div id="simworld-table" style="margin-top: 10px; font-size: 11px; max-height: 150px; overflow-y: auto;">
         <table style="width: 100%; border-collapse: collapse; color: #ccc;">
           <thead>
@@ -692,14 +758,15 @@
           Rule 14: Head-on - Both vessels alter to starboard
         </div>
         <div id="colregs-action" style="font-size: 12px; color: #ffaa00;">
-          ACTION: Alter course 20° to starboard
+          ACTION: Alter course 22° to starboard
+        </div>
+        <div id="colregs-cpa-trend" style="font-size: 11px; color: #88ffcc; margin-top: 6px;">
+          CPA trend: waiting for encounter
         </div>
         <div style="margin-top: 10px; border-top: 1px solid #1a5276; padding-top: 8px;">
           <div style="font-size: 11px; color: #888;">Target Vessels:</div>
           <div id="ais-targets" style="font-size: 11px; color: #ccc; margin-top: 4px;">
-            <div>CARGO STAR - CPA: 150m, TCPA: 2:30</div>
-            <div>TANKER PRIME - CPA: 800m, TCPA: 5:45</div>
-            <div>FERRY SWIFT - CPA: 1200m, TCPA: 8:15</div>
+            <div>CARGO STAR - CPA: —</div>
           </div>
         </div>
       </div>

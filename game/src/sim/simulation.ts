@@ -21,6 +21,12 @@ import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
 import { planTrajectory, createPlannerState, PlannerState, oracleSupervisor } from '../planning/planner';
 import { Recorder, Recording } from '../recorder/recorder';
+import type { PlannerOutput } from './types';
+import {
+  AISTarget, COLREGSHelm, MaritimeEncounter,
+  createHarbourTraffic, createCOLREGSHelm, stepAISTargets,
+  evaluateEncounters, planCOLREGSManoeuvre,
+} from '../stacks/maritime';
 
 export interface SimulationConfig {
   seed: number;
@@ -67,6 +73,10 @@ export interface SimulationState {
   isRunning: boolean;
   controlSource: 'policy' | 'human' | 'oracle';
   lastTakeover?: TakeoverEvent;
+  lastPlannerOutput: PlannerOutput | null;
+  maritimeTargets: AISTarget[];
+  maritimeEncounters: MaritimeEncounter[];
+  maritimeAction: string;
 }
 
 export class Simulation {
@@ -76,6 +86,8 @@ export class Simulation {
   private rng: SeededRandom;
   private entityIdCounter: number = 0;
   private lastLidarPoints: LidarPoint[] = [];
+  private lastPlannerOutput: PlannerOutput | null = null;
+  private colregsHelm: COLREGSHelm = createCOLREGSHelm();
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -100,6 +112,9 @@ export class Simulation {
   }
   
   private initializeState(): SimulationState {
+    this.colregsHelm = createCOLREGSHelm();
+    this.lastPlannerOutput = null;
+    this.lastLidarPoints = [];
     // Generate appropriate world map based on zone
     const worldMap = this.generateWorldForZone();
     
@@ -140,6 +155,10 @@ export class Simulation {
       activeScenarios: [],
       isRunning: true,
       controlSource: 'policy',
+      lastPlannerOutput: null,
+      maritimeTargets: this.config.zone === 'harbour' ? createHarbourTraffic() : [],
+      maritimeEncounters: [],
+      maritimeAction: 'Monitor situation',
     };
   }
   
@@ -505,6 +524,8 @@ export class Simulation {
       this.state.plannerState
     );
     this.state.plannerState = newPlannerState;
+    this.lastPlannerOutput = plannerOutput;
+    this.state.lastPlannerOutput = plannerOutput;
     
     // Determine control input
     let vehicleInput: VehicleInput;
@@ -562,6 +583,38 @@ export class Simulation {
         brake: plannerOutput.acceleration < 0 ? -plannerOutput.acceleration / 8 : 0,
       };
       this.state.controlSource = 'policy';
+    }
+
+    if (this.config.zone === 'harbour' && !humanInput) {
+      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
+      this.state.maritimeEncounters = evaluateEncounters(
+        this.state.ego.transform.position,
+        this.state.ego.velocity,
+        this.state.ego.transform.rotation,
+        this.state.maritimeTargets,
+        this.colregsHelm
+      );
+      const helm = planCOLREGSManoeuvre(
+        this.state.ego.transform.rotation,
+        this.state.maritimeEncounters,
+        this.colregsHelm
+      );
+      this.state.maritimeAction = helm.action;
+      vehicleInput = {
+        throttle: helm.throttle,
+        steering: helm.steering,
+        brake: 0,
+      };
+      this.state.controlSource = 'policy';
+    } else if (this.config.zone === 'harbour') {
+      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
+      this.state.maritimeEncounters = evaluateEncounters(
+        this.state.ego.transform.position,
+        this.state.ego.velocity,
+        this.state.ego.transform.rotation,
+        this.state.maritimeTargets,
+        this.colregsHelm
+      );
     }
     
     // Update ego vehicle
@@ -815,6 +868,14 @@ export class Simulation {
   
   getState(): SimulationState {
     return this.state;
+  }
+
+  getLidarPoints(): LidarPoint[] {
+    return this.lastLidarPoints;
+  }
+
+  getLastPlannerOutput(): PlannerOutput | null {
+    return this.lastPlannerOutput;
   }
   
   getRecording(): Recording {

@@ -227,6 +227,156 @@ export function runMaritimePerception(
   };
 }
 
+/** AIS contacts placed hundreds of metres out on open-water geometries. */
+export function createHarbourTraffic(): AISTarget[] {
+  return [
+    {
+      // Head-on, 280 m to port, ~900 m ahead. Uncorrected CPA ≈ 280 m.
+      // Starboard give-way increases CPA (opens to the east).
+      mmsi: 123456789,
+      name: 'CARGO STAR',
+      position: { x: -280, y: 900, z: 0 },
+      courseOverGround: -Math.PI / 2,
+      speedOverGround: 5,
+      heading: -Math.PI / 2,
+      vesselType: 'cargo',
+      length: 150,
+      beam: 25,
+    },
+    {
+      // Crossing from port at long range. CPA hundreds of metres.
+      mmsi: 234567890,
+      name: 'TANKER PRIME',
+      position: { x: -620, y: 380, z: 0 },
+      courseOverGround: 0,
+      speedOverGround: 4,
+      heading: 0,
+      vesselType: 'tanker',
+      length: 200,
+      beam: 30,
+    },
+    {
+      // Parallel / clear, large CPA.
+      mmsi: 345678901,
+      name: 'FERRY SWIFT',
+      position: { x: 780, y: -180, z: 0 },
+      courseOverGround: Math.PI / 2,
+      speedOverGround: 7,
+      heading: Math.PI / 2,
+      vesselType: 'passenger',
+      length: 100,
+      beam: 20,
+    },
+  ];
+}
+
+export interface MaritimeEncounter {
+  name: string;
+  rule: COLREGSRule;
+  cpa: number;
+  tcpa: number;
+  initialCpa: number;
+  cpaDelta: number;
+  range: number;
+}
+
+export interface COLREGSHelm {
+  headingTarget: number | null;
+  initialCpas: Map<string, number>;
+  giveWayStarted: boolean;
+}
+
+export function createCOLREGSHelm(): COLREGSHelm {
+  return { headingTarget: null, initialCpas: new Map(), giveWayStarted: false };
+}
+
+export function stepAISTargets(targets: AISTarget[], dt: number): AISTarget[] {
+  return targets.map(t => ({
+    ...t,
+    position: {
+      x: t.position.x + Math.cos(t.courseOverGround) * t.speedOverGround * dt,
+      y: t.position.y + Math.sin(t.courseOverGround) * t.speedOverGround * dt,
+      z: t.position.z,
+    },
+  }));
+}
+
+export function evaluateEncounters(
+  egoPos: Vec3,
+  egoVel: Vec3,
+  egoHeading: number,
+  targets: AISTarget[],
+  helm: COLREGSHelm
+): MaritimeEncounter[] {
+  return targets.map(target => {
+    const targetVel = {
+      x: Math.cos(target.courseOverGround) * target.speedOverGround,
+      y: Math.sin(target.courseOverGround) * target.speedOverGround,
+      z: 0,
+    };
+    const { cpa, tcpa } = calculateCPATCPA(egoPos, egoVel, target.position, targetVel);
+    const rule = determineCOLREGSRule(egoPos, egoHeading, target.position, target.heading);
+    if (!helm.initialCpas.has(target.name)) {
+      helm.initialCpas.set(target.name, cpa);
+    }
+    const initialCpa = helm.initialCpas.get(target.name) ?? cpa;
+    const dx = target.position.x - egoPos.x;
+    const dy = target.position.y - egoPos.y;
+    return {
+      name: target.name,
+      rule,
+      cpa,
+      tcpa,
+      initialCpa,
+      cpaDelta: cpa - initialCpa,
+      range: Math.sqrt(dx * dx + dy * dy),
+    };
+  });
+}
+
+export function planCOLREGSManoeuvre(
+  egoHeading: number,
+  encounters: MaritimeEncounter[],
+  helm: COLREGSHelm
+): { steering: number; throttle: number; primary: MaritimeEncounter | null; action: string } {
+  let primary: MaritimeEncounter | null = null;
+  let bestScore = Infinity;
+  for (const enc of encounters) {
+    if (enc.tcpa <= 0 || enc.tcpa > 180) continue;
+    const score = enc.tcpa + enc.cpa / 20;
+    if (score < bestScore) {
+      bestScore = score;
+      primary = enc;
+    }
+  }
+
+  const needsGiveWay = !!primary && (
+    primary.rule === 'head_on' || primary.rule === 'give_way' || primary.rule === 'crossing'
+  ) && primary.cpa < 600;
+
+  if (needsGiveWay && helm.headingTarget === null) {
+    // Starboard is clockwise = decreasing yaw in this world frame.
+    helm.headingTarget = egoHeading - (22 * Math.PI / 180);
+    helm.giveWayStarted = true;
+  }
+
+  let steering = 0;
+  let action = 'Monitor situation';
+  if (helm.headingTarget !== null) {
+    let err = helm.headingTarget - egoHeading;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    steering = Math.max(-1, Math.min(1, err / 0.25));
+    if (Math.abs(err) < 0.04) steering = 0;
+    const trend = primary && primary.cpaDelta > 5 ? 'CPA opening' : 'CPA holding';
+    action = `ACTION: Alter 22° to starboard — ${trend}`;
+  } else if (primary?.rule === 'stand_on') {
+    action = 'ACTION: Maintain course and speed';
+  }
+
+  return { steering, throttle: 0.45, primary, action };
+}
+
 // Info card content
 export const MARITIME_INFO_CARD = {
   name: 'Maritime: Open Water Autonomy',

@@ -749,17 +749,8 @@ export function generateHarbourMap(_seed: number): HarbourMap {
   waterBoundary.push(vec3(harbourWidth / 2, harbourLength / 2, 0));
   waterBoundary.push(vec3(-harbourWidth / 2, harbourLength / 2, 0));
   
-  // Main fairway (shipping channel)
-  const channelPoints = [];
-  for (let y = -harbourLength / 2; y <= harbourLength / 2; y += 100) {
-    channelPoints.push({
-      position: vec3(0, y, -5), // 5m depth
-      direction: Math.PI / 2,
-      width: 100,
-      speedLimit: 5.1, // 10 knots
-    });
-  }
-  lanes.push({ id: 0, points: channelPoints, type: 'fairway', connections: [] });
+  // Fairway is marked by buoys only — do not emit lane polylines that
+  // the city road renderer would draw as asphalt / yellow dashes on water.
   
   // Navigation buoys marking the channel
   // Port (red) on left side entering
@@ -790,48 +781,28 @@ export function generateHarbourMap(_seed: number): HarbourMap {
     });
   });
   
-  // AIS targets (other vessels)
+  // AIS contacts live in the maritime stack (hundreds of metres out).
+  // Do not also spawn them as static city-style boxes on the water.
   aisTargets.push({
-    position: vec3(-200, 300, 0),
+    position: vec3(-280, 900, 0),
     mmsi: '123456789',
     name: 'CARGO STAR',
-    heading: Math.PI / 4,
-    speed: 4.0, // knots
+    heading: -Math.PI / 2,
+    speed: 9.7,
   });
   aisTargets.push({
-    position: vec3(150, -200, 0),
+    position: vec3(-620, 380, 0),
     mmsi: '987654321',
     name: 'TANKER PRIME',
-    heading: -Math.PI / 3,
-    speed: 6.0,
+    heading: 0,
+    speed: 7.8,
   });
   aisTargets.push({
-    position: vec3(100, 500, 0),
+    position: vec3(780, -180, 0),
     mmsi: '111222333',
     name: 'FERRY SWIFT',
-    heading: Math.PI,
-    speed: 12.0,
-  });
-  
-  // Add AIS target entities
-  aisTargets.forEach(target => {
-    staticEntities.push({
-      id: entityId++,
-      classType: 'ship',
-      transform: { position: target.position, rotation: target.heading },
-      boundingBox: {
-        center: target.position,
-        size: vec3(150, 25, 20), // Cargo ship dimensions
-        yaw: target.heading,
-      },
-      velocity: vec3(
-        target.speed * 0.514 * Math.cos(target.heading), // knots to m/s
-        target.speed * 0.514 * Math.sin(target.heading),
-        0
-      ),
-      isStatic: false,
-      occlusionLevel: 0,
-    });
+    heading: Math.PI / 2,
+    speed: 13.6,
   });
   
   // Berths

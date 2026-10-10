@@ -84,10 +84,10 @@ export function estimateDepthFromCamera(
   // Check if in camera FOV
   const entityAngle = Math.atan2(localPos.y, localPos.x);
   const halfFov = (camera.fov * Math.PI / 180) / 2;
-  const cameraAngle = camera.yaw;
-  
-  const angleDiff = Math.abs(entityAngle - cameraAngle);
-  if (angleDiff > halfFov && angleDiff < 2 * Math.PI - halfFov) {
+  let angleDiff = entityAngle - camera.yaw;
+  while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+  while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+  if (Math.abs(angleDiff) > halfFov) {
     return null; // Not in FOV
   }
   
@@ -286,6 +286,71 @@ export function runTeslaPerception(
       trafficLightState,
     },
   };
+}
+
+export interface VisionDetection {
+  entityId: number;
+  classType: string;
+  center: Vec3;
+  size: Vec3;
+  confidence: number;
+  cameraId: string;
+  depth: number;
+}
+
+/** Deterministic camera-FOV detector for visible agents. Weaker than lidar, not blind. */
+export function detectVisibleAgents(
+  egoState: EgoState,
+  entities: Entity[],
+  maxVehicleRange: number = 70,
+  maxPedRange: number = 50
+): VisionDetection[] {
+  const results: VisionDetection[] = [];
+
+  for (const entity of entities) {
+    if (entity.classType === 'building' || entity.classType === 'tree' || entity.classType === 'pole') continue;
+    const dynamic = entity.classType === 'pedestrian' || entity.classType === 'car'
+      || entity.classType === 'truck' || entity.classType === 'cyclist' || entity.classType === 'bus';
+    if (!dynamic) continue;
+    // Heavily occluded agents are weaker, not invisible — a camera can still
+    // glimpse a pedestrian stepping out from behind a van.
+
+    const relPos = vec3Sub(entity.boundingBox.center, egoState.transform.position);
+    const localPos = rotateVec3(relPos, -egoState.transform.rotation);
+    const depth = vec3Length(localPos);
+    const maxRange = entity.classType === 'pedestrian' || entity.classType === 'cyclist'
+      ? maxPedRange
+      : maxVehicleRange;
+    if (depth < 0.8 || depth > maxRange) continue;
+
+    const entityAngle = Math.atan2(localPos.y, localPos.x);
+    let cameraId: string | null = null;
+    for (const camera of CAMERA_CONFIG) {
+      const halfFov = (camera.fov * Math.PI / 180) / 2;
+      let angleDiff = entityAngle - camera.yaw;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      if (Math.abs(angleDiff) <= halfFov) {
+        cameraId = camera.id;
+        break;
+      }
+    }
+    if (!cameraId) continue;
+
+    const rangeFade = 1 - (depth / maxRange) * 0.35;
+    const occFade = entity.occlusionLevel === 2 ? 0.45 : entity.occlusionLevel === 1 ? 0.75 : 1;
+    results.push({
+      entityId: entity.id,
+      classType: entity.classType,
+      center: entity.boundingBox.center,
+      size: entity.boundingBox.size,
+      confidence: Math.max(0.4, 0.92 * rangeFade * occFade),
+      cameraId,
+      depth,
+    });
+  }
+
+  return results;
 }
 
 function getDefaultSize(classType: string): Vec3 {

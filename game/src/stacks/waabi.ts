@@ -82,47 +82,131 @@ export interface WaabiStackState {
   simWorld: SimWorldState;
 }
 
-// Create BEV occupancy from detections
+export interface OccupancyAgent {
+  position: { x: number; y: number; z: number };
+  size: { x: number; y: number; z: number };
+  yaw: number;
+  velocity?: { x: number; y: number; z: number };
+  confidence?: number;
+}
+
+function splatOccupancy(
+  grid: Float32Array,
+  gridSize: number,
+  resolution: number,
+  extent: number,
+  localX: number,
+  localY: number,
+  sizeX: number,
+  sizeY: number,
+  confidence: number
+) {
+  const gridX = (localX + extent) / resolution;
+  const gridY = (localY + extent) / resolution;
+  const sigmaX = Math.max(sizeX * 0.55, resolution * 1.2);
+  const sigmaY = Math.max(sizeY * 0.55, resolution * 1.2);
+  const halfX = Math.ceil((sigmaX * 2.4) / resolution);
+  const halfY = Math.ceil((sigmaY * 2.4) / resolution);
+  const cx0 = Math.floor(gridX);
+  const cy0 = Math.floor(gridY);
+
+  for (let dy = -halfY; dy <= halfY; dy++) {
+    for (let dx = -halfX; dx <= halfX; dx++) {
+      const cx = cx0 + dx;
+      const cy = cy0 + dy;
+      if (cx < 0 || cy < 0 || cx >= gridSize || cy >= gridSize) continue;
+      const cellX = (cx + 0.5) * resolution - extent;
+      const cellY = (cy + 0.5) * resolution - extent;
+      const nx = (cellX - localX) / sigmaX;
+      const ny = (cellY - localY) / sigmaY;
+      const value = confidence * Math.exp(-0.5 * (nx * nx + ny * ny));
+      if (value > 0.04) {
+        const idx = cy * gridSize + cx;
+        grid[idx] = Math.max(grid[idx] || 0, value);
+      }
+    }
+  }
+}
+
+function worldToEgoXY(
+  world: { x: number; y: number; z: number },
+  egoState: EgoState
+): { x: number; y: number } {
+  const localPos = vec3Sub(world, egoState.transform.position);
+  const cos = Math.cos(-egoState.transform.rotation);
+  const sin = Math.sin(-egoState.transform.rotation);
+  return {
+    x: localPos.x * cos - localPos.y * sin,
+    y: localPos.x * sin + localPos.y * cos,
+  };
+}
+
+/** Dense BEV occupancy from world-frame agents (cars, peds) plus optional detections. */
+export function createBEVOccupancyFromAgents(
+  agents: OccupancyAgent[],
+  egoState: EgoState,
+  resolution: number = 0.8,
+  extent: number = 32,
+  predictSeconds: number = 0
+): BEVOccupancy {
+  const gridSize = Math.ceil(extent * 2 / resolution);
+  const grid = new Float32Array(gridSize * gridSize);
+
+  for (const agent of agents) {
+    const px = agent.position.x + (agent.velocity?.x ?? 0) * predictSeconds;
+    const py = agent.position.y + (agent.velocity?.y ?? 0) * predictSeconds;
+    const local = worldToEgoXY({ x: px, y: py, z: 0 }, egoState);
+    if (Math.abs(local.x) > extent + 8 || Math.abs(local.y) > extent + 8) continue;
+    splatOccupancy(
+      grid,
+      gridSize,
+      resolution,
+      extent,
+      local.x,
+      local.y,
+      agent.size.x,
+      agent.size.y,
+      agent.confidence ?? 0.9
+    );
+  }
+
+  return { grid, resolution, extent };
+}
+
+export function predictFutureOccupancyFromAgents(
+  agents: OccupancyAgent[],
+  egoState: EgoState,
+  resolution: number = 0.8,
+  extent: number = 32
+): FutureOccupancy {
+  return {
+    current: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 0),
+    t1s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 1),
+    t2s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 2),
+    t3s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 3),
+  };
+}
+
+// Create BEV occupancy from detections (world-frame boxes)
 export function createBEVOccupancy(
   detections: Detection[],
   egoState: EgoState,
   resolution: number = 0.5,
   extent: number = 50
 ): BEVOccupancy {
-  const gridSize = Math.ceil(extent * 2 / resolution);
-  const grid = new Float32Array(gridSize * gridSize);
-  
-  for (const det of detections) {
-    // Transform to ego frame
-    const localPos = vec3Sub(det.boundingBox.center, egoState.transform.position);
-    const cos = Math.cos(-egoState.transform.rotation);
-    const sin = Math.sin(-egoState.transform.rotation);
-    const x = localPos.x * cos - localPos.y * sin;
-    const y = localPos.x * sin + localPos.y * cos;
-    
-    // Convert to grid coordinates
-    const gridX = Math.floor((x + extent) / resolution);
-    const gridY = Math.floor((y + extent) / resolution);
-    
-    // Fill box cells
-    const halfSizeX = Math.ceil(det.boundingBox.size.x / 2 / resolution);
-    const halfSizeY = Math.ceil(det.boundingBox.size.y / 2 / resolution);
-    
-    for (let dx = -halfSizeX; dx <= halfSizeX; dx++) {
-      for (let dy = -halfSizeY; dy <= halfSizeY; dy++) {
-        const cx = gridX + dx;
-        const cy = gridY + dy;
-        if (cx >= 0 && cx < gridSize && cy >= 0 && cy < gridSize) {
-          grid[cy * gridSize + cx] = Math.max(
-            grid[cy * gridSize + cx] || 0,
-            det.confidence
-          );
-        }
-      }
-    }
-  }
-  
-  return { grid, resolution, extent };
+  return createBEVOccupancyFromAgents(
+    detections.map(det => ({
+      position: det.boundingBox.center,
+      size: det.boundingBox.size,
+      yaw: det.boundingBox.yaw,
+      velocity: det.velocity,
+      confidence: det.confidence,
+    })),
+    egoState,
+    resolution,
+    extent,
+    0
+  );
 }
 
 // Predict future occupancy
@@ -363,13 +447,20 @@ export function runWaabiStack(
     0.1
   );
   
-  // Create BEV occupancy with coarser resolution for rendering
-  // Use resolution=2.0 (50x50 grid) instead of default 0.5 (200x200 grid)
-  // This makes each cell visible on the small canvas
-  const bevResolution = 2.0;
-  const bevExtent = 50;
-  const currentOccupancy = createBEVOccupancy(detections, egoState, bevResolution, bevExtent);
-  const futureOccupancy = predictFutureOccupancy(currentOccupancy, detections, egoState, bevResolution, bevExtent);
+  // Dense BEV from the actual agents (traffic + peds) with predicted motion.
+  // Lidar detections alone are too sparse for a heatmap.
+  const bevResolution = 0.8;
+  const bevExtent = 32;
+  const agents: OccupancyAgent[] = entities
+    .filter(e => !e.isStatic && e.classType !== 'building' && e.classType !== 'tree')
+    .map(e => ({
+      position: e.boundingBox.center,
+      size: e.boundingBox.size,
+      yaw: e.boundingBox.yaw,
+      velocity: e.velocity,
+      confidence: 0.92,
+    }));
+  const futureOccupancy = predictFutureOccupancyFromAgents(agents, egoState, bevResolution, bevExtent);
   
   // Generate and score candidate trajectories
   const candidates = generateCandidateTrajectories(egoState, targetSpeed);
