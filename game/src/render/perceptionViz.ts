@@ -233,6 +233,7 @@ export class PerceptionVisualizer {
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
         const world = egoToWorld(p, ego.transform.position, ego.transform.rotation);
+        if (p.z < 0.25 && i % 6 !== 0) continue;
         if (stack === 'aurora' && p.radialVelocity !== undefined) {
           const v = p.radialVelocity;
           if (v < -1) push(world.x, world.y, world.z + 0.05, 0.1, 1, 0.2);

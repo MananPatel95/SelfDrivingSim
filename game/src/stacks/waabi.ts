@@ -103,10 +103,10 @@ function splatOccupancy(
 ) {
   const gridX = (localX + extent) / resolution;
   const gridY = (localY + extent) / resolution;
-  const sigmaX = Math.max(sizeX * 0.55, resolution * 1.2);
-  const sigmaY = Math.max(sizeY * 0.55, resolution * 1.2);
-  const halfX = Math.ceil((sigmaX * 2.4) / resolution);
-  const halfY = Math.ceil((sigmaY * 2.4) / resolution);
+  const sigmaX = Math.max(sizeX * 0.85, resolution * 1.6);
+  const sigmaY = Math.max(sizeY * 0.85, resolution * 1.6);
+  const halfX = Math.ceil((sigmaX * 2.8) / resolution);
+  const halfY = Math.ceil((sigmaY * 2.8) / resolution);
   const cx0 = Math.floor(gridX);
   const cy0 = Math.floor(gridY);
 
@@ -449,8 +449,9 @@ export function runWaabiStack(
   
   // Dense BEV from the actual agents (traffic + peds) with predicted motion.
   // Lidar detections alone are too sparse for a heatmap.
-  const bevResolution = 0.8;
-  const bevExtent = 32;
+  // 24 m extent / 1.5 m cells = 32×32 — large enough cells to read as a heatmap
+  const bevResolution = 1.5;
+  const bevExtent = 24;
   const agents: OccupancyAgent[] = entities
     .filter(e => !e.isStatic && e.classType !== 'building' && e.classType !== 'tree')
     .map(e => ({

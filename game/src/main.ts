@@ -1210,21 +1210,21 @@ function setupHarbourZone() {
     new THREE.BoxGeometry(40, 3, 220),
     new THREE.MeshStandardMaterial({ color: 0x6b6254, roughness: 0.9 })
   );
-  dock.position.set(-140, 1.2, 0);
+  dock.position.set(-70, 1.2, 40);
   addZoneMesh(dock);
-  for (const z of [-80, -20, 40, 100]) {
+  for (const z of [-20, 20, 60, 100]) {
     const pile = new THREE.Mesh(
       new THREE.CylinderGeometry(0.6, 0.7, 6, 8),
       new THREE.MeshStandardMaterial({ color: 0x3a2a1a })
     );
-    pile.position.set(-118, 2, z);
+    pile.position.set(-48, 2, z);
     addZoneMesh(pile);
   }
   const warehouse = new THREE.Mesh(
-    new THREE.BoxGeometry(28, 12, 50),
+    new THREE.BoxGeometry(22, 10, 36),
     new THREE.MeshStandardMaterial({ color: 0x8a8070 })
   );
-  warehouse.position.set(-168, 6, -20);
+  warehouse.position.set(-88, 5, 20);
   addZoneMesh(warehouse);
 
   // Channel markers / buoys only — no asphalt
@@ -1884,7 +1884,12 @@ function renderOccupancyGrid(
         const g = Math.max(0, Math.min(255, Math.floor((1 - value) * 255)));
         const b = Math.max(0, 150 - Math.floor(value * 150));
         ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.fillRect(x + gx * cellW, y + (gridSize - gy - 1) * cellH, cellW + 0.5, cellH + 0.5);
+        ctx.fillRect(
+          x + gx * cellW,
+          y + (gridSize - gy - 1) * cellH,
+          Math.max(cellW + 0.8, 3),
+          Math.max(cellH + 0.8, 3)
+        );
       }
     }
   }

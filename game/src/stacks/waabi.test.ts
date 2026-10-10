@@ -29,15 +29,15 @@ describe('dense BEV occupancy from agents', () => {
         { position: vec3(8, 8, 0.7), size: vec3(4.5, 1.8, 1.5), yaw: 0, velocity: vec3(6, 0, 0), confidence: 0.88 },
       ],
       egoAtOrigin(),
-      0.8,
-      32,
+      1.5,
+      24,
       0
     );
 
     let occupied = 0;
     for (const v of occ.grid) if (v > 0.08) occupied++;
     expect(occupied).toBeGreaterThan(40);
-    expect(occ.grid.length).toBeGreaterThan(2000);
+    expect(occ.grid.length).toBeGreaterThan(400);
   });
 
   it('advances occupancy with predicted motion', () => {
