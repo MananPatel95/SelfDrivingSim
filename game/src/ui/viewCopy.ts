@@ -40,22 +40,22 @@ export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
   chase: {
     title: 'Chase camera',
     uses: 'Default rig: behind and slightly above the car, following the nose. It stays behind while you reverse. Hold right mouse to orbit; it eases home after 1.5 s. Scroll zooms.',
-    diff: 'Hood is a bumper cam. BEV is a straight-down map. Orbit stays free and does not auto-return.',
+    diff: 'First person is the cabin: dash, windshield, and a wheel that turns with A and D. BEV is a straight-down map. Orbit stays free and does not auto-return.',
   },
   hood: {
-    title: 'Hood camera',
-    uses: 'Driver’s seat. You see the dash and the steering wheel, which turns with A and D. The nose of the car is ahead of you.',
+    title: 'First person',
+    uses: 'Driver’s seat. The wheel is in front of you and turns left with A and right with D. The hood and the road are through the windshield.',
     diff: 'Chase follows from behind and can look around with RMB. BEV is top-down. Orbit is free around the car.',
   },
   bev: {
     title: 'BEV camera',
     uses: 'Bird’s-eye view straight down over the car — the same frame Waabi’s occupancy grid lives in.',
-    diff: 'Chase and Hood are perspective street views. Orbit can tilt and yaw freely. This one stays nadir.',
+    diff: 'Chase and first person are perspective street views. Orbit can tilt and yaw freely. This one stays nadir.',
   },
   orbit: {
     title: 'Orbit camera',
     uses: 'Free look around the car. Right-drag yaws and pitches; scroll zooms. It does not snap back behind the car.',
-    diff: 'Chase auto-returns behind the car after you release RMB. Hood and BEV are locked framings.',
+    diff: 'Chase auto-returns behind the car after you release RMB. First person and BEV are locked framings.',
   },
 };
 
