@@ -128,6 +128,8 @@ let orbitDist = 9.2;
 let rmbOrbiting = false;
 let lastMouseCamMs = -1e9;
 let showPhysDebug = false;
+/** Ground-level side camera for wheel/sill verification. */
+let debugSideCam: { height: number; side: number; lookY: number } | null = null;
 const CHASE_RETURN_DELAY = 1.5;
 const CHASE_DIST_DEFAULT = 9.2;
 const ORBIT_DIST_DEFAULT = 22;
@@ -875,6 +877,17 @@ function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
 }
 
 function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
+  if (debugSideCam) {
+    const rightX = Math.cos(egoYaw - Math.PI / 2);
+    const rightY = Math.sin(egoYaw - Math.PI / 2);
+    camera.position.set(
+      egoX + rightX * debugSideCam.side,
+      debugSideCam.height,
+      -(egoY + rightY * debugSideCam.side)
+    );
+    camera.lookAt(egoX, debugSideCam.lookY, -egoY);
+    return;
+  }
   if (cameraMode === 'chase' && !rmbOrbiting && lastMouseCamMs > 0
     && (performance.now() - lastMouseCamMs) > CHASE_RETURN_DELAY * 1000) {
     orbitYaw = dampAngle(orbitYaw, 0, dt, 0.38);
@@ -2356,12 +2369,30 @@ async function init() {
   requestAnimationFrame(animate);
   (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
     setOrbit(yaw: number, pitch: number, dist: number) {
+      debugSideCam = null;
       cameraMode = 'orbit';
       orbitYaw = yaw;
       orbitPitch = pitch;
       orbitDist = dist;
       camFollowReady = true;
       updateViewExplainer();
+    },
+    setLowSideCam() {
+      debugSideCam = { height: 0.32, side: 6.4, lookY: 0.38 };
+    },
+    setPhotoHud() {
+      showPhysDebug = true;
+      showAIView = false;
+      showGroundTruth = false;
+      const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
+      if (box) box.checked = true;
+      document.getElementById('phys-debug')?.classList.add('visible');
+      document.getElementById('ai-view-panel')?.classList.remove('visible');
+      document.getElementById('view-explainer')?.classList.add('hidden');
+      document.getElementById('bev-overlay')?.classList.remove('visible');
+      document.getElementById('decision-banner')?.classList.remove('visible');
+      document.getElementById('drive-hint')?.classList.remove('visible');
+      perceptionViz?.setEnabled(false);
     },
     enablePhysDebug() {
       showPhysDebug = true;

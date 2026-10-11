@@ -231,6 +231,8 @@ function stepDynamics(
   const kinSpeed = 5 / 3.6; // blend to kinematic below ~5 km/h so slip cannot blow up
   const kinW = clamp(1 - uAbs / kinSpeed, 0, 1);
   const blend = 1 - kinW;
+  // Extra lateral damping through city crawl speeds so leftover v cannot report 60° slip.
+  const crawlW = clamp(1 - uAbs / (12 / 3.6), 0, 1);
 
   const uGuard = uAbs < 0.6 ? Math.sign(u || 1) * 0.6 : u;
   const vf = v + dyn.a * r;
@@ -284,6 +286,8 @@ function stepDynamics(
       vDot -= v * (10 * kinW);
       rDot -= r * (12 * kinW);
     }
+  } else if (crawlW > 0 && handbrake < 0.2) {
+    vDot -= v * (6 * crawlW);
   }
 
   const parked = Math.abs(driveForce) < 120 && brakeForce < 40 && handbrake < 0.05;
@@ -442,8 +446,8 @@ export function updateVehicle(
   // Cosmetic only, from body accel in g — not from the huge slip-angle number.
   const targetRoll = clamp((-ay / G) * 0.07, -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
   const targetPitch = clamp((-ax / G) * 0.045, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
-  const bodyRoll = approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5);
-  const bodyPitch = approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2);
+  const bodyRoll = clamp(approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5), -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
+  const bodyPitch = clamp(approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2), -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
   const wheelSpin = p.wheelSpin + (u / dyn.wheelRadius) * dt;
 
   return {

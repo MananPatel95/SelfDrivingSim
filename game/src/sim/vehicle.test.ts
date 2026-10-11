@@ -108,6 +108,15 @@ describe('dynamic bicycle sedan', () => {
     expect(Math.abs(ego.bodyRoll ?? 0)).toBeLessThanOrEqual((5.1 * Math.PI) / 180);
   });
 
+  it('12 km/h moderate steer does not blow slip to 60°', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 3.33, velocity: { x: 3.33, y: 0, z: 0 } };
+    ego = drive(2.2, { throttle: 0.18, steering: 0.45, brake: 0 }, ego);
+    const slipDeg = Math.abs(ego.slipAngle ?? 0) * 180 / Math.PI;
+    expect(slipDeg).toBeLessThan(8);
+    expect(Math.abs(ego.bodyRoll ?? 0)).toBeLessThanOrEqual((5.1 * Math.PI) / 180);
+  });
+
   it('handbrake slide produces rear slip above 15°', () => {
     let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
     ego = { ...ego, bodyVx: 20, velocity: { x: 20, y: 0, z: 0 } };
