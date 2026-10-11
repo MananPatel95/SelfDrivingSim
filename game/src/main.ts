@@ -657,7 +657,7 @@ function rebuildStaticCity() {
       trees.length
     );
     const foliage = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(2, 5, 7),
+      new THREE.ConeGeometry(1.05, 4.2, 7),
       new THREE.MeshLambertMaterial({ color: 0x228b22 }),
       trees.length
     );
@@ -667,7 +667,7 @@ function rebuildStaticCity() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       trunks.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(t.transform.position.x, 4.5, -t.transform.position.y);
+      dummy.position.set(t.transform.position.x, 3.6, -t.transform.position.y);
       dummy.updateMatrix();
       foliage.setMatrixAt(i, dummy.matrix);
     });

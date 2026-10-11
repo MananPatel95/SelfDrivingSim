@@ -451,7 +451,8 @@ export class Simulation {
       this.state.ego.transform.position.x,
       this.state.ego.transform.position.y,
       this.state.ego.transform.rotation,
-      this.state.pedestrians
+      this.state.pedestrians,
+      vec3Length(this.state.ego.velocity)
     );
     if (yieldToPed) {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };

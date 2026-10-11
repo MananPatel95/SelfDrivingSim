@@ -239,7 +239,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
   }
   
   // Trees sit on the sidewalk, clear of the asphalt. Trunk box is what cars hit.
-  const sidewalkInset = config.laneWidth * 2 + config.sidewalkWidth * 0.7;
+  const sidewalkInset = config.laneWidth * 2 + config.sidewalkWidth + 0.4;
   for (let i = 0; i < config.gridSize; i++) {
     for (let j = 0; j < config.gridSize; j++) {
       const x0 = -halfSize + i * config.blockSize;
@@ -410,7 +410,8 @@ export function updateTrafficVehicle(
     vehicle.transform.position.x,
     vehicle.transform.position.y,
     yaw,
-    pedestrians
+    pedestrians,
+    speed
   );
   if (yieldPed) shouldStop = true;
   if (shouldStop) accel = Math.min(accel, yieldPed ? -6.5 : -3.5);
@@ -497,10 +498,12 @@ export function shouldYieldToPedestrian(
   x: number,
   y: number,
   yaw: number,
-  peds: Array<Pick<Pedestrian, 'transform' | 'state'>>
+  peds: Array<Pick<Pedestrian, 'transform' | 'state'>>,
+  speed = 0
 ): boolean {
   const fx = Math.cos(yaw);
   const fy = Math.sin(yaw);
+  const range = Math.min(36, 11 + Math.max(0, speed) * 1.7);
   for (const ped of peds) {
     const px = ped.transform.position.x;
     const py = ped.transform.position.y;
@@ -508,7 +511,7 @@ export function shouldYieldToPedestrian(
     const dy = py - y;
     const ahead = dx * fx + dy * fy;
     const lat = Math.abs(-dx * fy + dy * fx);
-    if (ahead < 0.5 || ahead > 16 || lat > 3.6) continue;
+    if (ahead < 0.5 || ahead > range || lat > 4.0) continue;
     const onAsphalt = pointOnRoad(px, py, PED_CITY, 0.15);
     if (ped.state === 'crossing' || ped.state === 'waiting' || onAsphalt) return true;
   }

@@ -68,5 +68,7 @@ describe('sidewalk trees and crosswalk pedestrians', () => {
     ped = { ...ped, state: 'crossing', transform: { ...ped.transform, position: vec3(2, 0, 0.9) } };
     expect(shouldYieldToPedestrian(0, -10, Math.PI / 2, [ped])).toBe(true);
     expect(shouldYieldToPedestrian(0, 12, Math.PI / 2, [ped])).toBe(false);
+    const far = pedAt(1.2, 24, 0, 'crossing');
+    expect(shouldYieldToPedestrian(0, 0, Math.PI / 2, [far], 20)).toBe(true);
   });
 });
