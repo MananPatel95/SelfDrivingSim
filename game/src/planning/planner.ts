@@ -76,6 +76,24 @@ export function planTrajectory(
   let desiredSpeed = config.targetSpeed;
   let stoppingDistance = Infinity;
 
+  const closest = closestRouteIndex(egoState, route);
+  const corner = nextCorner(route, closest);
+  if (corner && corner.turn > 0.65) {
+    const cornerSpeed = corner.turn > 1.05 ? 3.8 : 6.0;
+    const need = Math.max(0, speed * speed - cornerSpeed * cornerSpeed) / (2 * 3.2) + 12;
+    if (corner.distance < Math.max(28, need)) {
+      desiredSpeed = Math.min(desiredSpeed, cornerSpeed);
+    }
+  }
+  if (route.length > 1) {
+    const alongRoad = Math.abs(normalizeAngle(segmentHeading(route, closest) - egoState.transform.rotation));
+    // Stay slow until the nose is on the new road. Speeding up mid-turn
+    // opens the radius and the car runs onto the grass.
+    if (alongRoad > 0.35 || Math.abs(steering) > 0.5) {
+      desiredSpeed = Math.min(desiredSpeed, 3.8);
+    }
+  }
+
   const goal = route.length > 0 ? route[route.length - 1] : null;
   if (goal && vec3Distance(egoState.transform.position, goal) < 12) {
     desiredSpeed = 0;
@@ -170,9 +188,6 @@ function findTargetPoint(
     return { point: ego.transform.position, progress: 0 };
   }
   
-  // Look-ahead distance based on speed
-  const lookAhead = Math.max(10, speed * 1.5);
-  
   // Find closest point on route
   let closestDist = Infinity;
   let closestIdx = 0;
@@ -183,6 +198,14 @@ function findTargetPoint(
       closestDist = dist;
       closestIdx = i;
     }
+  }
+
+  // Short look-ahead. A long one aims through the next block and the car
+  // cuts the corner across the grass instead of turning on the asphalt.
+  const corner = nextCorner(route, closestIdx);
+  let lookAhead = Math.max(6, Math.min(11, speed * 0.65));
+  if (corner && corner.turn > 0.65) {
+    lookAhead = Math.min(lookAhead, corner.distance + 4);
   }
   
   // Find target point at look-ahead distance
@@ -198,6 +221,43 @@ function findTargetPoint(
     point: route[Math.min(targetIdx, route.length - 1)]!,
     progress: targetIdx / route.length,
   };
+}
+
+function closestRouteIndex(ego: EgoState, route: Vec3[]): number {
+  let closestDist = Infinity;
+  let closestIdx = 0;
+  for (let i = 0; i < route.length; i++) {
+    const dist = vec3Distance(ego.transform.position, route[i]!);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestIdx = i;
+    }
+  }
+  return closestIdx;
+}
+
+function segmentHeading(route: Vec3[], index: number): number {
+  const a = route[index]!;
+  const b = route[Math.min(route.length - 1, index + 1)]!;
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
+
+/** First sharp bend ahead of `fromIdx`, with distance along the route to that vertex. */
+function nextCorner(
+  route: Vec3[],
+  fromIdx: number,
+): { index: number; distance: number; turn: number } | null {
+  if (route.length < 3 || fromIdx >= route.length - 1) return null;
+  const base = segmentHeading(route, fromIdx);
+  let dist = 0;
+  for (let i = fromIdx; i < route.length - 1; i++) {
+    const turn = Math.abs(normalizeAngle(segmentHeading(route, i) - base));
+    if (i > fromIdx && turn > 0.65) {
+      return { index: i, distance: dist, turn };
+    }
+    dist += vec3Distance(route[i]!, route[i + 1]!);
+  }
+  return null;
 }
 
 function calculateSteering(ego: EgoState, target: Vec3, _speed: number): number {
