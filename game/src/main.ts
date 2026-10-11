@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { snapToRoad, roadRoute } from './sim/world';
+import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
 import { COCKPIT, handWheelRotation } from './sim/cabinView';
 import {
   AXLE_HEIGHT,
@@ -2308,12 +2308,15 @@ function refreshStartButtons() {
   const ready = !!(tripStart && tripEnd);
   const manual = document.getElementById('start-manual') as HTMLButtonElement | null;
   const auto = document.getElementById('start-auto') as HTMLButtonElement | null;
-  if (manual) manual.disabled = !ready;
+  if (manual) {
+    manual.disabled = false;
+    manual.textContent = ready ? 'Drive this route' : 'Just drive';
+  }
   if (auto) auto.disabled = !ready;
   const status = document.getElementById('start-status');
   if (!status) return;
-  if (!tripStart) status.textContent = 'Click the map to set a start point on a road.';
-  else if (!tripEnd) status.textContent = 'Click where the trip should end.';
+  if (!tripStart) status.textContent = 'Just drive starts you parked. Or click the map to set a start, then an end.';
+  else if (!tripEnd) status.textContent = 'Click where the trip should end, or just drive from here.';
   else status.textContent = 'Watch the autopilot drive this route, or drive it yourself.';
 }
 
@@ -2363,13 +2366,23 @@ function drawStartMap() {
   if (tripEnd) dot(tripEnd, '#f55');
 }
 
+function headingAlongRoad(p: { x: number; y: number }): number {
+  const onNS = Math.abs(p.x - nearestGridLine(p.x)) <= Math.abs(p.y - nearestGridLine(p.y));
+  return onNS ? Math.PI / 2 : 0;
+}
+
 function beginGame(mode: 'manual' | 'autopilot') {
-  if (gameStarted || !tripStart || !tripEnd) return;
-  simulation.beginTrip(
-    { ...tripStart, z: 0 },
-    { ...tripEnd, z: 0 },
-    mode === 'manual' ? 'human' : 'policy'
-  );
+  if (gameStarted) return;
+  if (mode === 'autopilot') {
+    if (!tripStart || !tripEnd) return;
+    simulation.beginTrip({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 }, 'policy');
+  } else if (tripStart && tripEnd) {
+    simulation.beginTrip({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 }, 'human');
+  } else if (tripStart) {
+    simulation.beginParked({ ...tripStart, z: 0 }, headingAlongRoad(tripStart));
+  } else {
+    simulation.beginParked();
+  }
   observing = mode === 'autopilot';
   gameStarted = true;
   document.getElementById('start-menu')?.classList.add('hidden');
