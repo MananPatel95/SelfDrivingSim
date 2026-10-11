@@ -736,7 +736,8 @@ function updateEntityMeshes() {
     const face = entity.transform.rotation;
     if (isVehicle) mesh.rotation.y = meshYawForHeading(face);
     else if (entity.classType === 'pedestrian') {
-      // Legs step along local -Z. Point that axis down the sidewalk, not across it.
+      // Body faces along the sidewalk. The step cycle is applied below so the feet
+      // move in that same direction (not a moonwalk toward the camera).
       mesh.rotation.y = Math.atan2(-Math.cos(face), Math.sin(face));
     } else mesh.rotation.y = -face;
     const walk = mesh.userData.walk as {
@@ -746,10 +747,12 @@ function updateEntityMeshes() {
       const spd = Math.hypot(entity.velocity.x, entity.velocity.y);
       const phase = spd > 0.15 ? (entity.transform.position.x + entity.transform.position.y) * 2.4 : 0;
       const swing = Math.sin(phase) * Math.min(0.65, 0.25 + spd * 0.28);
-      walk.leftLeg.rotation.x = swing;
-      walk.rightLeg.rotation.x = -swing;
-      walk.leftArm.rotation.x = -swing * 0.85;
-      walk.rightArm.rotation.x = swing * 0.85;
+      // Positive X rotation steps the foot toward local -Z, which is behind the facing.
+      // Negate it so a pedestrian walking away steps away, not back toward the camera.
+      walk.leftLeg.rotation.x = -swing;
+      walk.rightLeg.rotation.x = swing;
+      walk.leftArm.rotation.x = swing * 0.85;
+      walk.rightArm.rotation.x = -swing * 0.85;
     }
   }
 }
