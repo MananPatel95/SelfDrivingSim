@@ -56,15 +56,22 @@
     .view-btn:hover { background: #333; }
     .view-btn.active { background: #0066cc; border-color: #0088ff; }
 
-    #status-panel {
+    #left-hud-stack {
       position: absolute;
       bottom: 50px;
       left: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      z-index: 8;
+    }
+    #status-panel {
+      position: static;
       background: rgba(0,0,0,0.8);
       padding: 15px;
       border-radius: 8px;
       min-width: 200px;
-      z-index: 8;
     }
 
     .status-row {
@@ -230,9 +237,7 @@
 
     #phys-debug {
       display: none;
-      position: absolute;
-      bottom: 230px;
-      left: 10px;
+      position: static;
       background: rgba(0,0,0,0.78);
       padding: 8px 10px;
       border-radius: 6px;
@@ -240,7 +245,6 @@
       font-size: 11px;
       line-height: 1.45;
       color: #9ed;
-      z-index: 8;
       min-width: 148px;
     }
     #phys-debug.visible { display: block; }
@@ -524,17 +528,18 @@
     <div id="drive-hint" class="hud">W throttle · S brake then reverse · A/D steer · Space handbrake. Hold right mouse to look. T autopilot.</div>
     <div id="collision-flash" class="hud">COLLISION</div>
 
-    <div id="status-panel" class="hud">
-      <div class="status-row"><span>Speed</span><span class="status-value" id="speed-value">0 km/h</span></div>
-      <div class="status-row"><span>Stopping Dist</span><span class="status-value" id="stopping-dist">0 m</span></div>
-      <div class="status-row"><span>Control</span><span class="status-value" id="control-source">AUTOPILOT</span></div>
-      <div class="status-row"><span>Detections</span><span class="status-value" id="detection-count">0</span></div>
-      <div class="status-row"><span>Collisions</span><span class="status-value" id="collision-count">0</span></div>
-      <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
-      <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
+    <div id="left-hud-stack" class="hud">
+      <div id="phys-debug"></div>
+      <div id="status-panel">
+        <div class="status-row"><span>Speed</span><span class="status-value" id="speed-value">0 km/h</span></div>
+        <div class="status-row"><span>Stopping Dist</span><span class="status-value" id="stopping-dist">0 m</span></div>
+        <div class="status-row"><span>Control</span><span class="status-value" id="control-source">AUTOPILOT</span></div>
+        <div class="status-row"><span>Detections</span><span class="status-value" id="detection-count">0</span></div>
+        <div class="status-row"><span>Collisions</span><span class="status-value" id="collision-count">0</span></div>
+        <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
+        <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
+      </div>
     </div>
-
-    <div id="phys-debug" class="hud"></div>
 
     <canvas id="minimap" class="hud" width="180" height="180"></canvas>
 

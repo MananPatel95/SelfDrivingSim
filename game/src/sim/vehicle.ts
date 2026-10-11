@@ -5,6 +5,7 @@
 
 import type { EgoState, Vec3, VehicleType } from './types';
 import { clamp, normalizeAngle, vec3 } from './math';
+import { MAX_COSMETIC_PITCH, MAX_COSMETIC_ROLL } from './vehicleVisual';
 
 export interface VehicleParams {
   wheelbase: number; // m
@@ -426,8 +427,8 @@ export function updateVehicle(
   const worldSpeed = Math.hypot(vx, vy);
   const stoppingDistance = (worldSpeed * worldSpeed) / (2 * params.maxDecel);
 
-  const targetRoll = clamp(-ay * 0.04 - r * 0.09, -0.24, 0.24);
-  const targetPitch = clamp(-ax * 0.02, -0.12, 0.10);
+  const targetRoll = clamp(-ay * 0.018 - r * 0.04, -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
+  const targetPitch = clamp(-ax * 0.01, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
   const bodyRoll = approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5);
   const bodyPitch = approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2);
   const wheelSpin = p.wheelSpin + (u / dyn.wheelRadius) * dt;

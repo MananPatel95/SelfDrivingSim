@@ -353,7 +353,9 @@ export class PerceptionVisualizer {
     const keyParts: string[] = [];
     const items: Array<{ text: string; color: string; x: number; y: number; z: number }> = [];
 
-    const tracks = input.tracks.filter(t => t.missedFrames === 0).slice(0, MAX_LABELS);
+    const tracks = input.tracks
+      .filter(t => t.missedFrames === 0 && t.confidence >= 0.4)
+      .slice(0, MAX_LABELS);
     for (const track of tracks) {
       const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
       const conf = Math.round(track.confidence * 100);

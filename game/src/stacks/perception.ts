@@ -328,12 +328,19 @@ const CLASS_SIZE_RANGES: Record<EntityClass, { length: [number, number]; width: 
   quay: { length: [10.0, 500.0], width: [5.0, 20.0], height: [2.0, 10.0] },
 };
 
+export const DISPLAY_MIN_CONFIDENCE = 0.4;
+
 export function classifyBySize(box: BoundingBox3D): { classType: EntityClass; confidence: number } {
   const { x: length, y: width, z: height } = box.size;
   
   // Ensure length >= width (swap if needed for comparison)
   const l = Math.max(length, width);
   const w = Math.min(length, width);
+
+  // Tall thin street furniture is a pole, never a traffic sign / light.
+  if (w <= 0.7 && height >= 1.8) {
+    return { classType: 'pole', confidence: 0.82 };
+  }
   
   let bestClass: EntityClass = 'car';
   let bestScore = 0;
@@ -351,6 +358,27 @@ export function classifyBySize(box: BoundingBox3D): { classType: EntityClass; co
   }
   
   return { classType: bestClass, confidence: Math.min(0.95, bestScore) };
+}
+
+function majorityGroundTruthClass(points: LidarPoint[]): EntityClass | undefined {
+  const counts = new Map<EntityClass, number>();
+  let labeled = 0;
+  for (const p of points) {
+    if (!p.groundTruthClass) continue;
+    labeled += 1;
+    const cls = p.groundTruthClass;
+    counts.set(cls, (counts.get(cls) ?? 0) + 1);
+  }
+  if (labeled < Math.max(4, points.length * 0.35)) return undefined;
+  let best: EntityClass | undefined;
+  let bestN = 0;
+  for (const [cls, n] of counts) {
+    if (n > bestN) {
+      best = cls;
+      bestN = n;
+    }
+  }
+  return best;
 }
 
 function scoreInRange(value: number, range: [number, number]): number {
@@ -485,15 +513,24 @@ export function runPerception(
   const clusters = clusterPoints(nonGround, 0.5, 5);
   
   // 3. Box fitting and classification
-  const rawDetections = clusters.map(cluster => {
+  const rawDetections = clusters.flatMap(cluster => {
     const box = fitBoundingBox(cluster);
-    const { classType, confidence } = classifyBySize(box);
-    return {
+    const range = Math.hypot(box.center.x, box.center.y);
+    // Ego body / roof lidar live near the sensor origin in ego-frame.
+    if (range < 2.4 && Math.abs(box.center.z) < 2.6) return [];
+    // Leftover pavement / curb flakes.
+    if (box.size.z < 0.32 && box.center.z < 0.28) return [];
+    const gtClass = majorityGroundTruthClass(cluster.points);
+    const sized = classifyBySize(box);
+    const classType = gtClass ?? sized.classType;
+    const confidence = gtClass ? Math.max(sized.confidence, 0.75) : sized.confidence;
+    if (confidence < DISPLAY_MIN_CONFIDENCE) return [];
+    return [{
       box,
       classType,
       confidence,
       pointsInBox: cluster.points.length,
-    };
+    }];
   });
   
   // 4. Tracking

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
+import { AXLE_HEIGHT, ROAD_SURFACE_Y, VISUAL_WHEEL_RADIUS, WHEEL_PLAN_OFFSETS } from './sim/vehicleVisual';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
@@ -171,6 +172,7 @@ const inputState = {
 };
 
 let egoMesh: THREE.Object3D;
+let egoBodyPivot: THREE.Group | null = null;
 let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
@@ -368,36 +370,37 @@ function buildCityRoads() {
 function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x: number; y: number; z: number } } }): THREE.Mesh | THREE.Group {
   switch (classType) {
     case 'car': {
-      // Create a more detailed car mesh
       const group = new THREE.Group();
-      
-      // Body
+      const npcRadius = 0.35;
+      const npcAxle = ROAD_SURFACE_Y + npcRadius;
+
       const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.6);
       const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3366cc});
       const body = new THREE.Mesh(bodyGeo, bodyMat);
       body.position.y = 0.6;
       body.castShadow = true;
       group.add(body);
-      
-      // Cabin
+
       const cabinGeo = new THREE.BoxGeometry(2.2, 0.8, 1.4);
       const cabinMat = new THREE.MeshLambertMaterial({ color: 0x222222});
       const cabin = new THREE.Mesh(cabinGeo, cabinMat);
       cabin.position.set(-0.3, 1.3, 0);
       cabin.castShadow = true;
       group.add(cabin);
-      
-      // Wheels
-      const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
+
+      const wheelGeo = new THREE.CylinderGeometry(npcRadius, npcRadius, 0.2, 16);
       const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-      const wheelPositions: [number, number, number][] = [[1.2, 0.35, 0.8], [1.2, 0.35, -0.8], [-1.2, 0.35, 0.8], [-1.2, 0.35, -0.8]];
+      const wheelPositions: [number, number, number][] = [
+        [1.2, npcAxle, 0.8], [1.2, npcAxle, -0.8],
+        [-1.2, npcAxle, 0.8], [-1.2, npcAxle, -0.8],
+      ];
       for (const [wx, wy, wz] of wheelPositions) {
         const wheel = new THREE.Mesh(wheelGeo, wheelMat);
         wheel.position.set(wx, wy, wz);
         wheel.rotation.x = Math.PI / 2;
         group.add(wheel);
       }
-      
+
       return group as unknown as THREE.Mesh;
     }
     
@@ -411,6 +414,16 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       cab.position.set(2.5, 1.3, 0);
       cab.castShadow = true;
       group.add(cab);
+      const truckRadius = 0.42;
+      const truckAxle = ROAD_SURFACE_Y + truckRadius;
+      const truckWheel = new THREE.CylinderGeometry(truckRadius, truckRadius, 0.28, 12);
+      const truckWheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      for (const [wx, wz] of [[3.2, 1.1], [3.2, -1.1], [-3.4, 1.1], [-3.4, -1.1], [-1.2, 1.1], [-1.2, -1.1]] as Array<[number, number]>) {
+        const wheel = new THREE.Mesh(truckWheel, truckWheelMat);
+        wheel.position.set(wx, truckAxle, wz);
+        wheel.rotation.x = Math.PI / 2;
+        group.add(wheel);
+      }
       
       // Trailer
       const trailerGeo = new THREE.BoxGeometry(7, 2.8, 2.4);
@@ -427,12 +440,14 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       const group = new THREE.Group();
       const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066, 0xffcc00, 0x3399ff];
       const bodyMat = new THREE.MeshLambertMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 6), bodyMat);
-      body.position.y = 1.0;
+      const pedRadius = 0.28;
+      const pedHalf = 0.5 + pedRadius;
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(pedRadius, 1.0, 4, 6), bodyMat);
+      body.position.y = ROAD_SURFACE_Y + pedHalf;
       body.castShadow = false;
       group.add(body);
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffcc99 }));
-      head.position.y = 1.7;
+      head.position.y = ROAD_SURFACE_Y + pedHalf + 0.72;
       group.add(head);
       return group as unknown as THREE.Mesh;
     }
@@ -734,7 +749,7 @@ function updateDetectionMeshes() {
   detectionMeshes.length = 0;
   
   const state = simulation.getState();
-  const detections = state.perceptionTracks.filter(t => t.missedFrames === 0);
+  const detections = state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4);
   const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
   
   for (const det of detections) {
@@ -868,7 +883,7 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     const follow = followHeading(egoX, egoY, egoYaw);
     targetYaw = follow + Math.PI + orbitYaw;
     const dist = orbitDist;
-    const height = 2.15 + orbitPitch * 6.5;
+    const height = Math.max(0.36, 2.15 + orbitPitch * 6.5);
     targetPosX = egoX + Math.cos(targetYaw) * dist;
     targetPosY = height;
     targetPosZ = -(egoY + Math.sin(targetYaw) * dist);
@@ -913,12 +928,12 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
 
   if (cameraMode === 'chase') {
     camPosX = camLookX + Math.cos(camYaw) * orbitDist;
-    camPosY = 2.15 + orbitPitch * 6.5;
+    camPosY = Math.max(0.36, 2.15 + orbitPitch * 6.5);
     camPosZ = -(camLookY + Math.sin(camYaw) * orbitDist);
   }
 
   camera.position.set(camPosX, camPosY, camPosZ);
-  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : 1.15;
+  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
   camera.lookAt(camLookX, lookZ, -camLookY);
 }
 
@@ -1056,7 +1071,7 @@ function updateHUD() {
   document.getElementById('speed-value')!.textContent = `${Math.round(speed)} km/h`;
   document.getElementById('stopping-dist')!.textContent = `${Math.round(state.ego.stoppingDistance)} m`;
   document.getElementById('detection-count')!.textContent =
-    String(state.perceptionTracks.filter(t => t.missedFrames === 0).length);
+    String(state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4).length);
   const colEl = document.getElementById('collision-count');
   if (colEl) {
     colEl.textContent = String(state.collisionCount);
@@ -1830,7 +1845,7 @@ let lastOrbitClientY = 0;
 
 function applyOrbitDrag(dx: number, dy: number) {
   orbitYaw -= dx * 0.0048;
-  orbitPitch = clamp(orbitPitch + dy * 0.0032, -0.05, 1.15);
+  orbitPitch = clamp(orbitPitch + dy * 0.0032, -0.28, 1.15);
   lastMouseCamMs = performance.now();
 }
 
@@ -2065,10 +2080,12 @@ function animate(time: number) {
   const alpha = isPaused ? 1 : simAccumulator / SIM_DT;
   const ego = interpolatedEgo(alpha);
   egoMesh.position.set(ego.x, 0, -ego.y);
-  egoMesh.rotation.order = 'YXZ';
-  egoMesh.rotation.y = -ego.yaw + Math.PI;
-  egoMesh.rotation.x = ego.pitch;
-  egoMesh.rotation.z = -ego.roll;
+  egoMesh.rotation.set(0, -ego.yaw + Math.PI, 0);
+  if (egoBodyPivot) {
+    egoBodyPivot.rotation.order = 'YXZ';
+    egoBodyPivot.rotation.x = ego.pitch;
+    egoBodyPivot.rotation.z = -ego.roll;
+  }
   for (const wheel of egoWheels) {
     wheel.pivot.rotation.y = wheel.front ? currSteer : 0;
     wheel.mesh.rotation.y = currWheelSpin;
@@ -2170,43 +2187,51 @@ function updateAIView(drawRawScene: boolean) {
 // Create a more detailed ego vehicle mesh
 function createEgoVehicle(): THREE.Group {
   const group = new THREE.Group();
-  
-  // Main body
+
+  // Body rotates about the axle so wheels stay planted on the road.
+  egoBodyPivot = new THREE.Group();
+  egoBodyPivot.position.y = AXLE_HEIGHT;
+  group.add(egoBodyPivot);
+
   const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.8);
   const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc});
   const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.6;
+  body.position.y = 0.6 - AXLE_HEIGHT;
   body.castShadow = true;
-  group.add(body);
-  
-  // Cabin with windows
+  egoBodyPivot.add(body);
+
   const cabinGeo = new THREE.BoxGeometry(2.4, 0.9, 1.6);
   const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122});
   const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-  cabin.position.set(-0.2, 1.35, 0);
+  cabin.position.set(-0.2, 1.35 - AXLE_HEIGHT, 0);
   cabin.castShadow = true;
-  group.add(cabin);
-  
-  // Roof sensor dome (lidar)
+  egoBodyPivot.add(cabin);
+
   const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
   const lidarMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
   const lidar = new THREE.Mesh(lidarGeo, lidarMat);
-  lidar.position.set(0, 1.9, 0);
-  group.add(lidar);
-  
-  // Wheels (pivots so fronts can steer; mesh spins about the axle)
+  lidar.position.set(0, 1.9 - AXLE_HEIGHT, 0);
+  egoBodyPivot.add(lidar);
+
+  const lightGeo = new THREE.CircleGeometry(0.15, 8);
+  const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
+  const headlightL = new THREE.Mesh(lightGeo, lightMat);
+  headlightL.position.set(2.1, 0.6 - AXLE_HEIGHT, 0.6);
+  headlightL.rotation.y = Math.PI / 2;
+  egoBodyPivot.add(headlightL);
+  const headlightR = new THREE.Mesh(lightGeo, lightMat);
+  headlightR.position.set(2.1, 0.6 - AXLE_HEIGHT, -0.6);
+  headlightR.rotation.y = Math.PI / 2;
+  egoBodyPivot.add(headlightR);
+
   egoWheels = [];
-  const tireGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 18);
+  const tireGeo = new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, 0.28, 18);
   const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12);
   const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
   const rimMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-  const egoWheelPositions: Array<[number, number, number, boolean]> = [
-    [1.3, 0.38, 0.92, true], [1.3, 0.38, -0.92, true],
-    [-1.3, 0.38, 0.92, false], [-1.3, 0.38, -0.92, false],
-  ];
-  for (const [wx, wy, wz, front] of egoWheelPositions) {
+  for (const spec of WHEEL_PLAN_OFFSETS) {
     const pivot = new THREE.Group();
-    pivot.position.set(wx, wy, wz);
+    pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
     const tire = new THREE.Mesh(tireGeo, tireMat);
     const rim = new THREE.Mesh(rimGeo, rimMat);
     tire.rotation.x = Math.PI / 2;
@@ -2214,21 +2239,9 @@ function createEgoVehicle(): THREE.Group {
     pivot.add(tire);
     pivot.add(rim);
     group.add(pivot);
-    egoWheels.push({ pivot, mesh: tire, front });
+    egoWheels.push({ pivot, mesh: tire, front: spec.front });
   }
-  
-  // Headlights
-  const lightGeo = new THREE.CircleGeometry(0.15, 8);
-  const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
-  const headlightL = new THREE.Mesh(lightGeo, lightMat);
-  headlightL.position.set(2.1, 0.6, 0.6);
-  headlightL.rotation.y = Math.PI / 2;
-  group.add(headlightL);
-  const headlightR = new THREE.Mesh(lightGeo, lightMat);
-  headlightR.position.set(2.1, 0.6, -0.6);
-  headlightR.rotation.y = Math.PI / 2;
-  group.add(headlightR);
-  
+
   return group;
 }
 

@@ -116,6 +116,17 @@ describe('classifyBySize', () => {
     expect(confidence).toBeGreaterThan(0.5);
   });
 
+  it('classifies a tall thin box as a pole, not a traffic sign', () => {
+    const box = {
+      center: vec3(0, 0, 4),
+      size: vec3(0.3, 0.3, 8),
+      yaw: 0,
+    };
+    const { classType, confidence } = classifyBySize(box);
+    expect(classType).toBe('pole');
+    expect(confidence).toBeGreaterThan(0.5);
+  });
+
   it('classifies truck-sized box', () => {
     const box = {
       center: vec3(0, 0, 0),
