@@ -56,15 +56,22 @@
     .view-btn:hover { background: #333; }
     .view-btn.active { background: #0066cc; border-color: #0088ff; }
 
-    #status-panel {
+    #left-hud-stack {
       position: absolute;
       bottom: 50px;
       left: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      z-index: 8;
+    }
+    #status-panel {
+      position: static;
       background: rgba(0,0,0,0.8);
       padding: 15px;
       border-radius: 8px;
       min-width: 200px;
-      z-index: 8;
     }
 
     .status-row {
@@ -98,6 +105,8 @@
       background: rgba(40, 24, 0, 0.9);
       color: #ffe08a;
     }
+    #drive-badge.hidden,
+    #left-hud-stack.hidden { display: none !important; }
 
     #drive-hint {
       position: absolute;
@@ -143,7 +152,8 @@
       align-items: flex-end;
       gap: 8px;
       max-height: calc(100vh - 140px);
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       z-index: 12;
     }
 
@@ -160,8 +170,55 @@
     }
     #gear-btn:hover { background: #222; }
 
+    #view-explainer {
+      width: min(360px, 32vw);
+      background: rgba(0, 8, 16, 0.92);
+      border: 1px solid #2a5a72;
+      border-radius: 8px;
+      padding: 10px 12px 12px;
+      pointer-events: none;
+    }
+    #view-explainer.hidden { display: none; }
+    #view-explainer-title {
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      color: #7fd7ff;
+      margin-bottom: 6px;
+    }
+    #view-explainer .vx-block { margin-top: 6px; }
+    #view-explainer .vx-k,
+    #ai-view-explainer .ai-k,
+    .compare-explainer .ai-k {
+      display: block;
+      color: #7fd7ff;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      margin-bottom: 2px;
+    }
+    #view-explainer p,
+    .compare-explainer p {
+      margin: 0 0 6px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #d5e4ee;
+    }
+    #camera-explainer {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #2a4a5a;
+    }
+    #camera-explainer-title {
+      font-size: 11px;
+      font-weight: 800;
+      color: #c9e7a8;
+      margin-bottom: 4px;
+    }
+
     #ai-view-panel {
-      width: min(380px, 32vw);
+      width: min(440px, 36vw);
       background: rgba(0,0,0,0.92);
       border-radius: 8px;
       overflow: hidden;
@@ -170,12 +227,20 @@
     }
     #ai-view-panel.visible { display: block; }
     #ai-view-header {
-      padding: 8px 10px;
+      padding: 8px 10px 4px;
       background: #111;
-      border-bottom: 1px solid #333;
       font-weight: bold;
       font-size: 12px;
     }
+    #ai-view-explainer {
+      padding: 0 10px 8px;
+      background: #111;
+      border-bottom: 1px solid #333;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #c5d4e0;
+    }
+    #ai-view-explainer p { margin: 3px 0 0; }
     #ai-view-insets { display: flex; gap: 4px; padding: 4px; }
     #ai-view-insets .inset { flex: 1; }
     #ai-view-insets .inset-label { font-size: 10px; color: #8ab; padding: 2px 4px; }
@@ -228,6 +293,20 @@
       background: rgba(40, 0, 0, 0.88);
     }
 
+    #phys-debug {
+      display: none;
+      position: static;
+      background: rgba(0,0,0,0.78);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #9ed;
+      min-width: 148px;
+    }
+    #phys-debug.visible { display: block; }
+
     #controls-hint {
       position: absolute;
       bottom: 10px;
@@ -258,6 +337,7 @@
       border: 2px solid #333;
       z-index: 8;
     }
+    #minimap.hidden { display: none !important; }
 
     #pause-overlay {
       position: absolute;
@@ -449,6 +529,22 @@
       font-weight: bold;
       z-index: 10;
     }
+    .compare-explainer {
+      position: absolute;
+      top: 10px; right: 10px;
+      width: min(320px, 42%);
+      background: rgba(0, 8, 16, 0.9);
+      border: 1px solid #2a5a72;
+      border-radius: 8px;
+      padding: 10px 12px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .compare-explainer h5 {
+      margin: 0 0 6px;
+      color: #7fd7ff;
+      font-size: 12px;
+    }
     .compare-detection-time {
       position: absolute;
       bottom: 60px; left: 10px;
@@ -479,6 +575,11 @@
     <div id="compare-container">
       <div class="compare-panel" id="compare-left">
         <div class="compare-label" id="compare-left-label">F1: Tesla-style</div>
+        <div class="compare-explainer" id="compare-left-explainer">
+          <h5 id="compare-left-ex-title">F1 · Tesla-style</h5>
+          <p><span class="ai-k">Uses</span><span id="compare-left-uses">Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map.</span></p>
+          <p><span class="ai-k">Unlike others</span><span id="compare-left-diff">Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s.</span></p>
+        </div>
         <div class="compare-detection-time" id="compare-left-timing">
           <h4>Detection Timing</h4>
           <div class="detection-timing-row"><span>Pedestrian #1</span><span class="timing-early" id="left-ped1-time">—</span></div>
@@ -488,6 +589,11 @@
       </div>
       <div class="compare-panel" id="compare-right">
         <div class="compare-label" id="compare-right-label">F2: Waymo-style</div>
+        <div class="compare-explainer" id="compare-right-explainer">
+          <h5 id="compare-right-ex-title">F2 · Waymo-style</h5>
+          <p><span class="ai-k">Uses</span><span id="compare-right-uses">Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map.</span></p>
+          <p><span class="ai-k">Unlike others</span><span id="compare-right-diff">Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes.</span></p>
+        </div>
         <div class="compare-detection-time" id="compare-right-timing">
           <h4>Detection Timing</h4>
           <div class="detection-timing-row"><span>Pedestrian #1</span><span class="timing-late" id="right-ped1-time">—</span></div>
@@ -504,32 +610,57 @@
     </div>
 
     <div id="drive-badge" class="hud">AUTOPILOT</div>
-    <div id="drive-hint" class="hud">WASD / arrows drive. Space = handbrake. T toggles autopilot. Press a drive key to take over.</div>
+    <div id="drive-hint" class="hud">W throttle · S brake then reverse · A/D steer · Space handbrake. Hold right mouse to look. T autopilot.</div>
     <div id="collision-flash" class="hud">COLLISION</div>
 
-    <div id="status-panel" class="hud">
-      <div class="status-row"><span>Speed</span><span class="status-value" id="speed-value">0 km/h</span></div>
-      <div class="status-row"><span>Stopping Dist</span><span class="status-value" id="stopping-dist">0 m</span></div>
-      <div class="status-row"><span>Control</span><span class="status-value" id="control-source">AUTOPILOT</span></div>
-      <div class="status-row"><span>Detections</span><span class="status-value" id="detection-count">0</span></div>
-      <div class="status-row"><span>Collisions</span><span class="status-value" id="collision-count">0</span></div>
-      <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
-      <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
+    <div id="left-hud-stack" class="hud">
+      <div id="phys-debug"></div>
+      <div id="status-panel">
+        <div class="status-row"><span>Speed</span><span class="status-value" id="speed-value">0 km/h</span></div>
+        <div class="status-row"><span>Stopping Dist</span><span class="status-value" id="stopping-dist">0 m</span></div>
+        <div class="status-row"><span>Control</span><span class="status-value" id="control-source">AUTOPILOT</span></div>
+        <div class="status-row"><span>Detections</span><span class="status-value" id="detection-count">0</span></div>
+        <div class="status-row"><span>Collisions</span><span class="status-value" id="collision-count">0</span></div>
+        <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
+        <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
+      </div>
     </div>
 
     <canvas id="minimap" class="hud" width="180" height="180"></canvas>
 
     <div id="top-right-stack" class="hud hud-interactive">
       <button id="gear-btn" title="Pause / settings (Esc)">⚙</button>
+      <div id="view-explainer">
+        <div id="view-explainer-title">F1 · Tesla-style</div>
+        <div class="vx-block">
+          <span class="vx-k">Uses</span>
+          <p id="view-explainer-uses">Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. Lights and signs are read from the image.</p>
+        </div>
+        <div class="vx-block">
+          <span class="vx-k">Unlike the others</span>
+          <p id="view-explainer-diff">Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range and night depth.</p>
+        </div>
+        <div id="camera-explainer">
+          <div id="camera-explainer-title">Chase camera</div>
+          <div class="vx-block">
+            <span class="vx-k">Uses</span>
+            <p id="camera-explainer-uses">Default GTA-style rig: behind and slightly above the car, eased onto the velocity heading. Looks back when reversing. Hold right mouse to orbit; it eases home after 1.5 s. Scroll zooms.</p>
+          </div>
+          <div class="vx-block">
+            <span class="vx-k">Unlike the others</span>
+            <p id="camera-explainer-diff">Hood is a bumper cam. BEV is a straight-down map. Orbit stays free and does not auto-return.</p>
+          </div>
+        </div>
+      </div>
       <div id="ai-view-panel" class="visible">
-        <div id="ai-view-header">AI View — what this stack consumes (V to hide, G = GT)</div>
+        <div id="ai-view-header">AI View — F1 · Tesla-style</div>
         <div id="ai-view-insets">
           <div class="inset">
-            <div class="inset-label">Raw ego camera</div>
+            <div class="inset-label" id="ai-view-raw-label">Front camera (vision)</div>
             <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
           </div>
           <div class="inset">
-            <div class="inset-label">Perception output</div>
+            <div class="inset-label" id="ai-view-perc-label">Vision boxes + voxels</div>
             <canvas id="ai-view-canvas" width="320" height="180"></canvas>
           </div>
         </div>
@@ -565,7 +696,7 @@
 
     <div id="controls-hint" class="hud">
       <div><span class="control-key">Esc</span> Pause / settings</div>
-      <div><span class="control-key">WASD</span> Drive</div>
+      <div><span class="control-key">WASD</span> Drive · <span class="control-key">RMB</span> Look</div>
       <div><span class="control-key">T</span> Autopilot</div>
       <div><span class="control-key">C</span> Camera · <span class="control-key">Bksp</span> Restart</div>
     </div>
@@ -622,10 +753,22 @@
             <button data-camera="orbit">Orbit</button>
           </div>
         </div>
+        <div class="pause-row">
+          <label>Camera</label>
+          <button class="pause-btn" id="pause-reset-camera" style="flex:0 0 auto;padding:6px 12px">Reset (R)</button>
+        </div>
+        <div class="pause-row">
+          <label for="phys-debug-toggle">Physics debug</label>
+          <input type="checkbox" id="phys-debug-toggle">
+        </div>
         <div id="pause-controls">
-          <div><span class="control-key">WASD / ↑↓←→</span> Drive</div>
+          <div><span class="control-key">W / ↑</span> Throttle</div>
+          <div><span class="control-key">S / ↓</span> Brake / reverse</div>
+          <div><span class="control-key">A D / ←→</span> Steer</div>
           <div><span class="control-key">Space</span> Handbrake</div>
           <div><span class="control-key">T</span> Autopilot / Manual</div>
+          <div><span class="control-key">RMB hold</span> Orbit camera</div>
+          <div><span class="control-key">Wheel</span> Zoom</div>
           <div><span class="control-key">C</span> Cycle camera</div>
           <div><span class="control-key">R</span> Reset camera</div>
           <div><span class="control-key">K</span> Record</div>
@@ -637,8 +780,6 @@
           <div><span class="control-key">Backspace</span> Restart</div>
           <div><span class="control-key">Esc</span> Pause / resume</div>
           <div><span class="control-key">F1–F3</span> Stack</div>
-          <div><span class="control-key">1–5</span> Scenarios</div>
-          <div><span class="control-key">Drag / wheel</span> Orbit / zoom</div>
         </div>
       </div>
     </div>

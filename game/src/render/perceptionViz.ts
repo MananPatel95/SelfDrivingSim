@@ -353,7 +353,9 @@ export class PerceptionVisualizer {
     const keyParts: string[] = [];
     const items: Array<{ text: string; color: string; x: number; y: number; z: number }> = [];
 
-    const tracks = input.tracks.filter(t => t.missedFrames === 0).slice(0, MAX_LABELS);
+    const tracks = input.tracks
+      .filter(t => t.missedFrames === 0 && t.confidence >= 0.4)
+      .slice(0, MAX_LABELS);
     for (const track of tracks) {
       const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
       const conf = Math.round(track.confidence * 100);
@@ -454,9 +456,9 @@ export function renderAIViewCanvas(
   ctx.fillStyle = '#7fd7ff';
   ctx.font = 'bold 12px sans-serif';
   const titles: Record<VizStack, string> = {
-    tesla: 'Tesla-style · cameras + occupancy voxels',
-    waymo: 'Waymo-style · lidar + radar + fused boxes',
-    waabi: 'Waabi-style · BEV occupancy-flow',
+    tesla: 'Tesla · cameras only → voxels (no lidar/map)',
+    waymo: 'Waymo · lidar+radar+map fused boxes',
+    waabi: 'Waabi · BEV occupancy now + 1–3s future',
   };
   ctx.fillText(titles[input.stack], 8, 16);
 

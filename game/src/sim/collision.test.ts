@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { overlapOBB, firstHit, obstacleAhead } from './collision';
+import { overlapOBB, firstHit, obstacleAhead, resolveEgoCollision } from './collision';
 import { vec3 } from './math';
 import type { EgoState, Entity } from './types';
+import { createEgoState } from './vehicle';
 
 describe('OBB collision', () => {
   it('detects overlapping axis-aligned boxes', () => {
@@ -58,5 +59,20 @@ describe('obstacleAhead', () => {
     const hit = obstacleAhead(ego, [side, near], 40);
     expect(hit?.entity.id).toBe(1);
     expect(hit?.dist).toBeCloseTo(12, 0);
+  });
+});
+
+describe('resolveEgoCollision', () => {
+  it('separates the car and keeps wall-slide speed', () => {
+    const ego = createEgoState('car', vec3(0, 0, 0), 0);
+    ego.velocity = vec3(8, 12, 0);
+    ego.bodyVx = 8;
+    ego.bodyVy = 12;
+    const next = resolveEgoCollision(ego, {
+      otherId: 9, classType: 'building', nx: 0, ny: 1, depth: 0.2,
+    });
+    expect(next.transform.position.y).toBeGreaterThan(0.2);
+    expect(next.velocity.y).toBeGreaterThanOrEqual(-0.5);
+    expect(next.velocity.x).toBeGreaterThan(5);
   });
 });

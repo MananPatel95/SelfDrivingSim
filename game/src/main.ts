@@ -5,7 +5,19 @@
 
 import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
-import { vec3Length, egoToWorld } from './sim/math';
+import { vec3Length, egoToWorld, clamp } from './sim/math';
+import { formatGear } from './sim/vehicle';
+import {
+  AXLE_HEIGHT,
+  BODY_CENTER_LOCAL_Y,
+  BODY_HALF_HEIGHT,
+  BODY_PARTS,
+  ROAD_SURFACE_Y,
+  VISUAL_WHEEL_RADIUS,
+  WHEEL_PLAN_OFFSETS,
+  clampCosmeticAttitude,
+} from './sim/vehicleVisual';
+import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
@@ -38,8 +50,8 @@ let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
 let rawCamera: THREE.PerspectiveCamera | null = null;
 let lastDecision: DecisionInfo = { text: 'Cruising: lane clear', severity: 'go' };
-type StackProfile = 'tesla' | 'waymo' | 'waabi';
-type CameraMode = 'chase' | 'hood' | 'bev' | 'orbit';
+type StackProfile = ViewStack;
+type CameraMode = ViewCamera;
 type QualityLevel = 'low' | 'med' | 'high';
 
 const INFO_CARDS: Record<StackProfile, {
@@ -110,12 +122,18 @@ let lastCollisionCount = 0;
 let collisionFlashUntil = 0;
 let shadowMode = false;
 
-let orbitYaw = 0.35;
-let orbitPitch = 0.38;
-let orbitDist = 22;
-let pointerDragging = false;
-let lastPointerX = 0;
-let lastPointerY = 0;
+let orbitYaw = 0;
+let orbitPitch = 0.22;
+let orbitDist = 9.2;
+let rmbOrbiting = false;
+let lastMouseCamMs = -1e9;
+let showPhysDebug = false;
+/** Ground-level side camera for wheel/sill verification. */
+let debugSideCam: { height: number; side: number; lookY: number } | null = null;
+let photoMode = false;
+const CHASE_RETURN_DELAY = 1.5;
+const CHASE_DIST_DEFAULT = 9.2;
+const ORBIT_DIST_DEFAULT = 22;
 
 const CAMERA_LAG = 0.12;
 const SIM_DT = 1 / 30;
@@ -130,9 +148,15 @@ let camPosZ = 18;
 let prevEgoX = 0;
 let prevEgoY = 0;
 let prevEgoYaw = Math.PI / 2;
+let prevEgoRoll = 0;
+let prevEgoPitch = 0;
 let currEgoX = 0;
 let currEgoY = 0;
 let currEgoYaw = Math.PI / 2;
+let currEgoRoll = 0;
+let currEgoPitch = 0;
+let currSteer = 0;
+let currWheelSpin = 0;
 let rawCameraFrame = 0;
 let staticCityMeshes: THREE.Object3D[] = [];
 
@@ -160,7 +184,9 @@ const inputState = {
   brake: false,
 };
 
-let egoMesh: THREE.Mesh;
+let egoMesh: THREE.Object3D;
+let egoBodyPivot: THREE.Group | null = null;
+let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
@@ -177,6 +203,7 @@ function initThreeJS() {
   renderer.shadowMap.enabled = QUALITY[qualityLevel].shadows;
   renderer.domElement.tabIndex = 0;
   renderer.domElement.style.outline = 'none';
+  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   container.appendChild(renderer.domElement);
   renderer.domElement.focus();
   
@@ -356,36 +383,37 @@ function buildCityRoads() {
 function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x: number; y: number; z: number } } }): THREE.Mesh | THREE.Group {
   switch (classType) {
     case 'car': {
-      // Create a more detailed car mesh
       const group = new THREE.Group();
-      
-      // Body
+      const npcRadius = 0.35;
+      const npcAxle = ROAD_SURFACE_Y + npcRadius;
+
       const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.6);
       const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3366cc});
       const body = new THREE.Mesh(bodyGeo, bodyMat);
       body.position.y = 0.6;
       body.castShadow = true;
       group.add(body);
-      
-      // Cabin
+
       const cabinGeo = new THREE.BoxGeometry(2.2, 0.8, 1.4);
       const cabinMat = new THREE.MeshLambertMaterial({ color: 0x222222});
       const cabin = new THREE.Mesh(cabinGeo, cabinMat);
       cabin.position.set(-0.3, 1.3, 0);
       cabin.castShadow = true;
       group.add(cabin);
-      
-      // Wheels
-      const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
+
+      const wheelGeo = new THREE.CylinderGeometry(npcRadius, npcRadius, 0.2, 16);
       const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-      const wheelPositions: [number, number, number][] = [[1.2, 0.35, 0.8], [1.2, 0.35, -0.8], [-1.2, 0.35, 0.8], [-1.2, 0.35, -0.8]];
+      const wheelPositions: [number, number, number][] = [
+        [1.2, npcAxle, 0.8], [1.2, npcAxle, -0.8],
+        [-1.2, npcAxle, 0.8], [-1.2, npcAxle, -0.8],
+      ];
       for (const [wx, wy, wz] of wheelPositions) {
         const wheel = new THREE.Mesh(wheelGeo, wheelMat);
         wheel.position.set(wx, wy, wz);
         wheel.rotation.x = Math.PI / 2;
         group.add(wheel);
       }
-      
+
       return group as unknown as THREE.Mesh;
     }
     
@@ -399,6 +427,16 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       cab.position.set(2.5, 1.3, 0);
       cab.castShadow = true;
       group.add(cab);
+      const truckRadius = 0.42;
+      const truckAxle = ROAD_SURFACE_Y + truckRadius;
+      const truckWheel = new THREE.CylinderGeometry(truckRadius, truckRadius, 0.28, 12);
+      const truckWheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+      for (const [wx, wz] of [[3.2, 1.1], [3.2, -1.1], [-3.4, 1.1], [-3.4, -1.1], [-1.2, 1.1], [-1.2, -1.1]] as Array<[number, number]>) {
+        const wheel = new THREE.Mesh(truckWheel, truckWheelMat);
+        wheel.position.set(wx, truckAxle, wz);
+        wheel.rotation.x = Math.PI / 2;
+        group.add(wheel);
+      }
       
       // Trailer
       const trailerGeo = new THREE.BoxGeometry(7, 2.8, 2.4);
@@ -415,12 +453,14 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       const group = new THREE.Group();
       const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066, 0xffcc00, 0x3399ff];
       const bodyMat = new THREE.MeshLambertMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 6), bodyMat);
-      body.position.y = 1.0;
+      const pedRadius = 0.28;
+      const pedHalf = 0.5 + pedRadius;
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(pedRadius, 1.0, 4, 6), bodyMat);
+      body.position.y = ROAD_SURFACE_Y + pedHalf;
       body.castShadow = false;
       group.add(body);
       const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffcc99 }));
-      head.position.y = 1.7;
+      head.position.y = ROAD_SURFACE_Y + pedHalf + 0.72;
       group.add(head);
       return group as unknown as THREE.Mesh;
     }
@@ -720,9 +760,10 @@ function updateDetectionMeshes() {
     recycleBox(mesh as unknown as THREE.LineSegments);
   }
   detectionMeshes.length = 0;
-  
+  if (photoMode) return;
+
   const state = simulation.getState();
-  const detections = state.perceptionTracks.filter(t => t.missedFrames === 0);
+  const detections = state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4);
   const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
   
   for (const det of detections) {
@@ -791,12 +832,18 @@ function captureEgoPose() {
   currEgoX = ego.transform.position.x;
   currEgoY = ego.transform.position.y;
   currEgoYaw = ego.transform.rotation;
+  currEgoRoll = ego.bodyRoll ?? 0;
+  currEgoPitch = ego.bodyPitch ?? 0;
+  currSteer = ego.steering;
+  currWheelSpin = ego.wheelSpin ?? 0;
 }
 
 function resetCameraRig() {
   orbitYaw = cameraMode === 'orbit' ? 0.6 : 0;
-  orbitPitch = cameraMode === 'orbit' ? 0.42 : 0.32;
-  orbitDist = cameraMode === 'orbit' ? 28 : 22;
+  orbitPitch = cameraMode === 'orbit' ? 0.42 : 0.22;
+  orbitDist = cameraMode === 'orbit' ? ORBIT_DIST_DEFAULT : CHASE_DIST_DEFAULT;
+  lastMouseCamMs = -1e9;
+  rmbOrbiting = false;
   camFollowReady = false;
 }
 
@@ -808,10 +855,47 @@ function interpolatedEgo(alpha: number) {
     x: prevEgoX + (currEgoX - prevEgoX) * alpha,
     y: prevEgoY + (currEgoY - prevEgoY) * alpha,
     yaw: prevEgoYaw + dyaw * alpha,
+    roll: prevEgoRoll + (currEgoRoll - prevEgoRoll) * alpha,
+    pitch: prevEgoPitch + (currEgoPitch - prevEgoPitch) * alpha,
   };
 }
 
+function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
+  const state = simulation.getState().ego;
+  const vx = state.velocity.x;
+  const vy = state.velocity.y;
+  const speed = Math.hypot(vx, vy);
+  const reverse = (state.bodyVx ?? 0) < -0.7 || !!state.inReverse && (state.bodyVx ?? 0) < -0.15;
+  if (reverse) return egoYaw + Math.PI;
+  if (speed > 1.8) {
+    const velYaw = Math.atan2(vy, vx);
+    let d = velYaw - egoYaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const blend = clamp((speed - 1.8) / 8, 0, 0.85);
+    return egoYaw + d * blend;
+  }
+  return egoYaw;
+}
+
 function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
+  if (debugSideCam) {
+    const rightX = Math.cos(egoYaw - Math.PI / 2);
+    const rightY = Math.sin(egoYaw - Math.PI / 2);
+    camera.position.set(
+      egoX + rightX * debugSideCam.side,
+      debugSideCam.height,
+      -(egoY + rightY * debugSideCam.side)
+    );
+    camera.lookAt(egoX, debugSideCam.lookY, -egoY);
+    return;
+  }
+  if (cameraMode === 'chase' && !rmbOrbiting && lastMouseCamMs > 0
+    && (performance.now() - lastMouseCamMs) > CHASE_RETURN_DELAY * 1000) {
+    orbitYaw = dampAngle(orbitYaw, 0, dt, 0.38);
+    orbitPitch = damp(orbitPitch, 0.22, dt, 0.38);
+  }
+
   let targetYaw = egoYaw;
   let targetLookX = egoX;
   let targetLookY = egoY;
@@ -821,11 +905,15 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
   const tau = cameraMode === 'hood' ? 0.06 : CAMERA_LAG;
 
   if (cameraMode === 'chase') {
-    targetYaw = egoYaw + Math.PI + orbitYaw * 0.35;
+    const follow = followHeading(egoX, egoY, egoYaw);
+    targetYaw = follow + Math.PI + orbitYaw;
     const dist = orbitDist;
+    const height = Math.max(0.36, 2.15 + orbitPitch * 6.5);
     targetPosX = egoX + Math.cos(targetYaw) * dist;
-    targetPosY = 3 + orbitPitch * 12;
+    targetPosY = height;
     targetPosZ = -(egoY + Math.sin(targetYaw) * dist);
+    targetLookX = egoX;
+    targetLookY = egoY;
   } else if (cameraMode === 'hood') {
     targetYaw = egoYaw;
     targetPosX = egoX + Math.cos(egoYaw) * 1.4;
@@ -865,12 +953,12 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
 
   if (cameraMode === 'chase') {
     camPosX = camLookX + Math.cos(camYaw) * orbitDist;
-    camPosY = 3 + orbitPitch * 12;
+    camPosY = Math.max(0.36, 2.15 + orbitPitch * 6.5);
     camPosZ = -(camLookY + Math.sin(camYaw) * orbitDist);
   }
 
   camera.position.set(camPosX, camPosY, camPosZ);
-  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : 1.2;
+  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
   camera.lookAt(camLookX, lookZ, -camLookY);
 }
 
@@ -916,6 +1004,7 @@ function setCameraMode(mode: CameraMode) {
   document.querySelectorAll('#camera-seg button').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === mode);
   });
+  updateViewExplainer();
 }
 
 function applyQuality(level: QualityLevel) {
@@ -964,6 +1053,8 @@ function restartSim() {
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
   prevEgoYaw = currEgoYaw;
+  prevEgoRoll = currEgoRoll;
+  prevEgoPitch = currEgoPitch;
   applyQuality(qualityLevel);
   resetCameraRig();
   setPaused(false);
@@ -977,9 +1068,11 @@ function anyDriveHeld(): boolean {
 
 function humanInputFromKeys() {
   return {
-    throttle: inputState.forward ? 1 : inputState.backward ? -0.6 : 0,
+    throttle: inputState.forward ? 1 : 0,
     steering: inputState.left ? -1 : inputState.right ? 1 : 0,
-    brake: inputState.brake ? 1 : 0,
+    brake: inputState.backward ? 1 : 0,
+    handbrake: inputState.brake ? 1 : 0,
+    gtaReverse: true,
   };
 }
 
@@ -1004,7 +1097,7 @@ function updateHUD() {
   document.getElementById('speed-value')!.textContent = `${Math.round(speed)} km/h`;
   document.getElementById('stopping-dist')!.textContent = `${Math.round(state.ego.stoppingDistance)} m`;
   document.getElementById('detection-count')!.textContent =
-    String(state.perceptionTracks.filter(t => t.missedFrames === 0).length);
+    String(state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4).length);
   const colEl = document.getElementById('collision-count');
   if (colEl) {
     colEl.textContent = String(state.collisionCount);
@@ -1028,6 +1121,27 @@ function updateHUD() {
   weatherEl.className = 'status-value';
   if (state.environment.weather !== 'clear') weatherEl.classList.add('status-warning');
   syncDriveBadge();
+  updatePhysDebug();
+}
+
+function updatePhysDebug() {
+  const panel = document.getElementById('phys-debug');
+  if (!panel) return;
+  panel.classList.toggle('visible', showPhysDebug);
+  if (!showPhysDebug) return;
+  const ego = simulation.getState().ego;
+  const speed = vec3Length(ego.velocity) * 3.6;
+  const steerDeg = (ego.steering * 180) / Math.PI;
+  const slipDeg = ((ego.slipAngle ?? 0) * 180) / Math.PI;
+  const thrPct = Math.round(Math.abs(ego.throttleFiltered ?? ego.throttle) * 100);
+  panel.innerHTML = [
+    `<div>SPD  ${speed.toFixed(1)} km/h</div>`,
+    `<div>GEAR ${formatGear(ego)}</div>`,
+    `<div>RPM  ${Math.round(ego.rpm ?? 0)}</div>`,
+    `<div>THR  ${thrPct}%</div>`,
+    `<div>STR  ${steerDeg.toFixed(1)}°</div>`,
+    `<div>SLIP ${slipDeg.toFixed(1)}°</div>`,
+  ].join('');
 }
 
 function updateInfoCard() {
@@ -1052,10 +1166,53 @@ function switchStack(profile: StackProfile) {
   console.log(`Switched to stack: ${profile}`);
 }
 
+function setText(id: string, text: string) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function syncCompareChrome() {
+  document.getElementById('view-explainer')?.classList.toggle('hidden', compareMode);
+  document.getElementById('ai-view-panel')?.classList.toggle('visible', showAIView && !compareMode);
+  document.getElementById('bev-overlay')?.classList.toggle('visible', bevOverlayEnabled && !compareMode);
+  document.getElementById('left-hud-stack')?.classList.toggle('hidden', compareMode);
+  document.getElementById('drive-badge')?.classList.toggle('hidden', compareMode);
+  document.getElementById('drive-hint')?.classList.toggle('visible', false);
+  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView && !compareMode);
+  document.getElementById('minimap')?.classList.toggle('hidden', compareMode);
+}
+
+function updateViewExplainer(profile: StackProfile = currentStack) {
+  const stack = STACK_VIEW_COPY[profile];
+  const cam = CAMERA_VIEW_COPY[cameraMode];
+  setText('view-explainer-title', stack.title);
+  setText('view-explainer-uses', stack.uses);
+  setText('view-explainer-diff', stack.diff);
+  setText('camera-explainer-title', cam.title);
+  setText('camera-explainer-uses', cam.uses);
+  setText('camera-explainer-diff', cam.diff);
+  setText('ai-view-header', `${aiViewTitle(profile)}  ·  V hide · G ground truth`);
+  setText('ai-view-raw-label', stack.rawLabel);
+  setText('ai-view-perc-label', stack.percLabel);
+  syncCompareChrome();
+}
+
+function fillCompareExplainer(side: 'left' | 'right', profile: StackProfile) {
+  const copy = STACK_VIEW_COPY[profile];
+  setText(`compare-${side}-ex-title`, copy.title);
+  setText(`compare-${side}-uses`, copy.uses);
+  setText(`compare-${side}-diff`, copy.diff);
+}
+
+function updateAIViewExplainer(profile: StackProfile = currentStack) {
+  updateViewExplainer(profile);
+}
+
 function updateOverlaysForStack(profile: StackProfile) {
   bevOverlayEnabled = profile === 'waabi';
   const bevHud = document.getElementById('bev-overlay');
   if (bevHud) bevHud.classList.toggle('visible', bevOverlayEnabled);
+  updateViewExplainer(profile);
 }
 
 // Render BEV occupancy heatmaps for Waabi
@@ -1667,6 +1824,8 @@ function updateCompareTimingDisplay(currentTime: number) {
   
   if (leftLabelEl) leftLabelEl.textContent = stackLabels[currentStack];
   if (rightLabelEl) rightLabelEl.textContent = stackLabels[compareStack];
+  fillCompareExplainer('left', currentStack);
+  fillCompareExplainer('right', compareStack);
 }
 
 // Update minimap
@@ -1752,31 +1911,60 @@ function bindDriveKey(e: KeyboardEvent, down: boolean) {
   return used;
 }
 
+let lastOrbitClientX = 0;
+let lastOrbitClientY = 0;
+
+function applyOrbitDrag(dx: number, dy: number) {
+  orbitYaw -= dx * 0.0048;
+  orbitPitch = clamp(orbitPitch + dy * 0.0032, -0.28, 1.15);
+  lastMouseCamMs = performance.now();
+}
+
+function endOrbitDrag() {
+  rmbOrbiting = false;
+  if (document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock();
+  }
+}
+
 function setupInput() {
   const canvas = renderer.domElement;
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   canvas.addEventListener('pointerdown', (e) => {
     if (isPaused) return;
+    if (e.button !== 2) return;
     if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
-    pointerDragging = true;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
-    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    rmbOrbiting = true;
+    lastOrbitClientX = e.clientX;
+    lastOrbitClientY = e.clientY;
+    lastMouseCamMs = performance.now();
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    canvas.requestPointerLock?.().catch(() => { /* movementX / client delta still work */ });
   });
   canvas.addEventListener('pointermove', (e) => {
-    if (!pointerDragging) return;
-    const dx = e.clientX - lastPointerX;
-    const dy = e.clientY - lastPointerY;
-    lastPointerX = e.clientX;
-    lastPointerY = e.clientY;
-    orbitYaw -= dx * 0.008;
-    orbitPitch = Math.max(0.08, Math.min(1.2, orbitPitch + dy * 0.006));
+    if (!rmbOrbiting) return;
+    let dx = e.movementX;
+    let dy = e.movementY;
+    if (dx === 0 && dy === 0) {
+      dx = e.clientX - lastOrbitClientX;
+      dy = e.clientY - lastOrbitClientY;
+    }
+    lastOrbitClientX = e.clientX;
+    lastOrbitClientY = e.clientY;
+    if (dx === 0 && dy === 0) return;
+    applyOrbitDrag(dx, dy);
   });
-  canvas.addEventListener('pointerup', () => { pointerDragging = false; });
-  canvas.addEventListener('pointerleave', () => { pointerDragging = false; });
+  canvas.addEventListener('pointerup', (e) => {
+    if (e.button === 2) endOrbitDrag();
+  });
+  canvas.addEventListener('pointercancel', () => endOrbitDrag());
   canvas.addEventListener('wheel', (e) => {
     if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
     e.preventDefault();
-    orbitDist = Math.max(6, Math.min(70, orbitDist + e.deltaY * 0.03));
+    const min = cameraMode === 'chase' ? 5.5 : 6;
+    const max = cameraMode === 'chase' ? 20 : 70;
+    orbitDist = clamp(orbitDist + e.deltaY * 0.02, min, max);
   }, { passive: false });
 
   document.addEventListener('keydown', (e) => {
@@ -1825,7 +2013,10 @@ function setupInput() {
           compareStack = 'waymo';
           simulation.injectScenario({ type: 'occluded_pedestrian', params: {} });
           initCompareMode();
+          fillCompareExplainer('left', currentStack);
+          fillCompareExplainer('right', compareStack);
         }
+        updateViewExplainer();
         break;
       case 'k':
         isRecording = !isRecording;
@@ -1909,12 +2100,17 @@ function setupInput() {
   document.querySelectorAll('#camera-seg button').forEach(btn => {
     btn.addEventListener('click', () => setCameraMode((btn as HTMLElement).dataset['camera'] as CameraMode));
   });
+  document.getElementById('pause-reset-camera')?.addEventListener('click', () => resetCameraRig());
   document.getElementById('shadow-toggle')?.addEventListener('change', (ev) => {
     shadowMode = (ev.target as HTMLInputElement).checked;
     document.body.dataset['shadowMode'] = shadowMode ? 'on' : 'off';
   });
   document.getElementById('perception-model')?.addEventListener('change', () => {
     /* heuristic vs v1 is displayed in the pause menu; ONNX path uses the same HUD */
+  });
+  document.getElementById('phys-debug-toggle')?.addEventListener('change', (ev) => {
+    showPhysDebug = (ev.target as HTMLInputElement).checked;
+    updatePhysDebug();
   });
 }
 
@@ -1945,6 +2141,8 @@ function animate(time: number) {
       prevEgoX = currEgoX;
       prevEgoY = currEgoY;
       prevEgoYaw = currEgoYaw;
+      prevEgoRoll = currEgoRoll;
+      prevEgoPitch = currEgoPitch;
       simulation.step(SIM_DT, humanInput);
       captureEgoPose();
       updateEntityMeshes();
@@ -1955,8 +2153,18 @@ function animate(time: number) {
 
   const alpha = isPaused ? 1 : simAccumulator / SIM_DT;
   const ego = interpolatedEgo(alpha);
-  egoMesh.position.set(ego.x, 0.75, -ego.y);
-  egoMesh.rotation.y = -ego.yaw + Math.PI;
+  egoMesh.position.set(ego.x, 0, -ego.y);
+  egoMesh.rotation.set(0, -ego.yaw + Math.PI, 0);
+  if (egoBodyPivot) {
+    const att = clampCosmeticAttitude(ego.roll, ego.pitch);
+    egoBodyPivot.rotation.order = 'YXZ';
+    egoBodyPivot.rotation.x = att.pitch;
+    egoBodyPivot.rotation.z = -att.roll;
+  }
+  for (const wheel of egoWheels) {
+    wheel.pivot.rotation.y = wheel.front ? currSteer : 0;
+    wheel.mesh.rotation.y = currWheelSpin;
+  }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
 
   if (time - lastHudMs >= 200) {
@@ -2018,15 +2226,7 @@ function updateAIView(drawRawScene: boolean) {
 
   if (!showAIView) return;
 
-  const header = document.getElementById('ai-view-header');
-  if (header) {
-    const names: Record<StackProfile, string> = {
-      tesla: 'AI View — Tesla-style cameras + occupancy voxels',
-      waymo: 'AI View — Waymo-style lidar / radar / fused boxes',
-      waabi: 'AI View — Waabi-style BEV occupancy-flow',
-    };
-    header.textContent = names[currentStack] + '  (V hide · G ground truth)';
-  }
+  updateAIViewExplainer(currentStack);
 
   const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
   if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
@@ -2054,53 +2254,65 @@ function updateAIView(drawRawScene: boolean) {
 // Create a more detailed ego vehicle mesh
 function createEgoVehicle(): THREE.Group {
   const group = new THREE.Group();
-  
-  // Main body
-  const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.8);
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc});
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.6;
-  body.castShadow = true;
-  group.add(body);
-  
-  // Cabin with windows
-  const cabinGeo = new THREE.BoxGeometry(2.4, 0.9, 1.6);
-  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122});
+
+  // Body rotates about the axle so wheels stay planted on the road.
+  egoBodyPivot = new THREE.Group();
+  egoBodyPivot.position.y = AXLE_HEIGHT;
+  group.add(egoBodyPivot);
+
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc });
+  for (const part of BODY_PARTS) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(part.halfX * 2, part.halfY * 2, part.halfZ * 2),
+      bodyMat
+    );
+    mesh.position.set(part.cx, part.cy, part.cz);
+    mesh.castShadow = true;
+    egoBodyPivot.add(mesh);
+  }
+
+  const cabinGeo = new THREE.BoxGeometry(2.2, 0.78, 1.5);
+  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
   const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-  cabin.position.set(-0.2, 1.35, 0);
+  cabin.position.set(-0.15, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.39, 0);
   cabin.castShadow = true;
-  group.add(cabin);
-  
-  // Roof sensor dome (lidar)
+  egoBodyPivot.add(cabin);
+
   const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
   const lidarMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
   const lidar = new THREE.Mesh(lidarGeo, lidarMat);
-  lidar.position.set(0, 1.9, 0);
-  group.add(lidar);
-  
-  // Wheels
-  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
-  const egoWheelPositions: [number, number, number][] = [[1.3, 0.35, 0.9], [1.3, 0.35, -0.9], [-1.3, 0.35, 0.9], [-1.3, 0.35, -0.9]];
-  for (const [wx, wy, wz] of egoWheelPositions) {
-    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-    wheel.position.set(wx, wy, wz);
-    wheel.rotation.x = Math.PI / 2;
-    group.add(wheel);
-  }
-  
-  // Headlights
+  lidar.position.set(0, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.92, 0);
+  egoBodyPivot.add(lidar);
+
   const lightGeo = new THREE.CircleGeometry(0.15, 8);
   const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
   const headlightL = new THREE.Mesh(lightGeo, lightMat);
-  headlightL.position.set(2.1, 0.6, 0.6);
+  headlightL.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, 0.52);
   headlightL.rotation.y = Math.PI / 2;
-  group.add(headlightL);
+  egoBodyPivot.add(headlightL);
   const headlightR = new THREE.Mesh(lightGeo, lightMat);
-  headlightR.position.set(2.1, 0.6, -0.6);
+  headlightR.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, -0.52);
   headlightR.rotation.y = Math.PI / 2;
-  group.add(headlightR);
-  
+  egoBodyPivot.add(headlightR);
+
+  egoWheels = [];
+  const tireGeo = new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, 0.28, 18);
+  const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12);
+  const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const rimMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  for (const spec of WHEEL_PLAN_OFFSETS) {
+    const pivot = new THREE.Group();
+    pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
+    const tire = new THREE.Mesh(tireGeo, tireMat);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    tire.rotation.x = Math.PI / 2;
+    rim.rotation.x = Math.PI / 2;
+    pivot.add(tire);
+    pivot.add(rim);
+    group.add(pivot);
+    egoWheels.push({ pivot, mesh: tire, front: spec.front });
+  }
+
   return group;
 }
 
@@ -2132,6 +2344,7 @@ async function init() {
   document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
   document.getElementById('decision-banner')?.classList.toggle('visible', showAIView);
   perceptionViz.setEnabled(showAIView);
+  updateAIViewExplainer(currentStack);
 
   const rawCanvas = document.getElementById('raw-camera-canvas') as HTMLCanvasElement | null;
   if (rawCanvas) {
@@ -2147,6 +2360,8 @@ async function init() {
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
   prevEgoYaw = currEgoYaw;
+  prevEgoRoll = currEgoRoll;
+  prevEgoPitch = currEgoPitch;
   setupInput();
   showDriveHintOnce();
   syncDriveBadge();
@@ -2154,6 +2369,46 @@ async function init() {
   document.getElementById('loading')!.classList.add('hidden');
   lastTime = performance.now();
   requestAnimationFrame(animate);
+  (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
+    setOrbit(yaw: number, pitch: number, dist: number) {
+      debugSideCam = null;
+      cameraMode = 'orbit';
+      orbitYaw = yaw;
+      orbitPitch = pitch;
+      orbitDist = dist;
+      camFollowReady = true;
+      updateViewExplainer();
+    },
+    setLowSideCam() {
+      debugSideCam = { height: 0.28, side: 5.8, lookY: 0.36 };
+    },
+    freezeSim() {
+      isPaused = true;
+    },
+    unfreezeSim() {
+      isPaused = false;
+    },
+    setPhotoHud() {
+      photoMode = true;
+      showPhysDebug = true;
+      showAIView = false;
+      showGroundTruth = false;
+      const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
+      if (box) box.checked = true;
+      document.getElementById('phys-debug')?.classList.add('visible');
+      document.getElementById('ai-view-panel')?.classList.remove('visible');
+      document.getElementById('view-explainer')?.classList.add('hidden');
+      document.getElementById('bev-overlay')?.classList.remove('visible');
+      document.getElementById('decision-banner')?.classList.remove('visible');
+      document.getElementById('drive-hint')?.classList.remove('visible');
+      perceptionViz?.setEnabled(false);
+    },
+    enablePhysDebug() {
+      showPhysDebug = true;
+      const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
+      if (box) box.checked = true;
+    },
+  };
   console.log('AUTONOMY CITY started!');
 }
 

@@ -64,6 +64,24 @@ export interface EgoState {
   brake: number;
   mass: number; // kg
   stoppingDistance: number; // meters at current speed
+  /** Body-frame longitudinal speed (m/s). Optional so older fixtures still typecheck. */
+  bodyVx?: number;
+  /** Body-frame lateral speed (m/s), left positive. */
+  bodyVy?: number;
+  yawRate?: number;
+  gear?: number;
+  rpm?: number;
+  slipAngle?: number;
+  slipAngleFront?: number;
+  slipAngleRear?: number;
+  bodyRoll?: number;
+  bodyPitch?: number;
+  wheelSpin?: number;
+  handbrake?: number;
+  steerFiltered?: number;
+  throttleFiltered?: number;
+  brakeFiltered?: number;
+  inReverse?: boolean;
 }
 
 // Traffic light
