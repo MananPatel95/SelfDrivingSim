@@ -228,6 +228,23 @@
       background: rgba(40, 0, 0, 0.88);
     }
 
+    #phys-debug {
+      display: none;
+      position: absolute;
+      bottom: 230px;
+      left: 10px;
+      background: rgba(0,0,0,0.78);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #9ed;
+      z-index: 8;
+      min-width: 148px;
+    }
+    #phys-debug.visible { display: block; }
+
     #controls-hint {
       position: absolute;
       bottom: 10px;
@@ -504,7 +521,7 @@
     </div>
 
     <div id="drive-badge" class="hud">AUTOPILOT</div>
-    <div id="drive-hint" class="hud">WASD / arrows drive. Space = handbrake. T toggles autopilot. Press a drive key to take over.</div>
+    <div id="drive-hint" class="hud">W throttle · S brake then reverse · A/D steer · Space handbrake. Hold right mouse to look. T autopilot.</div>
     <div id="collision-flash" class="hud">COLLISION</div>
 
     <div id="status-panel" class="hud">
@@ -516,6 +533,8 @@
       <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
       <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
     </div>
+
+    <div id="phys-debug" class="hud"></div>
 
     <canvas id="minimap" class="hud" width="180" height="180"></canvas>
 
@@ -565,7 +584,7 @@
 
     <div id="controls-hint" class="hud">
       <div><span class="control-key">Esc</span> Pause / settings</div>
-      <div><span class="control-key">WASD</span> Drive</div>
+      <div><span class="control-key">WASD</span> Drive · <span class="control-key">RMB</span> Look</div>
       <div><span class="control-key">T</span> Autopilot</div>
       <div><span class="control-key">C</span> Camera · <span class="control-key">Bksp</span> Restart</div>
     </div>
@@ -622,10 +641,22 @@
             <button data-camera="orbit">Orbit</button>
           </div>
         </div>
+        <div class="pause-row">
+          <label>Camera</label>
+          <button class="pause-btn" id="pause-reset-camera" style="flex:0 0 auto;padding:6px 12px">Reset (R)</button>
+        </div>
+        <div class="pause-row">
+          <label for="phys-debug-toggle">Physics debug</label>
+          <input type="checkbox" id="phys-debug-toggle">
+        </div>
         <div id="pause-controls">
-          <div><span class="control-key">WASD / ↑↓←→</span> Drive</div>
+          <div><span class="control-key">W / ↑</span> Throttle</div>
+          <div><span class="control-key">S / ↓</span> Brake / reverse</div>
+          <div><span class="control-key">A D / ←→</span> Steer</div>
           <div><span class="control-key">Space</span> Handbrake</div>
           <div><span class="control-key">T</span> Autopilot / Manual</div>
+          <div><span class="control-key">RMB hold</span> Orbit camera</div>
+          <div><span class="control-key">Wheel</span> Zoom</div>
           <div><span class="control-key">C</span> Cycle camera</div>
           <div><span class="control-key">R</span> Reset camera</div>
           <div><span class="control-key">K</span> Record</div>
@@ -637,8 +668,6 @@
           <div><span class="control-key">Backspace</span> Restart</div>
           <div><span class="control-key">Esc</span> Pause / resume</div>
           <div><span class="control-key">F1–F3</span> Stack</div>
-          <div><span class="control-key">1–5</span> Scenarios</div>
-          <div><span class="control-key">Drag / wheel</span> Orbit / zoom</div>
         </div>
       </div>
     </div>

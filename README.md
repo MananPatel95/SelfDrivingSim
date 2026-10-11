@@ -13,7 +13,8 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
   - Compare mode (M): Tesla vs Waymo side-by-side
 
 - **Gameplay:**
-  - WASD / arrows drive a bicycle-model car; Space is handbrake
+  - WASD / arrows drive a dynamic-bicycle sedan (W throttle, S brake then reverse, Space handbrake)
+  - Right-mouse hold + drag orbits the chase camera; scroll zooms; left click stays free for UI
   - T toggles AUTOPILOT / MANUAL (a drive key takes over automatically)
   - Escape (or the gear icon) opens a pause / settings menu
   - Scenario injection (jaywalker, occluded pedestrian, cut-in)
@@ -142,11 +143,12 @@ make dev
 | Key | Action |
 |-----|--------|
 | Esc / ⚙ | Pause / settings (Resume, Restart, Quality, Perception, Shadow, camera, controls) |
-| WASD / arrows | Drive (takes over from autopilot) |
-| Space | Handbrake |
+| WASD / arrows | Drive (W throttle, S brake then reverse, A/D steer; takes over from autopilot) |
+| Space | Handbrake (rear lock / oversteer) |
 | T | Toggle AUTOPILOT / MANUAL |
 | C | Cycle camera (chase / hood / BEV / orbit) |
-| Drag / wheel | Orbit / zoom in chase and orbit |
+| Right-mouse hold + drag | Orbit camera (yaw / pitch); eases back behind the car after ~1.5 s |
+| Scroll wheel | Zoom (clamped) |
 | R | Reset camera |
 | Backspace | Restart scene |
 | V | Toggle AI View panel |

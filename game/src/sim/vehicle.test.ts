@@ -1,0 +1,91 @@
+import { describe, it, expect } from 'vitest';
+import { createEgoState, updateVehicle, tireLateralForce } from './vehicle';
+import { vec3Length } from './math';
+
+const DT = 1 / 30;
+
+function drive(seconds: number, input: Parameters<typeof updateVehicle>[1], start = createEgoState('car', { x: 0, y: 0, z: 0 }, 0)) {
+  let ego = start;
+  const steps = Math.round(seconds / DT);
+  for (let i = 0; i < steps; i++) {
+    ego = updateVehicle(ego, input, DT);
+  }
+  return ego;
+}
+
+describe('dynamic bicycle sedan', () => {
+  it('accelerates 0 to 100 km/h in about 7–9 seconds', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    let t = 0;
+    const limit = 14;
+    while (t < limit && vec3Length(ego.velocity) * 3.6 < 100) {
+      ego = updateVehicle(ego, { throttle: 1, steering: 0, brake: 0 }, DT);
+      t += DT;
+      expect(Number.isFinite(ego.transform.position.x)).toBe(true);
+    }
+    expect(vec3Length(ego.velocity) * 3.6).toBeGreaterThanOrEqual(100);
+    expect(t).toBeGreaterThanOrEqual(6.5);
+    expect(t).toBeLessThanOrEqual(9.5);
+  });
+
+  it('stops from 100 km/h in a plausible distance', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 27.78, velocity: { x: 27.78, y: 0, z: 0 } };
+    const startX = ego.transform.position.x;
+    let t = 0;
+    while (t < 8 && Math.abs(ego.bodyVx ?? 0) > 0.4) {
+      ego = updateVehicle(ego, { throttle: 0, steering: 0, brake: 1 }, DT);
+      t += DT;
+    }
+    const dist = Math.abs(ego.transform.position.x - startX);
+    expect(Math.abs(ego.bodyVx ?? 1)).toBeLessThan(0.8);
+    expect(dist).toBeGreaterThan(28);
+    expect(dist).toBeLessThan(60);
+  });
+
+  it('reaches a steady-state turn without NaNs', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 16, velocity: { x: 16, y: 0, z: 0 } };
+    ego = drive(4.5, { throttle: 0.35, steering: 0.45, brake: 0 }, ego);
+    expect(Number.isFinite(ego.transform.position.x)).toBe(true);
+    expect(Number.isFinite(ego.transform.position.y)).toBe(true);
+    expect(Number.isFinite(ego.transform.rotation)).toBe(true);
+    expect(Number.isFinite(ego.yawRate ?? NaN)).toBe(true);
+    expect(Number.isFinite(ego.slipAngleFront ?? NaN)).toBe(true);
+    expect(Math.abs(ego.yawRate ?? 0)).toBeGreaterThan(0.08);
+    expect(Math.abs(ego.transform.position.y)).toBeGreaterThan(4);
+  });
+
+  it('handbrake induces rear slip / oversteer', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 20, velocity: { x: 20, y: 0, z: 0 } };
+    ego = drive(0.25, { throttle: 0.2, steering: 0.55, brake: 0, handbrake: 0 }, ego);
+    const gripRear = Math.abs(ego.slipAngleRear ?? 0);
+    ego = drive(0.45, { throttle: 0.15, steering: 0.7, brake: 0, handbrake: 1 }, ego);
+    expect(Number.isFinite(ego.slipAngleRear ?? NaN)).toBe(true);
+    expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(0.12);
+    expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(Math.abs(ego.slipAngleFront ?? 0) * 0.7);
+    expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(gripRear);
+  });
+
+  it('does not spin in place at zero speed with full steer', () => {
+    const ego = drive(1.2, { throttle: 0, steering: 1, brake: 0, handbrake: 0 });
+    expect(Math.abs(ego.transform.rotation)).toBeLessThan(0.05);
+    expect(Math.abs(ego.yawRate ?? 0)).toBeLessThan(0.05);
+    expect(Math.abs(ego.transform.position.x)).toBeLessThan(0.05);
+  });
+
+  it('GTA reverse: S at rest drives backward', () => {
+    const ego = drive(1.8, { throttle: 0, steering: 0, brake: 1, gtaReverse: true });
+    expect(ego.inReverse).toBe(true);
+    expect(ego.bodyVx ?? 0).toBeLessThan(-2.0);
+  });
+
+  it('Pacejka-lite saturates and stays finite', () => {
+    const small = tireLateralForce(0.02, 4000, 1.0, 70000);
+    const large = tireLateralForce(0.8, 4000, 1.0, 70000);
+    expect(Math.abs(small)).toBeLessThan(Math.abs(large));
+    expect(Math.abs(large)).toBeLessThan(4200);
+    expect(Number.isFinite(large)).toBe(true);
+  });
+});

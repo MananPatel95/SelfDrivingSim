@@ -5,6 +5,7 @@
 
 import type { BoundingBox3D, EgoState, Entity, Vec3 } from './types';
 import { vec3 } from './math';
+import { syncBodyVelocity } from './vehicle';
 
 export interface OBB2 {
   cx: number;
@@ -86,25 +87,31 @@ export function resolveEgoCollision(
   ego: EgoState,
   hit: CollisionHit
 ): EgoState {
-  const push = hit.depth + 0.08;
+  const push = hit.depth + 0.05;
   const pos: Vec3 = {
     x: ego.transform.position.x + hit.nx * push,
     y: ego.transform.position.y + hit.ny * push,
     z: ego.transform.position.z,
   };
-  const vn = ego.velocity.x * hit.nx + ego.velocity.y * hit.ny;
-  const bounce = vn < 0 ? vn * 0.35 : 0;
-  return {
+  const nx = hit.nx;
+  const ny = hit.ny;
+  const vn = ego.velocity.x * nx + ego.velocity.y * ny;
+  const tx = ego.velocity.x - vn * nx;
+  const ty = ego.velocity.y - vn * ny;
+  const restitution = 0.14;
+  const friction = 0.22;
+  const vnOut = vn < 0 ? -vn * restitution : vn;
+  const tSpeed = Math.hypot(tx, ty);
+  const jn = Math.abs(vnOut - vn);
+  const tLoss = Math.min(tSpeed, friction * jn + friction * 1.6);
+  const tScale = tSpeed > 1e-4 ? (tSpeed - tLoss) / tSpeed : 0;
+  const vx = tx * tScale + nx * vnOut;
+  const vy = ty * tScale + ny * vnOut;
+  return syncBodyVelocity({
     ...ego,
     transform: { ...ego.transform, position: pos },
-    velocity: vec3(
-      (ego.velocity.x - vn * hit.nx) * 0.15 - hit.nx * bounce,
-      (ego.velocity.y - vn * hit.ny) * 0.15 - hit.ny * bounce,
-      0
-    ),
-    brake: 1,
-    throttle: 0,
-  };
+    velocity: vec3(vx, vy, 0),
+  }, vx, vy, 0.7);
 }
 
 export function separateEntities(
