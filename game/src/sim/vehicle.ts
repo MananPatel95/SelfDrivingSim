@@ -225,96 +225,55 @@ function stepDynamics(
   dyn: CarDynamics,
   dt: number
 ): { x: number; y: number; yaw: number; u: number; v: number; r: number; ax: number; ay: number; af: number; ar: number } {
+  // Earth grip: weight is m·g, asphalt friction is μ·m·g. A gripped car cannot
+  // crab — velocity stays on the nose and steering draws a curve (positive steer = left, +yaw).
   const L = dyn.a + dyn.b;
   const speed = Math.hypot(u, v);
-  const uAbs = Math.abs(u);
-  const kinSpeed = 5 / 3.6; // blend to kinematic below ~5 km/h so slip cannot blow up
-  const kinW = clamp(1 - uAbs / kinSpeed, 0, 1);
-  const blend = 1 - kinW;
-  // Extra lateral damping through city crawl speeds so leftover v cannot report 60° slip.
-  const crawlW = clamp(1 - uAbs / (12 / 3.6), 0, 1);
-
-  const uGuard = uAbs < 0.6 ? Math.sign(u || 1) * 0.6 : u;
-  const vf = v + dyn.a * r;
-  const vr = v - dyn.b * r;
-  const alphaF = clamp(Math.atan2(vf, uGuard) - steer, -0.7, 0.7);
-  const alphaR = clamp(Math.atan2(vr, uGuard), -0.7, 0.7);
-
-  const axGuess = driveForce / dyn.mass;
-  let fzF = dyn.mass * G * dyn.b / L - dyn.mass * axGuess * dyn.cgHeight / L;
-  let fzR = dyn.mass * G * dyn.a / L + dyn.mass * axGuess * dyn.cgHeight / L;
-  fzF = clamp(fzF, dyn.mass * G * 0.18, dyn.mass * G * 0.85);
-  fzR = clamp(fzR, dyn.mass * G * 0.15, dyn.mass * G * 0.82);
-
-  const muF = dyn.mu;
-  const muR = dyn.mu * (1 - 0.92 * handbrake);
-  const caR = dyn.caRear * (1 - 0.72 * handbrake);
-
-  let fyF = tireLateralForce(alphaF, fzF, muF, dyn.caFront);
-  let fyR = tireLateralForce(alphaR, fzR, muR, caR);
-
-  const fxDrive = driveForce;
-  const fxBrake = -Math.sign(u || 1) * brakeForce;
-  const fxHb = -Math.sign(u || 1) * handbrake * 7800;
-  const fxF = fxDrive * 0.0 + fxBrake * 0.65;
-  const fxR = fxDrive + fxBrake * 0.35 + fxHb;
-
-  const capF = muF * fzF;
-  const capR = muR * fzR;
-  const scaleF = Math.sqrt(Math.max(0, 1 - clamp((fxF / Math.max(capF, 1)) ** 2, 0, 0.95)));
-  const scaleR = Math.sqrt(Math.max(0, 1 - clamp((fxR / Math.max(capR, 1)) ** 2, 0, 0.95)));
-  fyF *= scaleF;
-  fyR *= scaleR;
+  const MU = dyn.mu;
 
   const drag = 0.5 * RHO * dyn.cd * dyn.area * speed * speed;
-  const roll = dyn.crr * dyn.mass * G;
+  const rollR = dyn.crr * dyn.mass * G;
   const dragDir = Math.sign(u || 1);
-  let fx = fxDrive + fxBrake + fxHb - dragDir * (drag + roll) - fyF * Math.sin(steer);
+  const fxBrake = -dragDir * brakeForce;
+  const fxHb = -dragDir * handbrake * 9000;
+  let fx = driveForce + fxBrake + fxHb - dragDir * (drag + rollR);
   if (Math.abs(u) > 50) fx -= dragDir * (Math.abs(u) - 50) * 180;
 
-  const fy = fyF * Math.cos(steer) + fyR;
-
-  let uDot = fx / dyn.mass + v * r * blend;
-  let vDot = fy / dyn.mass - u * r * blend;
-  let rDot = (dyn.a * fyF * Math.cos(steer) - dyn.b * fyR) / dyn.iz;
-
-  if (kinW > 0) {
-    const rKin = u * Math.tan(steer) / L;
-    vDot = vDot * blend - v * (22 * kinW);
-    rDot = rDot * blend + (rKin - r) * (14 * kinW);
-    if (Math.abs(steer) < 0.04) {
-      vDot -= v * (10 * kinW);
-      rDot -= r * (12 * kinW);
-    }
-  } else if (crawlW > 0 && handbrake < 0.2) {
-    vDot -= v * (6 * crawlW);
-  }
-
-  const parked = Math.abs(driveForce) < 120 && brakeForce < 40 && handbrake < 0.05;
-  if (Math.abs(u) < 0.22 && parked) {
-    uDot = -u * 18;
-    vDot = -v * 22;
-    rDot = -r * 22;
-  }
-
+  const parked = Math.abs(driveForce) < 120 && brakeForce < 40 && handbrake < 0.05 && Math.abs(u) < 0.25;
+  let uDot = parked ? -u * 18 : fx / dyn.mass;
   let nu = u + uDot * dt;
-  let nv = v + vDot * dt;
-  let nr = clamp(r + rDot * dt, -2.8, 2.8);
+  if (parked || (Math.abs(nu) < 0.05 && Math.abs(driveForce) < 40 && brakeForce < 40)) nu = 0;
+  if (brakeForce > 200 && Math.sign(nu) !== Math.sign(u) && Math.abs(driveForce) < 80) nu = 0;
 
-  // Asphalt grip: gravity × friction (μ·g) kills sideslip so S+steer
-  // brakes and turns instead of crabbing on a diagonal. Handbrake unlocks the rear.
-  if (handbrake < 0.28) {
-    const tau = 0.07;
-    nv *= Math.exp(-dt / tau);
-    const steerClamped = clamp(steer, -0.5, 0.5);
-    const rTrack = Math.abs(nu) < 0.35 ? 0 : nu * Math.tan(steerClamped) / L;
-    const follow = 1 - Math.exp(-dt / 0.1);
-    nr = clamp(nr + (rTrack - nr) * follow, -1.8, 1.8);
+  const delta = clamp(steer, -0.6, 0.6);
+  let nv = 0;
+  let nr = 0;
+  let af = 0;
+  let ar = 0;
+
+  if (Math.abs(nu) >= 0.35 && handbrake < 0.25) {
+    const kappaCmd = Math.tan(delta) / L;
+    const kappaMax = (MU * G) / Math.max(nu * nu, 1);
+    const kappa = clamp(kappaCmd, -kappaMax, kappaMax);
+    nr = clamp(nu * kappa, -1.6, 1.6);
+    nv = 0;
+    const uDen = Math.abs(nu) < 0.5 ? Math.sign(nu || 1) * 0.5 : nu;
+    af = clamp(Math.atan2(dyn.a * nr, uDen) - delta, -0.25, 0.25);
+    ar = clamp(Math.atan2(-dyn.b * nr, uDen), -0.25, 0.25);
+  } else if (Math.abs(nu) >= 0.35) {
+    // Handbrake: rear friction collapses, the nose rotates under the velocity.
+    const kappa = Math.tan(delta) / L;
+    nr = clamp(nu * kappa * (1 + 2.8 * handbrake) + r * 0.4, -2.4, 2.4);
+    const stepOut = -Math.sign(nr || delta || 1) * (6 + 10 * handbrake) * dt;
+    nv = clamp(v * 0.92 + stepOut, -14, 14);
+    const uDen = Math.abs(nu) < 0.5 ? Math.sign(nu || 1) * 0.5 : nu;
+    af = clamp(Math.atan2(nv + dyn.a * nr, uDen) - delta, -0.8, 0.8);
+    ar = clamp(Math.atan2(nv - dyn.b * nr, uDen), -0.9, 0.9);
+  } else {
+    nr = 0;
+    nv = 0;
   }
 
-  if (Math.abs(nu) < 0.04 && Math.abs(driveForce) < 40) nu = 0;
-  if (Math.abs(nv) < 0.02) nv = 0;
-  if (Math.abs(nr) < 0.01) nr = 0;
   if (!Number.isFinite(nu) || !Number.isFinite(nv) || !Number.isFinite(nr)) {
     nu = 0; nv = 0; nr = 0;
   }
@@ -324,6 +283,7 @@ function stepDynamics(
   const s = Math.sin(nYaw);
   const vx = nu * c - nv * s;
   const vy = nu * s + nv * c;
+  const ay = handbrake < 0.25 ? nu * nr : nv / Math.max(dt, 0.01);
 
   return {
     x: posX + vx * dt,
@@ -333,9 +293,9 @@ function stepDynamics(
     v: nv,
     r: nr,
     ax: uDot,
-    ay: vDot,
-    af: alphaF,
-    ar: alphaR,
+    ay,
+    af,
+    ar,
   };
 }
 

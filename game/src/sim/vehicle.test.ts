@@ -43,6 +43,21 @@ describe('dynamic bicycle sedan', () => {
     expect(dist).toBeLessThan(60);
   });
 
+  it('W+left curves left along the nose, not 45° to the right', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 8, velocity: { x: 8, y: 0, z: 0 } };
+    ego = drive(2.2, { throttle: 0.6, steering: 1, brake: 0 }, ego);
+    expect(ego.transform.rotation).toBeGreaterThan(0.35);
+    expect(ego.transform.position.y).toBeGreaterThan(4);
+    expect(ego.transform.position.x).toBeGreaterThan(4);
+    const travel = Math.atan2(ego.velocity.y, ego.velocity.x);
+    let err = travel - ego.transform.rotation;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    expect(Math.abs(err)).toBeLessThan((12 * Math.PI) / 180);
+    expect(Math.abs(ego.bodyVy ?? 0)).toBeLessThan(0.8);
+  });
+
   it('reaches a steady-state turn without NaNs', () => {
     let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
     ego = { ...ego, bodyVx: 16, velocity: { x: 16, y: 0, z: 0 } };

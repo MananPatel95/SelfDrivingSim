@@ -724,7 +724,12 @@ function updateEntityMeshes() {
     mesh.position.set(entity.transform.position.x, 0, -entity.transform.position.y);
     const isVehicle = entity.classType === 'car' || entity.classType === 'truck'
       || entity.classType === 'bus' || entity.classType === 'motorcycle';
-    mesh.rotation.y = -entity.transform.rotation + (isVehicle ? Math.PI : 0);
+    const face = entity.transform.rotation;
+    if (isVehicle) mesh.rotation.y = -face + Math.PI;
+    else if (entity.classType === 'pedestrian') {
+      // Legs step along local -Z. Point that axis down the sidewalk, not across it.
+      mesh.rotation.y = Math.atan2(-Math.cos(face), Math.sin(face));
+    } else mesh.rotation.y = -face;
     const walk = mesh.userData.walk as {
       leftLeg: THREE.Group; rightLeg: THREE.Group; leftArm: THREE.Group; rightArm: THREE.Group;
     } | undefined;
@@ -1112,7 +1117,8 @@ function anyDriveHeld(): boolean {
 function humanInputFromKeys() {
   return {
     throttle: inputState.forward ? 1 : 0,
-    steering: inputState.left ? -1 : inputState.right ? 1 : 0,
+    // Positive steer is a left turn (+yaw). A curves left, D curves right.
+    steering: inputState.left ? 1 : inputState.right ? -1 : 0,
     brake: inputState.backward ? 1 : 0,
     handbrake: inputState.brake ? 1 : 0,
     gtaReverse: true,
