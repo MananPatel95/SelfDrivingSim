@@ -737,6 +737,20 @@ export class Simulation {
     };
   }
 
+  /** Park where the car already is, with no route, and hand the wheel to the driver. */
+  beginParked(at?: Vec3, yaw?: number): void {
+    const pos = at ?? this.state.ego.transform.position;
+    const face = yaw ?? this.state.ego.transform.rotation;
+    this.faceAndPark(face);
+    this.state.ego = {
+      ...this.state.ego,
+      transform: { position: { x: pos.x, y: pos.y, z: 0 }, rotation: face },
+    };
+    this.state.route = [];
+    this.state.plannerState = createPlannerState();
+    this.state.controlSource = 'human';
+  }
+
   /** Place the car on a start point and follow a road route to the end. */
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
     const route = roadRoute(start, end);

@@ -870,17 +870,17 @@
     <div id="start-menu" class="hud-interactive">
       <div id="start-card">
         <h1>AUTONOMY CITY</h1>
-        <p class="start-lead">The car stays parked until you pick a trip on the map.</p>
+        <p class="start-lead">The car stays parked until you start.</p>
         <ul>
           <li><b>F1 Tesla-style</b> uses cameras only. Depth is inferred from the picture.</li>
           <li><b>F2 Waymo-style</b> fuses lidar, radar, and a prior map.</li>
           <li><b>F3 Waabi-style</b> predicts where space will be occupied in the next few seconds.</li>
         </ul>
-        <p class="start-note">Click a start point, then an end point. Watch the autopilot drive that route, or drive it yourself. Take over any time. Click the front camera for a first-person view.</p>
+        <p class="start-note">Just drive to get in with no route. Or click a start point, then an end point, and watch the autopilot. Take over any time. Click the front camera for a first-person view.</p>
         <canvas id="start-map" width="560" height="280"></canvas>
         <div id="start-status">Click the map to set a start point on a road.</div>
         <div class="start-actions">
-          <button type="button" id="start-manual" class="pause-btn" disabled>Drive this route</button>
+          <button type="button" id="start-manual" class="pause-btn">Just drive</button>
           <button type="button" id="start-auto" class="pause-btn primary" disabled>Watch autopilot</button>
         </div>
       </div>
