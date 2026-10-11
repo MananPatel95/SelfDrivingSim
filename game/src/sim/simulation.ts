@@ -80,6 +80,8 @@ export class Simulation {
   private lastPlannerOutput: PlannerOutput | null = null;
   private lidarConfig: LidarConfig = LIDAR_CONFIGS['browserLite']!;
   private lidarEveryN = 2;
+  /** Ids currently overlapping the car, so a curb graze is one collision not one per frame. */
+  private contactIds = new Set<number>();
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -360,7 +362,12 @@ export class Simulation {
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
     };
     
-    const hazard = obstacleAhead(this.state.ego, allEntities, 45, 2.4);
+    const hazard = obstacleAhead(
+      this.state.ego,
+      allEntities.filter(e => e.classType !== 'barrier'),
+      45,
+      2.4
+    );
     if (hazard && this.state.controlSource !== 'human') {
       plannerInput.detections = [
         ...plannerInput.detections,
@@ -464,12 +471,13 @@ export class Simulation {
     // NPC overlap: push cars apart and yield to ego
     this.separateTraffic();
 
-    // Ego collision vs vehicles, peds, buildings, poles, curbs
+    // Curbs are painted only. A solid curb wall traps the car on the grass
+    // and counts a collision every frame while you try to drive back on.
     const obstacles = [
       ...this.state.trafficVehicles,
       ...this.state.pedestrians,
       ...this.state.worldMap.staticEntities.filter(e =>
-        e.classType === 'building' || e.classType === 'pole' || e.classType === 'barrier'
+        e.classType === 'building' || e.classType === 'pole'
         || e.classType === 'car' || e.classType === 'truck' || e.classType === 'tree'
       ),
     ];
@@ -483,8 +491,13 @@ export class Simulation {
     })), 0.02);
     if (hit && hit.depth > 0.05) {
       this.state.ego = resolveEgoCollision(this.state.ego, hit);
-      this.state.collisionCount += 1;
-      this.state.lastCollision = { otherId: hit.otherId, classType: hit.classType, at: this.state.timestamp };
+      if (!this.contactIds.has(hit.otherId)) {
+        this.contactIds.add(hit.otherId);
+        this.state.collisionCount += 1;
+        this.state.lastCollision = { otherId: hit.otherId, classType: hit.classType, at: this.state.timestamp };
+      }
+    } else {
+      this.contactIds.clear();
     }
     
     // Record frame
@@ -775,6 +788,7 @@ export class Simulation {
     if (seed !== undefined) this.config.seed = seed;
     this.rng = new SeededRandom(this.config.seed);
     this.recorder.clear();
+    this.contactIds.clear();
     this.state = this.initializeState();
   }
 
@@ -811,6 +825,7 @@ export class Simulation {
   reset(): void {
     this.rng = new SeededRandom(this.config.seed);
     this.recorder.clear();
+    this.contactIds.clear();
     this.state = this.initializeState();
   }
 }
