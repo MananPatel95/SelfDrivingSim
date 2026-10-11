@@ -20,6 +20,15 @@ import {
   meshYawForHeading,
 } from './sim/vehicleVisual';
 import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
+import {
+  ROUTE_CORE,
+  ROUTE_DEST,
+  ROUTE_DEST_RING,
+  ROUTE_HALO,
+  autopilotRouteOnMinimap,
+  projectToMinimap,
+  routeStrokeWidths,
+} from './ui/minimapRoute';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
@@ -1937,18 +1946,9 @@ function updateMinimap() {
   const egoX = state.ego.transform.position.x;
   const egoY = state.ego.transform.position.y;
   const yaw = state.ego.transform.rotation;
-  const fwdX = Math.cos(yaw);
-  const fwdY = Math.sin(yaw);
-  const rightX = Math.sin(yaw);
-  const rightY = -Math.cos(yaw);
 
-  const toMap = (wx: number, wy: number) => {
-    const dx = wx - egoX;
-    const dy = wy - egoY;
-    const forward = dx * fwdX + dy * fwdY;
-    const right = dx * rightX + dy * rightY;
-    return { x: cx + right * scale, y: cy - forward * scale };
-  };
+  const toMap = (wx: number, wy: number) =>
+    projectToMinimap(wx, wy, egoX, egoY, yaw, cx, cy, scale);
 
   const grid = 6;
   const block = 100;
@@ -1983,6 +1983,37 @@ function updateMinimap() {
     const hd = bld.boundingBox.size.y / 2;
     fillWorldRect(bld.transform.position.x - hw, bld.transform.position.y - hd,
       bld.transform.position.x + hw, bld.transform.position.y + hd);
+  }
+
+  const routePts = autopilotRouteOnMinimap(
+    state.controlSource,
+    state.route,
+    { x: egoX, y: egoY, yaw },
+    { w, h },
+    scale,
+  );
+  if (routePts) {
+    const stroke = (width: number, color: string) => {
+      ctx.beginPath();
+      ctx.moveTo(routePts[0]!.x, routePts[0]!.y);
+      for (let i = 1; i < routePts.length; i++) ctx.lineTo(routePts[i]!.x, routePts[i]!.y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    };
+    const { halo, core } = routeStrokeWidths(scale);
+    stroke(halo, ROUTE_HALO);
+    stroke(core, ROUTE_CORE);
+    const dest = routePts[routePts.length - 1]!;
+    ctx.beginPath();
+    ctx.arc(dest.x, dest.y, Math.max(4, core * 0.7), 0, Math.PI * 2);
+    ctx.fillStyle = ROUTE_DEST;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = ROUTE_DEST_RING;
+    ctx.stroke();
   }
 
   ctx.fillStyle = '#f2c14e';
