@@ -3,7 +3,9 @@ import {
   ROAD_SURFACE_Y,
   MAX_COSMETIC_ROLL,
   MAX_COSMETIC_PITCH,
+  BODY_CLEARANCE,
   lowestWheelPointY,
+  lowestBodyPointY,
   plantedVehiclePose,
   clampCosmeticAttitude,
 } from './vehicleVisual';
@@ -33,5 +35,21 @@ describe('planted wheels stay on the road', () => {
     expect(a.pitch).toBeCloseTo(MAX_COSMETIC_PITCH, 6);
     expect(a.roll).toBeLessThanOrEqual((5.1 * Math.PI) / 180);
     expect(a.pitch).toBeLessThanOrEqual((3.1 * Math.PI) / 180);
+  });
+
+  it('keeps the lowest BODY point 12–15 cm above the road at max roll and pitch', () => {
+    const y = lowestBodyPointY(MAX_COSMETIC_ROLL, MAX_COSMETIC_PITCH);
+    const gap = y - ROAD_SURFACE_Y;
+    expect(gap).toBeGreaterThanOrEqual(0.12);
+    expect(gap).toBeLessThanOrEqual(0.16);
+    expect(gap).toBeCloseTo(BODY_CLEARANCE, 1);
+    const rest = lowestBodyPointY(0, 0);
+    expect(rest).toBeGreaterThan(y);
+    expect(rest - ROAD_SURFACE_Y).toBeGreaterThan(0.12);
+  });
+
+  it('does not put any body corner under the road at huge commanded roll', () => {
+    const y = lowestBodyPointY(1.2, 0.8);
+    expect(y - ROAD_SURFACE_Y).toBeGreaterThanOrEqual(0.12);
   });
 });

@@ -7,7 +7,17 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { AXLE_HEIGHT, ROAD_SURFACE_Y, VISUAL_WHEEL_RADIUS, WHEEL_PLAN_OFFSETS } from './sim/vehicleVisual';
+import {
+  AXLE_HEIGHT,
+  BODY_CENTER_LOCAL_Y,
+  BODY_HALF_HEIGHT,
+  BODY_PARTS,
+  ROAD_SURFACE_Y,
+  VISUAL_WHEEL_RADIUS,
+  WHEEL_PLAN_OFFSETS,
+  clampCosmeticAttitude,
+} from './sim/vehicleVisual';
+import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
@@ -40,8 +50,8 @@ let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
 let rawCamera: THREE.PerspectiveCamera | null = null;
 let lastDecision: DecisionInfo = { text: 'Cruising: lane clear', severity: 'go' };
-type StackProfile = 'tesla' | 'waymo' | 'waabi';
-type CameraMode = 'chase' | 'hood' | 'bev' | 'orbit';
+type StackProfile = ViewStack;
+type CameraMode = ViewCamera;
 type QualityLevel = 'low' | 'med' | 'high';
 
 const INFO_CARDS: Record<StackProfile, {
@@ -979,6 +989,7 @@ function setCameraMode(mode: CameraMode) {
   document.querySelectorAll('#camera-seg button').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === mode);
   });
+  updateViewExplainer();
 }
 
 function applyQuality(level: QualityLevel) {
@@ -1140,55 +1151,45 @@ function switchStack(profile: StackProfile) {
   console.log(`Switched to stack: ${profile}`);
 }
 
-const AI_VIEW_COPY: Record<StackProfile, {
-  title: string;
-  uses: string;
-  diff: string;
-  rawLabel: string;
-  percLabel: string;
-}> = {
-  tesla: {
-    title: 'AI View — Tesla-style (F1)',
-    uses: 'Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. It reads lights and signs from the image.',
-    diff: 'Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range/night depth.',
-    rawLabel: 'Front camera (vision)',
-    percLabel: 'Vision boxes + voxels',
-  },
-  waymo: {
-    title: 'AI View — Waymo-style (F2)',
-    uses: 'Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
-    diff: 'Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes. This stack is multi-sensor + geofenced map: more redundant, only works where the map exists.',
-    rawLabel: 'Ego camera (context)',
-    percLabel: 'Fused lidar / radar boxes',
-  },
-  waabi: {
-    title: 'AI View — Waabi-style (F3)',
-    uses: 'Lidar, cameras, and radar fused into a bird’s-eye occupancy grid, plus 1 s / 2 s / 3 s future occupancy and a fan of scored trajectories. Mid-level reps stay readable.',
-    diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Sim World), not just “what is that object now?”',
-    rawLabel: 'Ego camera (context)',
-    percLabel: 'BEV occupancy-flow',
-  },
-};
+function setText(id: string, text: string) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function updateViewExplainer(profile: StackProfile = currentStack) {
+  const stack = STACK_VIEW_COPY[profile];
+  const cam = CAMERA_VIEW_COPY[cameraMode];
+  setText('view-explainer-title', stack.title);
+  setText('view-explainer-uses', stack.uses);
+  setText('view-explainer-diff', stack.diff);
+  setText('camera-explainer-title', cam.title);
+  setText('camera-explainer-uses', cam.uses);
+  setText('camera-explainer-diff', cam.diff);
+  setText('ai-view-header', `${aiViewTitle(profile)}  ·  V hide · G ground truth`);
+  setText('ai-view-uses', stack.uses);
+  setText('ai-view-diff', stack.diff);
+  setText('ai-view-raw-label', stack.rawLabel);
+  setText('ai-view-perc-label', stack.percLabel);
+  const card = document.getElementById('view-explainer');
+  if (card) card.classList.toggle('hidden', compareMode);
+}
+
+function fillCompareExplainer(side: 'left' | 'right', profile: StackProfile) {
+  const copy = STACK_VIEW_COPY[profile];
+  setText(`compare-${side}-ex-title`, copy.title);
+  setText(`compare-${side}-uses`, copy.uses);
+  setText(`compare-${side}-diff`, copy.diff);
+}
 
 function updateAIViewExplainer(profile: StackProfile = currentStack) {
-  const copy = AI_VIEW_COPY[profile];
-  const header = document.getElementById('ai-view-header');
-  const uses = document.getElementById('ai-view-uses');
-  const diff = document.getElementById('ai-view-diff');
-  const raw = document.getElementById('ai-view-raw-label');
-  const perc = document.getElementById('ai-view-perc-label');
-  if (header) header.textContent = `${copy.title}  ·  V hide · G ground truth`;
-  if (uses) uses.textContent = copy.uses;
-  if (diff) diff.textContent = copy.diff;
-  if (raw) raw.textContent = copy.rawLabel;
-  if (perc) perc.textContent = copy.percLabel;
+  updateViewExplainer(profile);
 }
 
 function updateOverlaysForStack(profile: StackProfile) {
   bevOverlayEnabled = profile === 'waabi';
   const bevHud = document.getElementById('bev-overlay');
   if (bevHud) bevHud.classList.toggle('visible', bevOverlayEnabled);
-  updateAIViewExplainer(profile);
+  updateViewExplainer(profile);
 }
 
 // Render BEV occupancy heatmaps for Waabi
@@ -1800,6 +1801,8 @@ function updateCompareTimingDisplay(currentTime: number) {
   
   if (leftLabelEl) leftLabelEl.textContent = stackLabels[currentStack];
   if (rightLabelEl) rightLabelEl.textContent = stackLabels[compareStack];
+  fillCompareExplainer('left', currentStack);
+  fillCompareExplainer('right', compareStack);
 }
 
 // Update minimap
@@ -1987,7 +1990,10 @@ function setupInput() {
           compareStack = 'waymo';
           simulation.injectScenario({ type: 'occluded_pedestrian', params: {} });
           initCompareMode();
+          fillCompareExplainer('left', currentStack);
+          fillCompareExplainer('right', compareStack);
         }
+        updateViewExplainer();
         break;
       case 'k':
         isRecording = !isRecording;
@@ -2127,9 +2133,10 @@ function animate(time: number) {
   egoMesh.position.set(ego.x, 0, -ego.y);
   egoMesh.rotation.set(0, -ego.yaw + Math.PI, 0);
   if (egoBodyPivot) {
+    const att = clampCosmeticAttitude(ego.roll, ego.pitch);
     egoBodyPivot.rotation.order = 'YXZ';
-    egoBodyPivot.rotation.x = ego.pitch;
-    egoBodyPivot.rotation.z = -ego.roll;
+    egoBodyPivot.rotation.x = att.pitch;
+    egoBodyPivot.rotation.z = -att.roll;
   }
   for (const wheel of egoWheels) {
     wheel.pivot.rotation.y = wheel.front ? currSteer : 0;
@@ -2230,34 +2237,38 @@ function createEgoVehicle(): THREE.Group {
   egoBodyPivot.position.y = AXLE_HEIGHT;
   group.add(egoBodyPivot);
 
-  const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.8);
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc});
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.6 - AXLE_HEIGHT;
-  body.castShadow = true;
-  egoBodyPivot.add(body);
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc });
+  for (const part of BODY_PARTS) {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(part.halfX * 2, part.halfY * 2, part.halfZ * 2),
+      bodyMat
+    );
+    mesh.position.set(part.cx, part.cy, part.cz);
+    mesh.castShadow = true;
+    egoBodyPivot.add(mesh);
+  }
 
-  const cabinGeo = new THREE.BoxGeometry(2.4, 0.9, 1.6);
-  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122});
+  const cabinGeo = new THREE.BoxGeometry(2.2, 0.78, 1.5);
+  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
   const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-  cabin.position.set(-0.2, 1.35 - AXLE_HEIGHT, 0);
+  cabin.position.set(-0.15, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.39, 0);
   cabin.castShadow = true;
   egoBodyPivot.add(cabin);
 
   const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
   const lidarMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
   const lidar = new THREE.Mesh(lidarGeo, lidarMat);
-  lidar.position.set(0, 1.9 - AXLE_HEIGHT, 0);
+  lidar.position.set(0, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.92, 0);
   egoBodyPivot.add(lidar);
 
   const lightGeo = new THREE.CircleGeometry(0.15, 8);
   const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
   const headlightL = new THREE.Mesh(lightGeo, lightMat);
-  headlightL.position.set(2.1, 0.6 - AXLE_HEIGHT, 0.6);
+  headlightL.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, 0.52);
   headlightL.rotation.y = Math.PI / 2;
   egoBodyPivot.add(headlightL);
   const headlightR = new THREE.Mesh(lightGeo, lightMat);
-  headlightR.position.set(2.1, 0.6 - AXLE_HEIGHT, -0.6);
+  headlightR.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, -0.52);
   headlightR.rotation.y = Math.PI / 2;
   egoBodyPivot.add(headlightR);
 

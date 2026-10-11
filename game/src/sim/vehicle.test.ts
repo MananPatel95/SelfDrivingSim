@@ -88,4 +88,27 @@ describe('dynamic bicycle sedan', () => {
     expect(Math.abs(large)).toBeLessThan(4200);
     expect(Number.isFinite(large)).toBe(true);
   });
+
+  it('50 km/h moderate steer stays under 6° slip and 1 g', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 13.9, velocity: { x: 13.9, y: 0, z: 0 } };
+    ego = drive(3.2, { throttle: 0.28, steering: 0.4, brake: 0 }, ego);
+    const slipDeg = Math.abs(ego.slipAngle ?? 0) * 180 / Math.PI;
+    const latG = Math.abs(ego.acceleration.y) / 9.81;
+    expect(Number.isFinite(slipDeg)).toBe(true);
+    expect(slipDeg).toBeLessThan(6);
+    expect(latG).toBeLessThan(1);
+    expect(vec3Length(ego.velocity) * 3.6).toBeGreaterThan(35);
+    expect(Math.abs(ego.bodyRoll ?? 0)).toBeLessThanOrEqual((5.1 * Math.PI) / 180);
+  });
+
+  it('handbrake slide produces rear slip above 15°', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 20, velocity: { x: 20, y: 0, z: 0 } };
+    ego = drive(0.2, { throttle: 0.25, steering: 0.55, brake: 0, handbrake: 0 }, ego);
+    ego = drive(0.55, { throttle: 0.1, steering: 0.75, brake: 0, handbrake: 1 }, ego);
+    const rearDeg = Math.abs(ego.slipAngleRear ?? 0) * 180 / Math.PI;
+    expect(rearDeg).toBeGreaterThan(15);
+    expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(Math.abs(ego.slipAngleFront ?? 0) * 0.7);
+  });
 });

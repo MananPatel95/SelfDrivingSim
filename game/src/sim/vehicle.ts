@@ -104,9 +104,9 @@ const CAR_DYN: CarDynamics = {
   a: 1.12,
   b: 1.58,
   cgHeight: 0.52,
-  caFront: 78000,
-  caRear: 98000,
-  mu: 1.12,
+  caFront: 95000,
+  caRear: 110000,
+  mu: 1.0,
   cd: 0.31,
   area: 2.22,
   crr: 0.013,
@@ -163,9 +163,13 @@ function approachSteer(current: number, target: number, dt: number): number {
   return approach(current, target, dt, 3.4, returning ? 6.2 : 3.4);
 }
 
-function maxSteerForSpeed(speed: number, peak: number): number {
-  const t = clamp(Math.abs(speed) / 42, 0, 1);
-  return peak * (0.26 + 0.74 * (1 - t) * (1 - t));
+function maxSteerForSpeed(speed: number, peak: number, handbrake = 0): number {
+  // Full lock at parking speeds; shrink with v^2 so 50 km/h A/D is ~0.5 g, not a slide.
+  // Handbrake raises the budget so a flick can actually break the rear loose.
+  const L = 2.7;
+  const budget = 5.0 * (1 + 2.4 * clamp(handbrake, 0, 1));
+  const fromG = budget * L / Math.max(speed * speed, 2.8);
+  return clamp(Math.min(peak, fromG), 0.05, peak);
 }
 
 function finite(n: number | undefined, fallback = 0): number {
@@ -224,14 +228,15 @@ function stepDynamics(
   const L = dyn.a + dyn.b;
   const speed = Math.hypot(u, v);
   const uAbs = Math.abs(u);
-  const low = clamp(1 - uAbs / 2.2, 0, 1);
-  const blend = 1 - low;
+  const kinSpeed = 5 / 3.6; // blend to kinematic below ~5 km/h so slip cannot blow up
+  const kinW = clamp(1 - uAbs / kinSpeed, 0, 1);
+  const blend = 1 - kinW;
 
-  const latF = v + dyn.a * r;
-  const latR = v - dyn.b * r;
-  const uDen = uAbs < 1.15 ? Math.sign(u || 1) * 1.15 : u;
-  const alphaF = clamp(steer - Math.atan(latF / uDen), -1.05, 1.05);
-  const alphaR = clamp(-Math.atan(latR / uDen), -1.05, 1.05);
+  const uGuard = uAbs < 0.6 ? Math.sign(u || 1) * 0.6 : u;
+  const vf = v + dyn.a * r;
+  const vr = v - dyn.b * r;
+  const alphaF = clamp(Math.atan2(vf, uGuard) - steer, -0.7, 0.7);
+  const alphaR = clamp(Math.atan2(vr, uGuard), -0.7, 0.7);
 
   const axGuess = driveForce / dyn.mass;
   let fzF = dyn.mass * G * dyn.b / L - dyn.mass * axGuess * dyn.cgHeight / L;
@@ -240,14 +245,15 @@ function stepDynamics(
   fzR = clamp(fzR, dyn.mass * G * 0.15, dyn.mass * G * 0.82);
 
   const muF = dyn.mu;
-  const muR = dyn.mu * (1 - 0.82 * handbrake);
+  const muR = dyn.mu * (1 - 0.92 * handbrake);
+  const caR = dyn.caRear * (1 - 0.72 * handbrake);
 
   let fyF = tireLateralForce(alphaF, fzF, muF, dyn.caFront);
-  let fyR = tireLateralForce(alphaR, fzR, muR, dyn.caRear);
+  let fyR = tireLateralForce(alphaR, fzR, muR, caR);
 
   const fxDrive = driveForce;
   const fxBrake = -Math.sign(u || 1) * brakeForce;
-  const fxHb = -Math.sign(u || 1) * handbrake * 7200;
+  const fxHb = -Math.sign(u || 1) * handbrake * 7800;
   const fxF = fxDrive * 0.0 + fxBrake * 0.65;
   const fxR = fxDrive + fxBrake * 0.35 + fxHb;
 
@@ -270,12 +276,13 @@ function stepDynamics(
   let vDot = fy / dyn.mass - u * r * blend;
   let rDot = (dyn.a * fyF * Math.cos(steer) - dyn.b * fyR) / dyn.iz;
 
-  if (low > 0) {
-    vDot -= v * (16 * low);
-    rDot -= r * (18 * low);
-    if (Math.abs(steer) < 0.05) {
-      vDot -= v * (12 * low);
-      rDot -= r * (16 * low);
+  if (kinW > 0) {
+    const rKin = u * Math.tan(steer) / L;
+    vDot = vDot * blend - v * (22 * kinW);
+    rDot = rDot * blend + (rKin - r) * (14 * kinW);
+    if (Math.abs(steer) < 0.04) {
+      vDot -= v * (10 * kinW);
+      rDot -= r * (12 * kinW);
     }
   }
 
@@ -371,7 +378,7 @@ export function updateVehicle(
   const hbFilt = approach(state.handbrake ?? 0, rawHb, dt, 10, 8);
 
   const speed = Math.hypot(p.bodyVx, p.bodyVy);
-  const maxSteer = maxSteerForSpeed(speed, params.maxSteeringAngle);
+  const maxSteer = maxSteerForSpeed(speed, params.maxSteeringAngle, hbFilt);
   const steerAngle = clamp(steerFilt, -1, 1) * maxSteer;
 
   let gear = clamp(Math.round(p.gear), 1, 6);
@@ -427,8 +434,9 @@ export function updateVehicle(
   const worldSpeed = Math.hypot(vx, vy);
   const stoppingDistance = (worldSpeed * worldSpeed) / (2 * params.maxDecel);
 
-  const targetRoll = clamp(-ay * 0.018 - r * 0.04, -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
-  const targetPitch = clamp(-ax * 0.01, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
+  // Cosmetic only, from body accel in g — not from the huge slip-angle number.
+  const targetRoll = clamp((-ay / G) * 0.07, -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
+  const targetPitch = clamp((-ax / G) * 0.045, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
   const bodyRoll = approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5);
   const bodyPitch = approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2);
   const wheelSpin = p.wheelSpin + (u / dyn.wheelRadius) * dt;
