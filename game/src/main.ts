@@ -192,6 +192,7 @@ const inputState = {
 
 let egoMesh: THREE.Object3D;
 let egoBodyPivot: THREE.Group | null = null;
+let egoSteerWheel: THREE.Group | null = null;
 let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
@@ -913,6 +914,20 @@ function interpolatedEgo(alpha: number) {
   };
 }
 
+function carLocalToWorld(
+  lx: number, ly: number, lz: number,
+  egoX: number, egoY: number, yaw: number
+) {
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  const tx = lx * c + lz * s;
+  const tz = -lx * s + lz * c;
+  const simY = egoY - tz;
+  return { x: egoX + tx, simY, y: AXLE_HEIGHT + ly, z: -simY };
+}
+
+let hoodLookWorldY = 1.15;
+
 function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
   const state = simulation.getState().ego;
   const vx = state.velocity.x;
@@ -969,12 +984,14 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     targetLookX = egoX;
     targetLookY = egoY;
   } else if (cameraMode === 'hood') {
-    targetYaw = egoYaw;
-    targetPosX = egoX + Math.cos(egoYaw) * 1.4;
-    targetPosY = 1.25;
-    targetPosZ = -(egoY + Math.sin(egoYaw) * 1.4);
-    targetLookX = egoX + Math.cos(egoYaw) * 18;
-    targetLookY = egoY + Math.sin(egoYaw) * 18;
+    const eye = carLocalToWorld(0.02, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.62, 0.34, egoX, egoY, egoYaw);
+    const look = carLocalToWorld(14, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.28, 0.34, egoX, egoY, egoYaw);
+    targetPosX = eye.x;
+    targetPosY = eye.y;
+    targetPosZ = eye.z;
+    targetLookX = look.x;
+    targetLookY = look.simY;
+    hoodLookWorldY = look.y;
   } else if (cameraMode === 'bev') {
     targetPosX = egoX;
     targetPosY = 95;
@@ -1012,7 +1029,14 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
   }
 
   camera.position.set(camPosX, camPosY, camPosZ);
-  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
+  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? hoodLookWorldY : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
+  if (cameraMode === 'hood' && camera.near !== 0.03) {
+    camera.near = 0.03;
+    camera.updateProjectionMatrix();
+  } else if (cameraMode !== 'hood' && camera.near !== 0.1) {
+    camera.near = 0.1;
+    camera.updateProjectionMatrix();
+  }
   camera.lookAt(camLookX, lookZ, -camLookY);
 }
 
@@ -2372,6 +2396,10 @@ function animate(time: number) {
     wheel.pivot.rotation.y = wheel.front ? currSteer : 0;
     wheel.mesh.rotation.y = currWheelSpin;
   }
+  if (egoSteerWheel) {
+    // A is +steer (left). Positive rotation about the nose axis turns the wheel left.
+    egoSteerWheel.rotation.x = currSteer * 2.6;
+  }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
 
   if (time - lastHudMs >= 200) {
@@ -2467,53 +2495,78 @@ function createEgoVehicle(): THREE.Group {
   egoBodyPivot.position.y = AXLE_HEIGHT;
   group.add(egoBodyPivot);
 
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc });
-  for (const part of BODY_PARTS) {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(part.halfX * 2, part.halfY * 2, part.halfZ * 2),
-      bodyMat
-    );
-    mesh.position.set(part.cx, part.cy, part.cz);
+  const paint = new THREE.MeshLambertMaterial({ color: 0x163a66 });
+  const paintDark = new THREE.MeshLambertMaterial({ color: 0x0e243f });
+  const glass = new THREE.MeshLambertMaterial({ color: 0x0c121c, transparent: true, opacity: 0.55 });
+  const lamp = new THREE.MeshLambertMaterial({ color: 0xdfefff, emissive: 0x9ecbff, emissiveIntensity: 0.7 });
+  const tail = new THREE.MeshLambertMaterial({ color: 0xff3344, emissive: 0xff2233, emissiveIntensity: 0.45 });
+  const leather = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
+  const metal = new THREE.MeshLambertMaterial({ color: 0xb8c0cc });
+
+  const addBox = (
+    w: number, h: number, d: number,
+    x: number, y: number, z: number,
+    mat: THREE.Material
+  ) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z);
     mesh.castShadow = true;
-    egoBodyPivot.add(mesh);
+    egoBodyPivot!.add(mesh);
+    return mesh;
+  };
+
+  for (const part of BODY_PARTS) {
+    addBox(part.halfX * 2, part.halfY * 2, part.halfZ * 2, part.cx, part.cy, part.cz, paint);
   }
+  addBox(0.7, 0.28, 1.5, 1.85, BODY_CENTER_LOCAL_Y + 0.16, 0, paint);
+  addBox(0.55, 0.26, 1.48, -1.72, BODY_CENTER_LOCAL_Y + 0.14, 0, paintDark);
+  const hood = addBox(1.35, 0.12, 1.42, 0.95, BODY_CENTER_LOCAL_Y + 0.42, 0, paint);
+  hood.material = new THREE.MeshLambertMaterial({ color: 0x163a66, side: THREE.DoubleSide });
+  hood.rotation.z = -0.08;
+  addBox(2.3, 0.08, 1.62, 0.05, BODY_CENTER_LOCAL_Y + 0.48, 0, paintDark);
+  addBox(1.35, 0.48, 1.28, -0.15, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.28, 0, glass);
+  addBox(1.15, 0.06, 1.2, -0.12, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.54, 0, paintDark);
+  addBox(0.06, 0.08, 0.42, 2.2, BODY_CENTER_LOCAL_Y + 0.22, 0.48, lamp);
+  addBox(0.06, 0.08, 0.42, 2.2, BODY_CENTER_LOCAL_Y + 0.22, -0.48, lamp);
+  addBox(0.05, 0.06, 0.5, -1.95, BODY_CENTER_LOCAL_Y + 0.22, 0.42, tail);
+  addBox(0.05, 0.06, 0.5, -1.95, BODY_CENTER_LOCAL_Y + 0.22, -0.42, tail);
 
-  const cabinGeo = new THREE.BoxGeometry(2.2, 0.78, 1.5);
-  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122 });
-  const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-  cabin.position.set(-0.15, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.39, 0);
-  cabin.castShadow = true;
-  egoBodyPivot.add(cabin);
+  const sensor = new THREE.Mesh(
+    new THREE.BoxGeometry(0.22, 0.06, 0.16),
+    new THREE.MeshLambertMaterial({ color: 0x22262e })
+  );
+  sensor.position.set(-0.05, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.6, 0);
+  egoBodyPivot.add(sensor);
 
-  const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
-  const lidarMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-  const lidar = new THREE.Mesh(lidarGeo, lidarMat);
-  lidar.position.set(0, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.92, 0);
-  egoBodyPivot.add(lidar);
-
-  const lightGeo = new THREE.CircleGeometry(0.15, 8);
-  const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
-  const headlightL = new THREE.Mesh(lightGeo, lightMat);
-  headlightL.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, 0.52);
-  headlightL.rotation.y = Math.PI / 2;
-  egoBodyPivot.add(headlightL);
-  const headlightR = new THREE.Mesh(lightGeo, lightMat);
-  headlightR.position.set(2.38, BODY_CENTER_LOCAL_Y + 0.18, -0.52);
-  headlightR.rotation.y = Math.PI / 2;
-  egoBodyPivot.add(headlightR);
+  const dash = addBox(0.35, 0.16, 0.7, 0.42, BODY_CENTER_LOCAL_Y + 0.52, 0.34, new THREE.MeshLambertMaterial({ color: 0x1a1e26 }));
+  dash.castShadow = false;
+  egoSteerWheel = new THREE.Group();
+  egoSteerWheel.position.set(0.55, BODY_CENTER_LOCAL_Y + 0.58, 0.34);
+  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.016, 8, 22), leather);
+  wheelRim.rotation.y = Math.PI / 2;
+  egoSteerWheel.add(wheelRim);
+  for (const ang of [0, 2.2, 4.1]) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.13, 0.012), metal);
+    spoke.position.set(0, Math.cos(ang) * 0.06, Math.sin(ang) * 0.06);
+    spoke.rotation.x = ang;
+    egoSteerWheel.add(spoke);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 12), metal);
+  hub.rotation.z = Math.PI / 2;
+  egoSteerWheel.add(hub);
+  egoBodyPivot.add(egoSteerWheel);
 
   egoWheels = [];
   const tireGeo = new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, 0.28, 18);
-  const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12);
+  const rimGeo = new THREE.TorusGeometry(0.2, 0.035, 8, 16);
   const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const rimMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+  const rimMat = new THREE.MeshLambertMaterial({ color: 0xd0d5de });
   for (const spec of WHEEL_PLAN_OFFSETS) {
     const pivot = new THREE.Group();
     pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
     const tire = new THREE.Mesh(tireGeo, tireMat);
     const rim = new THREE.Mesh(rimGeo, rimMat);
     tire.rotation.x = Math.PI / 2;
-    rim.rotation.x = Math.PI / 2;
     pivot.add(tire);
     pivot.add(rim);
     group.add(pivot);

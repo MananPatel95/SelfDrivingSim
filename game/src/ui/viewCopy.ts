@@ -44,7 +44,7 @@ export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
   },
   hood: {
     title: 'Hood camera',
-    uses: 'Bumper / hood cam locked to the car heading. Closest to what a front camera actually sees.',
+    uses: 'Driver’s seat. You see the dash and the steering wheel, which turns with A and D. The nose of the car is ahead of you.',
     diff: 'Chase follows from behind and can look around with RMB. BEV is top-down. Orbit is free around the car.',
   },
   bev: {
