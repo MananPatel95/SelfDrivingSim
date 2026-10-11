@@ -81,6 +81,33 @@ describe('dynamic bicycle sedan', () => {
     expect(Math.abs(ego.transform.position.x)).toBeLessThan(0.05);
   });
 
+  it('S+A brakes and turns without a 45° crab slide', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 12, velocity: { x: 12, y: 0, z: 0 } };
+    ego = drive(1.0, { throttle: 0, steering: -1, brake: 1, gtaReverse: true }, ego);
+    const speed = vec3Length(ego.velocity);
+    const side = Math.abs(ego.bodyVy ?? 0);
+    const along = Math.abs(ego.bodyVx ?? 0);
+    expect(side).toBeLessThan(Math.max(1.5, along * 0.35));
+    if (speed > 2) {
+      const travel = Math.atan2(ego.velocity.y, ego.velocity.x);
+      let err = travel - ego.transform.rotation;
+      while (err > Math.PI) err -= Math.PI * 2;
+      while (err < -Math.PI) err += Math.PI * 2;
+      expect(Math.abs(err)).toBeLessThan((18 * Math.PI) / 180);
+    }
+    expect(ego.inReverse).toBe(false);
+  });
+
+  it('S+A from rest reverses along the car, not on a diagonal', () => {
+    const ego = drive(1.6, { throttle: 0, steering: -1, brake: 1, gtaReverse: true });
+    expect(ego.inReverse).toBe(true);
+    expect(ego.bodyVx ?? 0).toBeLessThan(-1.5);
+    const travel = Math.atan2(ego.bodyVy ?? 0, ego.bodyVx || -1);
+    const fromLong = Math.min(Math.abs(travel), Math.abs(Math.abs(travel) - Math.PI));
+    expect(fromLong).toBeLessThan((15 * Math.PI) / 180);
+  });
+
   it('GTA reverse: S at rest drives backward', () => {
     const ego = drive(1.8, { throttle: 0, steering: 0, brake: 1, gtaReverse: true });
     expect(ego.inReverse).toBe(true);
