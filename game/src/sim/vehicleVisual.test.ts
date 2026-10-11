@@ -8,6 +8,7 @@ import {
   lowestBodyPointY,
   plantedVehiclePose,
   clampCosmeticAttitude,
+  noseInSimPlane,
 } from './vehicleVisual';
 
 describe('planted wheels stay on the road', () => {
@@ -51,5 +52,13 @@ describe('planted wheels stay on the road', () => {
   it('does not put any body corner under the road at huge commanded roll', () => {
     const y = lowestBodyPointY(1.2, 0.8);
     expect(y - ROAD_SURFACE_Y).toBeGreaterThanOrEqual(0.12);
+  });
+
+  it('points the nose along the heading, not sideways or backward', () => {
+    for (const yaw of [0, 0.7, Math.PI / 2, Math.PI, -1.2]) {
+      const nose = noseInSimPlane(yaw);
+      expect(nose.x).toBeCloseTo(Math.cos(yaw), 6);
+      expect(nose.y).toBeCloseTo(Math.sin(yaw), 6);
+    }
   });
 });
