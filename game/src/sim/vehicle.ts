@@ -301,6 +301,17 @@ function stepDynamics(
   let nv = v + vDot * dt;
   let nr = clamp(r + rDot * dt, -2.8, 2.8);
 
+  // Asphalt grip: gravity × friction (μ·g) kills sideslip so S+steer
+  // brakes and turns instead of crabbing on a diagonal. Handbrake unlocks the rear.
+  if (handbrake < 0.28) {
+    const tau = 0.07;
+    nv *= Math.exp(-dt / tau);
+    const steerClamped = clamp(steer, -0.5, 0.5);
+    const rTrack = Math.abs(nu) < 0.35 ? 0 : nu * Math.tan(steerClamped) / L;
+    const follow = 1 - Math.exp(-dt / 0.1);
+    nr = clamp(nr + (rTrack - nr) * follow, -1.8, 1.8);
+  }
+
   if (Math.abs(nu) < 0.04 && Math.abs(driveForce) < 40) nu = 0;
   if (Math.abs(nv) < 0.02) nv = 0;
   if (Math.abs(nr) < 0.01) nr = 0;
@@ -347,12 +358,12 @@ export function updateVehicle(
   let inReverse = p.inReverse;
 
   if (input.gtaReverse) {
-    const stopped = p.bodyVx < 1.35;
+    const stopped = Math.abs(p.bodyVx) < 0.4 && Math.abs(p.bodyVy) < 0.4;
     if (rawBrake > 0.15 && stopped && wantThrottle < 0.05) {
       inReverse = true;
       wantThrottle = rawBrake;
       wantBrake = 0;
-    } else if (p.bodyVx > 1.6 || wantThrottle > 0.2) {
+    } else if (p.bodyVx > 0.6 || wantThrottle > 0.2) {
       inReverse = false;
     }
     if (inReverse && rawBrake > 0.05 && wantThrottle < 0.05) {

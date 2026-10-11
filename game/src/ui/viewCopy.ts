@@ -39,7 +39,7 @@ export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string
 export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
   chase: {
     title: 'Chase camera',
-    uses: 'Default GTA-style rig: behind and slightly above the car, eased onto the velocity heading. Looks back when reversing. Hold right mouse to orbit; it eases home after 1.5 s. Scroll zooms.',
+    uses: 'Default rig: behind and slightly above the car, following the nose. It stays behind while you reverse. Hold right mouse to orbit; it eases home after 1.5 s. Scroll zooms.',
     diff: 'Hood is a bumper cam. BEV is a straight-down map. Orbit stays free and does not auto-return.',
   },
   hood: {
