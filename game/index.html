@@ -328,13 +328,14 @@
 
     #minimap {
       position: absolute;
-      top: 60px;
+      top: 56px;
       left: 10px;
-      width: 180px;
-      height: 180px;
-      background: rgba(0,0,0,0.8);
-      border-radius: 8px;
-      border: 2px solid #333;
+      width: 210px;
+      height: 210px;
+      background: #1a2a22;
+      border-radius: 16px;
+      border: 3px solid #0c0c0c;
+      box-shadow: 0 0 0 1px #3a3a3a, 0 8px 18px rgba(0,0,0,0.45);
       z-index: 8;
     }
     #minimap.hidden { display: none !important; }
@@ -626,7 +627,7 @@
       </div>
     </div>
 
-    <canvas id="minimap" class="hud" width="180" height="180"></canvas>
+    <canvas id="minimap" class="hud" width="210" height="210"></canvas>
 
     <div id="top-right-stack" class="hud hud-interactive">
       <button id="gear-btn" title="Pause / settings (Esc)">⚙</button>
