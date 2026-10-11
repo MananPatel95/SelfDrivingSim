@@ -352,6 +352,69 @@
     }
     #pause-overlay.visible { display: flex; }
 
+    #start-menu {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(4, 8, 14, 0.72);
+      pointer-events: auto;
+    }
+    #start-menu.hidden { display: none; }
+    #start-card {
+      width: min(560px, 92vw);
+      background: rgba(10, 14, 22, 0.96);
+      border: 1px solid #3a4a66;
+      border-radius: 14px;
+      padding: 28px 28px 22px;
+    }
+    #start-card h1 {
+      font-size: 28px;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    #start-card .start-lead {
+      color: #d5e4ee;
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 14px;
+    }
+    #start-card ul {
+      margin: 0 0 14px 18px;
+      color: #c5d4e0;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    #start-card .start-note {
+      color: #9ab;
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 16px;
+    }
+    #start-card .start-label {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #7fd7ff;
+      margin-bottom: 8px;
+    }
+    #start-dir { display: flex; gap: 6px; margin-bottom: 18px; }
+    #start-dir button {
+      flex: 1;
+      padding: 8px 6px;
+      border-radius: 6px;
+      border: 1px solid #445;
+      background: #1a2230;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #start-dir button.active { background: #0066cc; border-color: #08f; }
+    .start-actions { display: flex; gap: 10px; }
+    .start-actions .pause-btn { flex: 1; }
+
     #pause-menu {
       width: min(520px, 92vw);
       max-height: 88vh;
@@ -781,6 +844,30 @@
           <div><span class="control-key">Backspace</span> Restart</div>
           <div><span class="control-key">Esc</span> Pause / resume</div>
           <div><span class="control-key">F1–F3</span> Stack</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="start-menu" class="hud-interactive">
+      <div id="start-card">
+        <h1>AUTONOMY CITY</h1>
+        <p class="start-lead">The car is parked at an intersection. Nothing moves until you choose how to leave.</p>
+        <ul>
+          <li><b>F1 Tesla-style</b> uses cameras only. Depth is inferred from the picture.</li>
+          <li><b>F2 Waymo-style</b> fuses lidar, radar, and a prior map.</li>
+          <li><b>F3 Waabi-style</b> predicts where space will be occupied in the next few seconds.</li>
+        </ul>
+        <p class="start-note">Pick a direction, then drive it yourself or send the autopilot that way. T switches later. WASD drives. The front wheels steer.</p>
+        <div class="start-label">Direction</div>
+        <div id="start-dir">
+          <button type="button" data-yaw="1.5707963267948966" class="active">North</button>
+          <button type="button" data-yaw="0">East</button>
+          <button type="button" data-yaw="-1.5707963267948966">South</button>
+          <button type="button" data-yaw="3.141592653589793">West</button>
+        </div>
+        <div class="start-actions">
+          <button type="button" id="start-manual" class="pause-btn">Drive manually</button>
+          <button type="button" id="start-auto" class="pause-btn primary">Start autopilot</button>
         </div>
       </div>
     </div>
