@@ -6,19 +6,19 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
 
 ## Features
 
-- **Six Autonomy Stack Views (F1-F6):**
+- **City autonomy stack views (F1–F3):**
   - F1: Tesla-style Vision Only (cameras, depth inference, no HD map)
   - F2: Waymo-style Multi-sensor + HD Map (lidar fusion, geofenced)
   - F3: Waabi-style AI-first (BEV occupancy, future prediction, Sim World)
-  - F4: Aurora-style FMCW Lidar Trucking (per-point velocity)
-  - F5: Train (signaling, braking curves, track occupancy)
-  - F6: Ship (ARPA radar, AIS, COLREGs collision avoidance)
+  - Compare mode (M): Tesla vs Waymo side-by-side
 
 - **Gameplay:**
-  - Remote supervisor role for robotaxi rides
-  - Takeover control with reason logging
+  - WASD / arrows drive a bicycle-model car; Space is handbrake
+  - T toggles AUTOPILOT / MANUAL (a drive key takes over automatically)
+  - Escape (or the gear icon) opens a pause / settings menu
   - Scenario injection (jaywalker, occluded pedestrian, cut-in)
   - Day/night and weather effects
+  - Quality Low / Med / High (pixel ratio, draw distance, lidar, shadows)
 
 - **Data Engine (Checkpoint A):**
   - Mining interesting frames (disengagements, perception errors, near-misses)
@@ -39,10 +39,6 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
 | Waabi BEV + Sim World | Compare Mode |
 |-----------------------|--------------|
 | ![Waabi BEV](docs/screenshots/02-waabi-bev.png) | ![Compare](docs/screenshots/04-compare-mode.png) |
-
-| Highway Trucking (F4) | Rail (F5) | Maritime (F6) |
-|-----------------------|-----------|---------------|
-| ![Truck](docs/screenshots/06-highway-truck.png) | ![Train](docs/screenshots/05-rail-train.png) | ![Ship](docs/screenshots/03-harbour-ship.png) |
 
 | Night + Fog | Dashboard |
 |-------------|-----------|
@@ -103,12 +99,6 @@ All real-world claims in this project are based on publicly described informatio
 
 - **Waabi-style:** Uses lidars, cameras, and radars; describes an "AI-first", generative-AI-based stack that is "end-to-end trainable" with "intermediate interpretable representations" (not a black box); trains in Waabi World, a simulator with world reconstruction, sensor simulation, scenario generation including adversarial scenarios, and closed-loop learning; focuses on autonomous trucking.
 
-- **Aurora-style:** Uses FirstLight, a frequency-modulated continuous-wave (FMCW) lidar; FMCW lidar measures range and per-point radial velocity (Doppler); used for long-range highway trucking in Texas.
-
-- **Rail:** Fully driverless metros (e.g., Vancouver SkyTrain, driverless since the 1980s) run on signalling/train control with guarded platforms rather than camera perception; heavy-haul autonomous freight exists (e.g., Rio Tinto AutoHaul in Western Australia); trains cannot swerve and heavy trains can need more than a kilometre to stop.
-
-- **Maritime:** Autonomous navigation systems (e.g., Avikus HiNAS) fuse cameras including infrared, radar/ARPA, and AIS, follow an ECDIS passage plan, and perform COLREGs-compliant collision avoidance.
-
 ## Quick Start
 
 ### Prerequisites
@@ -116,18 +106,32 @@ All real-world claims in this project are based on publicly described informatio
 - Node.js 18+
 - Python 3.11+
 - npm or pnpm
+- Rust toolchain if you want to rebuild the lidar WASM crate (optional if `game/crates/autonomy-sim/pkg/` is already present)
+
+### Rust / WASM (macOS)
+
+Lidar ray/AABB tests run in Rust via `autonomy_sim_bg.wasm`. Vehicle motion, RANSAC ground removal, and Waabi BEV stay in TypeScript.
+
+```bash
+# rustup: https://rustup.rs
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-pack
+```
+
+`make install` checks for rustup, adds `wasm32-unknown-unknown`, installs `wasm-pack` if needed, then runs `make wasm`. `make dev` and `make build` rebuild the crate and fail if that build fails (no swallowed `|| echo`). The generated `pkg/` (including the `.wasm`) is committed so `npm run dev` still works without Rust; `make wasm` always regenerates it.
 
 ### Installation
 
 ```bash
-# Install all dependencies
+# Install all dependencies (also builds WASM)
 make install
 ```
 
 ### Running the Game
 
 ```bash
-# Development server
+# Development server (rebuilds WASM first)
 make dev
 
 # Open http://localhost:3000
@@ -137,23 +141,26 @@ make dev
 
 | Key | Action |
 |-----|--------|
-| WASD | Drive (when in takeover) |
-| Space | Brake |
-| T | Takeover / Release control |
-| C | Cycle camera mode (chase/topdown/cockpit) |
+| Esc / ⚙ | Pause / settings (Resume, Restart, Quality, Perception, Shadow, camera, controls) |
+| WASD / arrows | Drive (takes over from autopilot) |
+| Space | Handbrake |
+| T | Toggle AUTOPILOT / MANUAL |
+| C | Cycle camera (chase / hood / BEV / orbit) |
+| Drag / wheel | Orbit / zoom in chase and orbit |
+| R | Reset camera |
+| Backspace | Restart scene |
 | V | Toggle AI View panel |
-| G | Toggle Ground Truth overlay (green=matched, red=FN, orange=FP) |
+| G | Toggle Ground Truth overlay |
 | I | Toggle Info Card |
-| R | Toggle recording |
+| K | Toggle recording |
 | N | Toggle day/night |
-| M | Toggle Compare mode |
-| P | Pause simulation |
+| M | Compare Tesla vs Waymo |
 | 1 | Jaywalker scenario |
 | 2 | Occluded pedestrian scenario |
 | 3 | Vehicle cut-in scenario |
 | 4 | Rain/fog weather toggle |
-| 5 | Context-dependent obstacle (stalled car/crossing car/boat) |
-| F1-F6 | Switch stack profile |
+| 5 | Stalled vehicle |
+| F1–F3 | Switch stack profile |
 
 ### Running Headless Simulation
 
@@ -268,7 +275,7 @@ These models are trained entirely on simulated data and would require significan
 
 1. **Sensor simulation fidelity:** Real lidar, radar, and cameras have noise characteristics, artifacts, and failure modes not fully captured in this simulation. Our lidar uses analytic ray casting; real sensors have multi-path returns, blooming, motion blur, and atmospheric effects.
 
-2. **Domain shift:** Real-world scenes have vastly more variety in lighting, weather, object appearances, road markings, and traffic patterns. Our procedural city/highway/rail/harbour maps are simplified compared to real environments.
+2. **Domain shift:** Real-world scenes have vastly more variety in lighting, weather, object appearances, road markings, and traffic patterns. Our procedural city map is simplified compared to real environments.
 
 3. **Edge cases:** The simulated scenarios cover only a tiny fraction of the challenging situations encountered in real driving (construction zones, emergency vehicles, unusual objects, etc.). We implement 7 scenario types; real systems need thousands.
 
