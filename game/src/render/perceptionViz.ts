@@ -414,18 +414,19 @@ export class PerceptionVisualizer {
       return;
     }
     if (this.frustumLines.length === 0) {
-      for (const cam of CAMERA_CONFIG.slice(0, 5)) {
+      for (const cam of CAMERA_CONFIG) {
         const half = (cam.fov * Math.PI / 180) / 2;
-        const len = 18;
+        const len = cam.id === 'rear' ? 14 : 18;
+        const edge = (yaw: number) => new THREE.Vector3(Math.cos(yaw) * len, 1.15, -Math.sin(yaw) * len);
         const pts = [
-          new THREE.Vector3(0, 1.2, 0),
-          new THREE.Vector3(Math.cos(cam.yaw - half) * len, 1.2, -Math.sin(cam.yaw - half) * len),
-          new THREE.Vector3(0, 1.2, 0),
-          new THREE.Vector3(Math.cos(cam.yaw + half) * len, 1.2, -Math.sin(cam.yaw + half) * len),
+          new THREE.Vector3(0, 1.15, 0),
+          edge(cam.yaw - half),
+          new THREE.Vector3(0, 1.15, 0),
+          edge(cam.yaw + half),
         ];
         const line = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(pts),
-          new THREE.LineBasicMaterial({ color: 0x66ddff, transparent: true, opacity: 0.45 })
+          new THREE.LineBasicMaterial({ color: 0x66ddff, transparent: true, opacity: 0.55 })
         );
         this.group.add(line);
         this.frustumLines.push(line);
@@ -435,7 +436,8 @@ export class PerceptionVisualizer {
     this.frustumLines.forEach(line => {
       line.visible = true;
       line.position.set(ego.transform.position.x, 0, -ego.transform.position.y);
-      line.rotation.y = -ego.transform.rotation;
+      // Same yaw as the car nose: local +X is forward, so the ring surrounds the car.
+      line.rotation.y = ego.transform.rotation;
     });
   }
 
