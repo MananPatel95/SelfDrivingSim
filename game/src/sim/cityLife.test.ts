@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SeededRandom } from './math';
+import { snapToRoad, roadRoute } from './world';
 import {
   generateCityMap,
   pointOnRoad,
@@ -8,7 +8,7 @@ import {
   approachingCrosswalk,
   type Pedestrian,
 } from './world';
-import { vec3 } from './math';
+import { vec3, SeededRandom } from './math';
 
 const CITY = { gridSize: 6, blockSize: 100, laneWidth: 3.5, sidewalkWidth: 2 };
 
@@ -70,5 +70,23 @@ describe('sidewalk trees and crosswalk pedestrians', () => {
     expect(shouldYieldToPedestrian(0, 12, Math.PI / 2, [ped])).toBe(false);
     const far = pedAt(1.2, 24, 0, 'crossing');
     expect(shouldYieldToPedestrian(0, 0, Math.PI / 2, [far], 20)).toBe(true);
+  });
+
+  it('snaps a map click onto a road and routes along the grid', () => {
+    const start = snapToRoad(12, -80);
+    const end = snapToRoad(210, 15);
+    expect(start.x).toBeCloseTo(0);
+    expect(start.y).toBeCloseTo(-80);
+    expect(end.x).toBeCloseTo(200);
+    const route = roadRoute(start, end);
+    expect(route.length).toBeGreaterThan(4);
+    expect(route[0]!.x).toBeCloseTo(start.x);
+    expect(route[route.length - 1]!.x).toBeCloseTo(end.x);
+    expect(route[route.length - 1]!.y).toBeCloseTo(end.y);
+    for (const p of route) {
+      const onRoad = Math.abs(p.x - Math.round(p.x / 100) * 100) < 1.5
+        || Math.abs(p.y - Math.round(p.y / 100) * 100) < 1.5;
+      expect(onRoad).toBe(true);
+    }
   });
 });

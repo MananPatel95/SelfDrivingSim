@@ -75,6 +75,12 @@ export function planTrajectory(
   // Calculate desired speed
   let desiredSpeed = config.targetSpeed;
   let stoppingDistance = Infinity;
+
+  const goal = route.length > 0 ? route[route.length - 1] : null;
+  if (goal && vec3Distance(egoState.transform.position, goal) < 12) {
+    desiredSpeed = 0;
+    stoppingDistance = Math.min(stoppingDistance, vec3Distance(egoState.transform.position, goal));
+  }
   
   // Slow for obstacles
   if (obstacleAhead) {
