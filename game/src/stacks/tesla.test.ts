@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectVisibleAgents } from './tesla';
+import { detectVisibleAgents, CAMERA_CONFIG } from './tesla';
 import { vec3 } from '../sim/math';
 import type { EgoState, Entity } from '../sim/types';
 
@@ -49,5 +49,21 @@ describe('Tesla vision detector', () => {
   it('does not detect an agent behind the car outside rear-camera range mix', () => {
     const dets = detectVisibleAgents(ego(), [agent(4, 'car', 0, -80)]);
     expect(dets.find(d => d.entityId === 4)).toBeUndefined();
+  });
+
+  it('camera ring covers a full circle, including the sides and rear', () => {
+    let covered = 0;
+    for (let deg = -180; deg < 180; deg++) {
+      const angle = (deg * Math.PI) / 180;
+      const seen = CAMERA_CONFIG.some(cam => {
+        let diff = angle - cam.yaw;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        return Math.abs(diff) <= (cam.fov * Math.PI / 180) / 2;
+      });
+      if (seen) covered++;
+    }
+    expect(CAMERA_CONFIG.length).toBe(8);
+    expect(covered / 360).toBeGreaterThan(0.95);
   });
 });
