@@ -5,55 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AUTONOMY CITY: How Machines See</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #0a0a0f;
       color: #fff;
       overflow: hidden;
     }
-    
-    #app {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-    }
-    
-    #canvas-container {
-      width: 100%;
-      height: 100%;
-    }
-    
-    canvas {
-      display: block;
-    }
-    
-    /* HUD overlay */
-    .hud {
-      position: absolute;
-      pointer-events: none;
-    }
-    
-    .hud-interactive {
-      pointer-events: auto;
-    }
-    
-    /* Disclaimer */
+
+    #app { width: 100vw; height: 100vh; position: relative; }
+    #canvas-container { width: 100%; height: 100%; }
+    canvas { display: block; }
+
+    .hud { position: absolute; pointer-events: none; }
+    .hud-interactive { pointer-events: auto; }
+
     #disclaimer {
       position: absolute;
       bottom: 10px;
       left: 10px;
       font-size: 10px;
       color: #666;
-      max-width: 400px;
+      max-width: 380px;
+      z-index: 6;
     }
-    
-    /* View switcher */
+
     #view-switcher {
       position: absolute;
       top: 10px;
@@ -64,8 +41,9 @@
       background: rgba(0,0,0,0.7);
       padding: 8px;
       border-radius: 8px;
+      z-index: 12;
     }
-    
+
     .view-btn {
       padding: 8px 16px;
       background: #222;
@@ -74,19 +52,10 @@
       border-radius: 4px;
       cursor: pointer;
       font-size: 12px;
-      transition: all 0.2s;
     }
-    
-    .view-btn:hover {
-      background: #333;
-    }
-    
-    .view-btn.active {
-      background: #0066cc;
-      border-color: #0088ff;
-    }
-    
-    /* Speed/status panel */
+    .view-btn:hover { background: #333; }
+    .view-btn.active { background: #0066cc; border-color: #0088ff; }
+
     #status-panel {
       position: absolute;
       bottom: 50px;
@@ -95,45 +64,111 @@
       padding: 15px;
       border-radius: 8px;
       min-width: 200px;
+      z-index: 8;
     }
-    
+
     .status-row {
       display: flex;
       justify-content: space-between;
       margin: 5px 0;
       font-size: 14px;
+      gap: 16px;
     }
-    
-    .status-value {
-      font-weight: bold;
-      color: #0f0;
-    }
-    
-    .status-warning {
-      color: #ff0;
-    }
-    
-    .status-danger {
-      color: #f00;
-    }
-    
-    /* AI View panel */
-    #ai-view-panel {
+    .status-value { font-weight: bold; color: #0f0; }
+    .status-warning { color: #ff0; }
+    .status-danger { color: #f00; }
+
+    #drive-badge {
       position: absolute;
-      top: 60px;
+      top: 58px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      z-index: 14;
+      border: 1px solid #2f8;
+      background: rgba(0, 30, 16, 0.88);
+      color: #9f8;
+    }
+    #drive-badge.manual {
+      border-color: #fa0;
+      background: rgba(40, 24, 0, 0.9);
+      color: #ffe08a;
+    }
+
+    #drive-hint {
+      position: absolute;
+      top: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.82);
+      border: 1px solid #555;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #ddd;
+      z-index: 14;
+      display: none;
+      max-width: 420px;
+      text-align: center;
+    }
+    #drive-hint.visible { display: block; }
+
+    #collision-flash {
+      position: absolute;
+      top: 132px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 18px;
+      background: rgba(80, 0, 0, 0.92);
+      border: 2px solid #f44;
+      color: #fcc;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      border-radius: 6px;
+      z-index: 16;
+      display: none;
+    }
+    #collision-flash.visible { display: block; }
+
+    #top-right-stack {
+      position: absolute;
+      top: 10px;
       right: 10px;
-      width: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      max-height: calc(100vh - 140px);
+      overflow: hidden;
+      z-index: 12;
+    }
+
+    #gear-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #555;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    #gear-btn:hover { background: #222; }
+
+    #ai-view-panel {
+      width: min(380px, 32vw);
       background: rgba(0,0,0,0.92);
       border-radius: 8px;
       overflow: hidden;
       display: none;
       border: 1px solid #2a4a5a;
     }
-    
-    #ai-view-panel.visible {
-      display: block;
-    }
-    
+    #ai-view-panel.visible { display: block; }
     #ai-view-header {
       padding: 8px 10px;
       background: #111;
@@ -141,30 +176,28 @@
       font-weight: bold;
       font-size: 12px;
     }
-    
-    #ai-view-insets {
-      display: flex;
-      gap: 4px;
-      padding: 4px;
-    }
-    
-    #ai-view-insets .inset {
-      flex: 1;
-    }
-    
-    #ai-view-insets .inset-label {
-      font-size: 10px;
-      color: #8ab;
-      padding: 2px 4px;
-    }
-    
+    #ai-view-insets { display: flex; gap: 4px; padding: 4px; }
+    #ai-view-insets .inset { flex: 1; }
+    #ai-view-insets .inset-label { font-size: 10px; color: #8ab; padding: 2px 4px; }
     #raw-camera-canvas, #ai-view-canvas {
       width: 100%;
       height: 140px;
       background: #0b0f18;
       display: block;
     }
-    
+
+    #bev-overlay {
+      width: min(420px, 34vw);
+      max-height: 42vh;
+      overflow: auto;
+      background: rgba(0,0,0,0.88);
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 10px;
+      display: none;
+    }
+    #bev-overlay.visible { display: block; }
+
     #decision-banner {
       position: absolute;
       bottom: 86px;
@@ -180,38 +213,32 @@
       font-size: 13px;
       font-weight: 600;
       text-align: center;
-      z-index: 20;
+      z-index: 10;
       display: none;
     }
-    
-    #decision-banner.visible {
-      display: block;
-    }
-    
+    #decision-banner.visible { display: block; }
     #decision-banner.slow {
       border-color: #fa0;
       color: #ffe0a0;
       background: rgba(40, 24, 0, 0.88);
     }
-    
     #decision-banner.brake {
       border-color: #f44;
       color: #ffc0c0;
       background: rgba(40, 0, 0, 0.88);
     }
-    
-    /* Controls help */
-    #controls-help {
+
+    #controls-hint {
       position: absolute;
       bottom: 10px;
       right: 10px;
       background: rgba(0,0,0,0.7);
-      padding: 10px;
+      padding: 8px 10px;
       border-radius: 8px;
       font-size: 11px;
       color: #888;
+      z-index: 8;
     }
-    
     .control-key {
       color: #fff;
       background: #333;
@@ -219,8 +246,7 @@
       border-radius: 3px;
       margin-right: 5px;
     }
-    
-    /* Minimap */
+
     #minimap {
       position: absolute;
       top: 60px;
@@ -230,9 +256,88 @@
       background: rgba(0,0,0,0.8);
       border-radius: 8px;
       border: 2px solid #333;
+      z-index: 8;
     }
-    
-    /* Ride request popup */
+
+    #pause-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(4, 6, 12, 0.62);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 40;
+      pointer-events: auto;
+    }
+    #pause-overlay.visible { display: flex; }
+
+    #pause-menu {
+      width: min(520px, 92vw);
+      max-height: 88vh;
+      overflow: auto;
+      background: rgba(10, 12, 18, 0.96);
+      border: 1px solid #3a4a66;
+      border-radius: 14px;
+      padding: 22px 24px 18px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+    }
+    #pause-menu h2 {
+      text-align: center;
+      letter-spacing: 0.18em;
+      font-size: 18px;
+      margin-bottom: 16px;
+      color: #9fd;
+    }
+    .pause-actions { display: flex; gap: 8px; margin-bottom: 16px; }
+    .pause-btn {
+      flex: 1;
+      padding: 12px;
+      border: 1px solid #446;
+      background: #1a2433;
+      color: #fff;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    .pause-btn:hover { background: #243044; }
+    .pause-btn.primary { background: #0066cc; border-color: #08f; }
+    .pause-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+    .pause-row label { color: #bcd; }
+    .pause-row select, .seg {
+      background: #151a24;
+      color: #fff;
+      border: 1px solid #445;
+      border-radius: 6px;
+      padding: 6px 8px;
+    }
+    .seg { display: flex; padding: 0; overflow: hidden; }
+    .seg button {
+      background: transparent;
+      color: #ccc;
+      border: 0;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .seg button.active { background: #0066cc; color: #fff; }
+    #pause-controls {
+      margin-top: 14px;
+      border-top: 1px solid #334;
+      padding-top: 10px;
+      font-size: 12px;
+      color: #9aa;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 12px;
+    }
+    #pause-controls div { display: flex; align-items: center; }
+
     #ride-request {
       position: absolute;
       top: 50%;
@@ -244,17 +349,10 @@
       border: 2px solid #0066cc;
       display: none;
       min-width: 300px;
+      z-index: 20;
     }
-    
-    #ride-request.visible {
-      display: block;
-    }
-    
-    #ride-request h3 {
-      margin-bottom: 15px;
-      color: #0088ff;
-    }
-    
+    #ride-request.visible { display: block; }
+    #ride-request h3 { margin-bottom: 15px; color: #0088ff; }
     .ride-btn {
       width: 100%;
       padding: 12px;
@@ -265,57 +363,13 @@
       font-size: 14px;
       font-weight: bold;
     }
-    
-    .ride-btn-accept {
-      background: #0066cc;
-      color: white;
-    }
-    
-    .ride-btn-decline {
-      background: #333;
-      color: #888;
-    }
-    
-    /* Takeover reason menu */
-    #takeover-menu {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.95);
-      padding: 20px;
-      border-radius: 12px;
-      border: 2px solid #ff6600;
-      display: none;
-    }
-    
-    #takeover-menu.visible {
-      display: block;
-    }
-    
-    .takeover-btn {
-      display: block;
-      width: 100%;
-      padding: 12px;
-      margin: 8px 0;
-      background: #222;
-      border: 1px solid #444;
-      color: #fff;
-      border-radius: 6px;
-      cursor: pointer;
-      text-align: left;
-    }
-    
-    .takeover-btn:hover {
-      background: #333;
-      border-color: #ff6600;
-    }
-    
-    /* InfoCard panel */
+    .ride-btn-accept { background: #0066cc; color: white; }
+    .ride-btn-decline { background: #333; color: #888; }
+
     #info-card {
       position: absolute;
       top: 50%;
-      right: 10px;
+      right: 56px;
       transform: translateY(-50%);
       width: 350px;
       background: rgba(0,0,0,0.95);
@@ -325,64 +379,15 @@
       display: none;
       max-height: 80vh;
       overflow-y: auto;
+      z-index: 18;
     }
-    
-    #info-card.visible {
-      display: block;
-    }
-    
-    .info-section {
-      margin: 15px 0;
-    }
-    
-    .info-section h4 {
-      color: #0088ff;
-      margin-bottom: 8px;
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-    
-    .info-section p {
-      color: #ccc;
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    
-    .info-strengths {
-      color: #4a4 !important;
-    }
-    
-    .info-weaknesses {
-      color: #a44 !important;
-    }
+    #info-card.visible { display: block; }
+    .info-section { margin: 15px 0; }
+    .info-section h4 { color: #0088ff; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; }
+    .info-section p { color: #ccc; font-size: 13px; line-height: 1.5; }
+    .info-strengths { color: #4a4 !important; }
+    .info-weaknesses { color: #a44 !important; }
 
-    /* Model selector */
-    #model-selector {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      background: rgba(0,0,0,0.8);
-      padding: 10px;
-      border-radius: 8px;
-    }
-    
-    #model-selector select {
-      background: #222;
-      color: #fff;
-      border: 1px solid #444;
-      padding: 5px 10px;
-      border-radius: 4px;
-    }
-    
-    #shadow-mode {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-      font-size: 12px;
-    }
-    
-    /* Recording indicator */
     #recording-indicator {
       position: absolute;
       top: 10px;
@@ -393,12 +398,9 @@
       background: rgba(200,0,0,0.8);
       padding: 8px 12px;
       border-radius: 6px;
+      z-index: 12;
     }
-    
-    #recording-indicator.visible {
-      display: flex;
-    }
-    
+    #recording-indicator.visible { display: flex; }
     .rec-dot {
       width: 10px;
       height: 10px;
@@ -406,19 +408,11 @@
       border-radius: 50%;
       animation: pulse 1s infinite;
     }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-    
-    /* Loading screen */
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
     #loading {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      inset: 0;
       background: #0a0a0f;
       display: flex;
       flex-direction: column;
@@ -426,114 +420,50 @@
       justify-content: center;
       z-index: 100;
     }
-    
-    #loading h1 {
-      font-size: 32px;
-      margin-bottom: 10px;
-    }
-    
-    #loading p {
-      color: #666;
-      margin-bottom: 30px;
-    }
-    
+    #loading h1 { font-size: 32px; margin-bottom: 10px; }
+    #loading p { color: #666; margin-bottom: 30px; }
     .loader {
-      width: 40px;
-      height: 40px;
+      width: 40px; height: 40px;
       border: 3px solid #333;
       border-top-color: #0088ff;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
-    
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    
-    #loading.hidden {
-      display: none;
-    }
-    
-    /* Compare mode split screen */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading.hidden { display: none; }
+
     #compare-container {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      inset: 0;
       display: none;
       z-index: 5;
     }
-    
-    #compare-container.visible {
-      display: flex;
-    }
-    
-    .compare-panel {
-      flex: 1;
-      position: relative;
-      border: 2px solid #333;
-    }
-    
-    .compare-panel:first-child {
-      border-right: 1px solid #333;
-    }
-    
-    .compare-panel:last-child {
-      border-left: 1px solid #333;
-    }
-    
+    #compare-container.visible { display: flex; }
+    .compare-panel { flex: 1; position: relative; border: 2px solid #333; }
     .compare-label {
       position: absolute;
-      top: 10px;
-      left: 10px;
+      top: 10px; left: 10px;
       background: rgba(0,0,0,0.8);
       padding: 8px 16px;
       border-radius: 6px;
       font-weight: bold;
       z-index: 10;
     }
-    
     .compare-detection-time {
       position: absolute;
-      bottom: 60px;
-      left: 10px;
+      bottom: 60px; left: 10px;
       background: rgba(0,0,0,0.8);
       padding: 12px;
       border-radius: 6px;
       z-index: 10;
       min-width: 200px;
     }
-    
-    .compare-detection-time h4 {
-      color: #0088ff;
-      margin-bottom: 8px;
-      font-size: 12px;
-    }
-    
-    .detection-timing-row {
-      display: flex;
-      justify-content: space-between;
-      margin: 4px 0;
-      font-size: 12px;
-    }
-    
-    .timing-early {
-      color: #0f0;
-    }
-    
-    .timing-late {
-      color: #f80;
-    }
-    
-    .timing-missed {
-      color: #f00;
-    }
-    
-    .compare-canvas {
-      width: 100%;
-      height: 100%;
-    }
+    .compare-detection-time h4 { color: #0088ff; margin-bottom: 8px; font-size: 12px; }
+    .detection-timing-row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 12px; }
+    .timing-early { color: #0f0; }
+    .timing-late { color: #f80; }
+    .timing-missed { color: #f00; }
+    .compare-canvas { width: 100%; height: 100%; }
   </style>
 </head>
 <body>
@@ -543,23 +473,16 @@
       <p>How Machines See</p>
       <div class="loader"></div>
     </div>
-    
+
     <div id="canvas-container"></div>
-    
-    <!-- Compare Mode Split Screen -->
+
     <div id="compare-container">
       <div class="compare-panel" id="compare-left">
         <div class="compare-label" id="compare-left-label">F1: Tesla-style</div>
         <div class="compare-detection-time" id="compare-left-timing">
           <h4>Detection Timing</h4>
-          <div class="detection-timing-row">
-            <span>Pedestrian #1</span>
-            <span class="timing-early" id="left-ped1-time">2.1s ago</span>
-          </div>
-          <div class="detection-timing-row">
-            <span>Vehicle #1</span>
-            <span class="timing-early" id="left-veh1-time">3.5s ago</span>
-          </div>
+          <div class="detection-timing-row"><span>Pedestrian #1</span><span class="timing-early" id="left-ped1-time">—</span></div>
+          <div class="detection-timing-row"><span>Vehicle #1</span><span class="timing-early" id="left-veh1-time">—</span></div>
         </div>
         <canvas class="compare-canvas" id="compare-canvas-left"></canvas>
       </div>
@@ -567,271 +490,165 @@
         <div class="compare-label" id="compare-right-label">F2: Waymo-style</div>
         <div class="compare-detection-time" id="compare-right-timing">
           <h4>Detection Timing</h4>
-          <div class="detection-timing-row">
-            <span>Pedestrian #1</span>
-            <span class="timing-late" id="right-ped1-time">0.8s ago</span>
-          </div>
-          <div class="detection-timing-row">
-            <span>Vehicle #1</span>
-            <span class="timing-early" id="right-veh1-time">3.5s ago</span>
-          </div>
+          <div class="detection-timing-row"><span>Pedestrian #1</span><span class="timing-late" id="right-ped1-time">—</span></div>
+          <div class="detection-timing-row"><span>Vehicle #1</span><span class="timing-early" id="right-veh1-time">—</span></div>
         </div>
         <canvas class="compare-canvas" id="compare-canvas-right"></canvas>
       </div>
     </div>
-    
-    <!-- View Switcher -->
+
     <div id="view-switcher" class="hud hud-interactive">
       <button class="view-btn active" data-profile="tesla">F1: Tesla-style</button>
       <button class="view-btn" data-profile="waymo">F2: Waymo-style</button>
       <button class="view-btn" data-profile="waabi">F3: Waabi-style</button>
-      <button class="view-btn" data-profile="aurora">F4: Aurora FMCW</button>
-      <button class="view-btn" data-profile="rail">F5: Train</button>
-      <button class="view-btn" data-profile="maritime">F6: Ship</button>
     </div>
-    
-    <!-- Status Panel -->
+
+    <div id="drive-badge" class="hud">AUTOPILOT</div>
+    <div id="drive-hint" class="hud">WASD / arrows drive. Space = handbrake. T toggles autopilot. Press a drive key to take over.</div>
+    <div id="collision-flash" class="hud">COLLISION</div>
+
     <div id="status-panel" class="hud">
-      <div class="status-row">
-        <span>Speed</span>
-        <span class="status-value" id="speed-value">0 km/h</span>
-      </div>
-      <div class="status-row">
-        <span>Stopping Dist</span>
-        <span class="status-value" id="stopping-dist">0 m</span>
-      </div>
-      <div class="status-row">
-        <span>Control</span>
-        <span class="status-value" id="control-source">Policy</span>
-      </div>
-      <div class="status-row">
-        <span>Detections</span>
-        <span class="status-value" id="detection-count">0</span>
-      </div>
-      <div class="status-row">
-        <span>Weather</span>
-        <span class="status-value" id="weather-status">Clear</span>
-      </div>
-      <div class="status-row">
-        <span>FPS</span>
-        <span class="status-value" id="fps-value">--</span>
-      </div>
+      <div class="status-row"><span>Speed</span><span class="status-value" id="speed-value">0 km/h</span></div>
+      <div class="status-row"><span>Stopping Dist</span><span class="status-value" id="stopping-dist">0 m</span></div>
+      <div class="status-row"><span>Control</span><span class="status-value" id="control-source">AUTOPILOT</span></div>
+      <div class="status-row"><span>Detections</span><span class="status-value" id="detection-count">0</span></div>
+      <div class="status-row"><span>Collisions</span><span class="status-value" id="collision-count">0</span></div>
+      <div class="status-row"><span>Weather</span><span class="status-value" id="weather-status">Clear</span></div>
+      <div class="status-row"><span>FPS</span><span class="status-value" id="fps-value">--</span></div>
     </div>
-    
-    <!-- Minimap -->
+
     <canvas id="minimap" class="hud" width="180" height="180"></canvas>
-    
-    <!-- AI View Panel -->
-    <div id="ai-view-panel" class="hud visible">
-      <div id="ai-view-header">AI View — what this stack consumes (V to hide, G = GT)</div>
-      <div id="ai-view-insets">
-        <div class="inset">
-          <div class="inset-label">Raw ego camera</div>
-          <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
+
+    <div id="top-right-stack" class="hud hud-interactive">
+      <button id="gear-btn" title="Pause / settings (Esc)">⚙</button>
+      <div id="ai-view-panel" class="visible">
+        <div id="ai-view-header">AI View — what this stack consumes (V to hide, G = GT)</div>
+        <div id="ai-view-insets">
+          <div class="inset">
+            <div class="inset-label">Raw ego camera</div>
+            <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
+          </div>
+          <div class="inset">
+            <div class="inset-label">Perception output</div>
+            <canvas id="ai-view-canvas" width="320" height="180"></canvas>
+          </div>
         </div>
-        <div class="inset">
-          <div class="inset-label">Perception output</div>
-          <canvas id="ai-view-canvas" width="320" height="180"></canvas>
+      </div>
+      <div id="bev-overlay">
+        <h4 style="margin: 0 0 10px 0; color: #00ffff;">Waabi BEV + Sim World</h4>
+        <canvas id="bev-canvas" width="400" height="260" style="background: #1a1a2e; border: 1px solid #333; width: 100%;"></canvas>
+        <div id="simworld-table" style="margin-top: 10px; font-size: 11px; max-height: 150px; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse; color: #ccc;">
+            <thead>
+              <tr style="border-bottom: 1px solid #444;">
+                <th style="text-align: left; padding: 4px;">Variant</th>
+                <th style="text-align: center;">Type</th>
+                <th style="text-align: center;">Result</th>
+                <th style="text-align: right;">TTC</th>
+              </tr>
+            </thead>
+            <tbody id="simworld-variants"></tbody>
+          </table>
+        </div>
+        <div style="margin-top: 8px; font-size: 11px; color: #888;">
+          <span id="simworld-stats">20 variants</span>
         </div>
       </div>
     </div>
-    
+
     <div id="decision-banner" class="visible">Cruising: lane clear</div>
-    
-    <!-- Model Selector -->
-    <div id="model-selector" class="hud hud-interactive">
-      <select id="perception-model">
-        <option value="heuristic">Perception: Heuristic</option>
-        <option value="v1">Perception: v1</option>
-      </select>
-      <div id="shadow-mode">
-        <input type="checkbox" id="shadow-toggle">
-        <label for="shadow-toggle">Shadow Mode</label>
-      </div>
-    </div>
-    
-    <!-- Recording Indicator -->
+
     <div id="recording-indicator" class="hud">
       <div class="rec-dot"></div>
       <span>REC</span>
     </div>
-    
-    <!-- Controls Help -->
-    <div id="controls-help" class="hud">
-      <div><span class="control-key">WASD</span> Drive (when in takeover)</div>
-      <div><span class="control-key">T</span> Takeover / Release</div>
-      <div><span class="control-key">C</span> Camera mode</div>
-      <div><span class="control-key">V</span> AI View panel</div>
-      <div><span class="control-key">G</span> Ground Truth overlay</div>
-      <div><span class="control-key">I</span> Info Card</div>
-      <div><span class="control-key">R</span> Record</div>
-      <div><span class="control-key">N</span> Day/Night</div>
-      <div><span class="control-key">M</span> Compare Mode</div>
-      <div><span class="control-key">F1-F6</span> Switch Stack</div>
-      <div><span class="control-key">1</span> Jaywalker</div>
-      <div><span class="control-key">2</span> Occluded pedestrian</div>
-      <div><span class="control-key">3</span> Vehicle cut-in</div>
-      <div><span class="control-key">4</span> Rain/Fog weather</div>
-      <div><span class="control-key">5</span> Context obstacle</div>
+
+    <div id="controls-hint" class="hud">
+      <div><span class="control-key">Esc</span> Pause / settings</div>
+      <div><span class="control-key">WASD</span> Drive</div>
+      <div><span class="control-key">T</span> Autopilot</div>
+      <div><span class="control-key">C</span> Camera · <span class="control-key">Bksp</span> Restart</div>
     </div>
-    
-    <!-- Ride Request Popup -->
+
     <div id="ride-request" class="hud hud-interactive">
       <h3>New Ride Request</h3>
-      <div class="status-row">
-        <span>Passenger</span>
-        <span id="ride-passenger">John Smith</span>
-      </div>
-      <div class="status-row">
-        <span>Fare</span>
-        <span id="ride-fare">$12.50</span>
-      </div>
+      <div class="status-row"><span>Passenger</span><span id="ride-passenger">John Smith</span></div>
+      <div class="status-row"><span>Fare</span><span id="ride-fare">$12.50</span></div>
       <button class="ride-btn ride-btn-accept" id="accept-ride">Accept Ride</button>
       <button class="ride-btn ride-btn-decline" id="decline-ride">Decline</button>
     </div>
-    
-    <!-- Takeover Menu -->
-    <div id="takeover-menu" class="hud hud-interactive">
-      <h3>Takeover Reason</h3>
-      <button class="takeover-btn" data-reason="perception_miss">Perception Miss</button>
-      <button class="takeover-btn" data-reason="planning_too_cautious">Planning Too Cautious</button>
-      <button class="takeover-btn" data-reason="planning_unsafe">Planning Unsafe</button>
-      <button class="takeover-btn" data-reason="other">Other</button>
-    </div>
-    
-    <!-- Info Card -->
+
     <div id="info-card" class="hud hud-interactive">
       <h2 id="info-title">Baseline Lidar Stack</h2>
-      <div class="info-section">
-        <h4>Sensors</h4>
-        <p id="info-sensors">32-beam spinning lidar, 360° coverage, 100m range</p>
-      </div>
-      <div class="info-section">
-        <h4>Internal Representation</h4>
-        <p id="info-internals">Point cloud clustering, box fitting, Kalman tracking</p>
-      </div>
-      <div class="info-section">
-        <h4>Strengths</h4>
-        <p id="info-strengths" class="info-strengths">Precise 3D geometry, works in darkness</p>
-      </div>
-      <div class="info-section">
-        <h4>Weaknesses</h4>
-        <p id="info-weaknesses" class="info-weaknesses">No color/texture, affected by rain/snow, sparse at distance</p>
-      </div>
-      <div class="info-section">
-        <h4>Real-world Example</h4>
-        <p id="info-example">This is a simplified educational model demonstrating classical lidar-based perception.</p>
-      </div>
+      <div class="info-section"><h4>Sensors</h4><p id="info-sensors"></p></div>
+      <div class="info-section"><h4>Internal Representation</h4><p id="info-internals"></p></div>
+      <div class="info-section"><h4>Strengths</h4><p id="info-strengths" class="info-strengths"></p></div>
+      <div class="info-section"><h4>Weaknesses</h4><p id="info-weaknesses" class="info-weaknesses"></p></div>
+      <div class="info-section"><h4>Real-world Example</h4><p id="info-example"></p></div>
     </div>
-    
-    <!-- BEV Overlay (Waabi) -->
-    <div id="bev-overlay" class="hud" style="display: none; right: 20px; top: 200px; width: 420px;">
-      <h4 style="margin: 0 0 10px 0; color: #00ffff;">Waabi BEV + Sim World</h4>
-      <canvas id="bev-canvas" width="400" height="260" style="background: #1a1a2e; border: 1px solid #333;"></canvas>
-      <div id="simworld-table" style="margin-top: 10px; font-size: 11px; max-height: 150px; overflow-y: auto;">
-        <table style="width: 100%; border-collapse: collapse; color: #ccc;">
-          <thead>
-            <tr style="border-bottom: 1px solid #444;">
-              <th style="text-align: left; padding: 4px;">Variant</th>
-              <th style="text-align: center;">Type</th>
-              <th style="text-align: center;">Result</th>
-              <th style="text-align: right;">TTC</th>
-            </tr>
-          </thead>
-          <tbody id="simworld-variants">
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top: 8px; font-size: 11px; color: #888;">
-        <span id="simworld-stats">20 variants: 18 pass, 2 fail</span>
-      </div>
-    </div>
-    
-    <!-- COLREGs Display (Maritime) -->
-    <div id="colregs-display" class="hud" style="display: none; right: 20px; top: 200px; width: 280px;">
-      <h4 style="margin: 0 0 10px 0; color: #00ff88;">COLREGs Navigation</h4>
-      <div style="background: #0a2840; padding: 10px; border-radius: 5px; border: 1px solid #1a5276;">
-        <div id="colregs-situation" style="font-size: 14px; color: #fff; margin-bottom: 8px;">
-          Head-on situation with CARGO STAR
+
+    <div id="pause-overlay" class="hud-interactive">
+      <div id="pause-menu">
+        <h2>PAUSED</h2>
+        <div class="pause-actions">
+          <button class="pause-btn primary" id="pause-resume">Resume</button>
+          <button class="pause-btn" id="pause-restart">Restart</button>
         </div>
-        <div id="colregs-rule" style="font-size: 12px; color: #00ffaa; margin-bottom: 8px;">
-          Rule 14: Head-on - Both vessels alter to starboard
-        </div>
-        <div id="colregs-action" style="font-size: 12px; color: #ffaa00;">
-          ACTION: Alter course 22° to starboard
-        </div>
-        <div id="colregs-cpa-trend" style="font-size: 11px; color: #88ffcc; margin-top: 6px;">
-          CPA trend: waiting for encounter
-        </div>
-        <div style="margin-top: 10px; border-top: 1px solid #1a5276; padding-top: 8px;">
-          <div style="font-size: 11px; color: #888;">Target Vessels:</div>
-          <div id="ais-targets" style="font-size: 11px; color: #ccc; margin-top: 4px;">
-            <div>CARGO STAR - CPA: —</div>
+        <div class="pause-row">
+          <label>Quality</label>
+          <div class="seg" id="quality-seg">
+            <button data-quality="low">Low</button>
+            <button data-quality="med" class="active">Med</button>
+            <button data-quality="high">High</button>
           </div>
         </div>
-      </div>
-    </div>
-    
-    <!-- Rail Display -->
-    <div id="rail-display" class="hud" style="display: none; right: 20px; top: 200px; width: 280px;">
-      <h4 style="margin: 0 0 10px 0; color: #ffaa00;">Rail Operations</h4>
-      <div style="background: #1a1a2e; padding: 10px; border-radius: 5px; border: 1px solid #444;">
-        <div id="rail-mode" style="font-size: 12px; color: #888; margin-bottom: 8px;">Mode: Moving Block</div>
-        <div id="rail-signal" style="font-size: 14px; margin-bottom: 8px;">
-          <span style="color: #ff4444;">●</span> Signal: STOP
+        <div class="pause-row">
+          <label for="perception-model">Perception mode</label>
+          <select id="perception-model">
+            <option value="heuristic">Heuristic</option>
+            <option value="v1">v1</option>
+          </select>
         </div>
-        <div id="rail-speed" style="font-size: 14px; color: #00ff88; margin-bottom: 8px;">
-          Permitted: 0 km/h
+        <div class="pause-row">
+          <label for="shadow-toggle">Shadow Mode</label>
+          <input type="checkbox" id="shadow-toggle">
         </div>
-        <div id="rail-distance" style="font-size: 12px; color: #ccc;">
-          Distance to signal: 200m
-        </div>
-        <div id="rail-crossing" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #444;">
-          <div style="color: #ff6600; font-size: 12px;">⚠ LEVEL CROSSING BLOCKED</div>
-          <div style="color: #888; font-size: 11px; margin-top: 4px;">Stalled vehicle detected on crossing</div>
-        </div>
-        <div style="margin-top: 8px; font-size: 11px; color: #888;">
-          Control: BRAKE ONLY (safety mode)
-        </div>
-      </div>
-    </div>
-    
-    <!-- FMCW Display (Aurora Trucking) -->
-    <div id="fmcw-display" class="hud" style="display: none; right: 20px; top: 200px; width: 300px;">
-      <h4 style="margin: 0 0 10px 0; color: #ff6600;">Aurora FMCW Trucking</h4>
-      <div style="background: #1a1a2e; padding: 10px; border-radius: 5px; border: 1px solid #444;">
-        <div style="font-size: 12px; color: #888; margin-bottom: 8px;">Velocity-Colored Radar Returns</div>
-        <canvas id="fmcw-canvas" width="280" height="100" style="background: #0a0a15; border: 1px solid #333;"></canvas>
-        <div style="margin-top: 8px; display: flex; justify-content: space-between; font-size: 10px; color: #888;">
-          <span style="color: #00ff00;">← Approaching</span>
-          <span style="color: #888888;">Static</span>
-          <span style="color: #ff0000;">Receding →</span>
-        </div>
-        <div id="fmcw-braking" style="margin-top: 12px; border-top: 1px solid #444; padding-top: 8px;">
-          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">Braking Distance vs Detection Range</div>
-          <div style="height: 30px; background: #1a1a1a; border-radius: 3px; position: relative; overflow: hidden;">
-            <div id="brake-bar" style="position: absolute; left: 0; height: 100%; background: #ff4444; width: 30%;"></div>
-            <div id="detect-bar" style="position: absolute; left: 0; height: 100%; background: rgba(0,255,0,0.3); width: 80%;"></div>
-            <div style="position: absolute; left: 30%; top: 0; height: 100%; width: 2px; background: #fff;"></div>
-          </div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: #888; margin-top: 4px;">
-            <span>Brake: 85m</span>
-            <span>Detection: 250m</span>
+        <div class="pause-row">
+          <label>Camera mode</label>
+          <div class="seg" id="camera-seg">
+            <button data-camera="chase" class="active">Chase</button>
+            <button data-camera="hood">Hood</button>
+            <button data-camera="bev">BEV</button>
+            <button data-camera="orbit">Orbit</button>
           </div>
         </div>
-        <div style="margin-top: 8px; padding: 8px; background: #0a2a0a; border-radius: 3px; color: #00ff00; font-size: 12px;">
-          ✓ Safe: Detection range > Braking distance
+        <div id="pause-controls">
+          <div><span class="control-key">WASD / ↑↓←→</span> Drive</div>
+          <div><span class="control-key">Space</span> Handbrake</div>
+          <div><span class="control-key">T</span> Autopilot / Manual</div>
+          <div><span class="control-key">C</span> Cycle camera</div>
+          <div><span class="control-key">R</span> Reset camera</div>
+          <div><span class="control-key">K</span> Record</div>
+          <div><span class="control-key">V</span> AI View</div>
+          <div><span class="control-key">G</span> Ground truth</div>
+          <div><span class="control-key">I</span> Info card</div>
+          <div><span class="control-key">N</span> Day / night</div>
+          <div><span class="control-key">M</span> Compare Tesla/Waymo</div>
+          <div><span class="control-key">Backspace</span> Restart</div>
+          <div><span class="control-key">Esc</span> Pause / resume</div>
+          <div><span class="control-key">F1–F3</span> Stack</div>
+          <div><span class="control-key">1–5</span> Scenarios</div>
+          <div><span class="control-key">Drag / wheel</span> Orbit / zoom</div>
         </div>
       </div>
     </div>
-    
-    <!-- Disclaimer -->
+
     <div id="disclaimer" class="hud">
-      Simplified educational models based on public information. 
+      Simplified educational models based on public information.
       Not affiliated with or endorsed by any company named.
     </div>
   </div>
-  
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

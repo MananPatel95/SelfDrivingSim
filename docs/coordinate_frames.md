@@ -103,21 +103,3 @@ x_dot = v * cos(yaw)
 y_dot = v * sin(yaw)
 yaw_dot = v * tan(steering) / wheelbase
 ```
-
-## Maritime Frame
-
-For ships, the coordinate system follows maritime conventions:
-- **Heading**: Direction the bow is pointing (0 = North, 90° = East)
-- **Course Over Ground (COG)**: Actual direction of travel
-- **Speed Over Ground (SOG)**: Actual speed
-
-COLREGs bearings are relative to own ship's heading:
-- Starboard (right): 0° to 180° (clockwise from bow)
-- Port (left): 0° to -180° (counter-clockwise from bow)
-
-## Rail Frame
-
-For trains, the coordinate system is simplified to 1D track coordinates:
-- **Position**: Distance along track from a reference point
-- **Velocity**: Speed along track (positive = forward direction)
-- **Grade**: Track incline (percentage)

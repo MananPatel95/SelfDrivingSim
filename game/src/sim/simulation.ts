@@ -5,28 +5,23 @@
 
 import type {
   Entity, EgoState, Environment, Scenario,
-  RideRequest, TakeoverEvent, Vec3, VehicleType, LidarPoint
+  RideRequest, TakeoverEvent, Vec3, LidarPoint
 } from './types';
 import { 
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
   TrafficVehicle, updateTrafficVehicle, Pedestrian, updatePedestrian,
-  generateRideRequest, generateHighwayMap, generateRailMap, generateHarbourMap
+  generateRideRequest
 } from './world';
 
-// Zone types for different simulation environments
-export type ZoneType = 'city' | 'highway' | 'rail' | 'harbour';
-import { vec3, vec3Distance, SeededRandom, egoToWorld } from './math';
+export type ZoneType = 'city';
+import { vec3, vec3Distance, vec3Length, SeededRandom, egoToWorld } from './math';
 import { createEgoState, updateVehicle, VehicleInput } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
 import { planTrajectory, createPlannerState, PlannerState, oracleSupervisor } from '../planning/planner';
 import { Recorder, Recording } from '../recorder/recorder';
-import type { PlannerOutput } from './types';
-import {
-  AISTarget, COLREGSHelm, MaritimeEncounter,
-  createHarbourTraffic, createCOLREGSHelm, stepAISTargets,
-  evaluateEncounters, planCOLREGSManoeuvre,
-} from '../stacks/maritime';
+import type { PlannerOutput, LidarConfig } from './types';
+import { boxToOBB, firstHit, resolveEgoCollision, separateEntities, obstacleAhead } from './collision';
 
 export interface SimulationConfig {
   seed: number;
@@ -36,6 +31,7 @@ export interface SimulationConfig {
   maxDuration: number; // seconds
   cityConfig: CityConfig;
   zone: ZoneType;
+  lidarEveryN: number;
 }
 
 const DEFAULT_CITY_CONFIG: CityConfig = {
@@ -45,16 +41,11 @@ const DEFAULT_CITY_CONFIG: CityConfig = {
   sidewalkWidth: 2,
 };
 
-// Zone-to-profile mapping
-const PROFILE_ZONES: Record<string, ZoneType> = {
-  tesla: 'city',
-  waymo: 'city',
-  waabi: 'city',
-  aurora: 'highway',
-  rail: 'rail',
-  maritime: 'harbour',
-  baseline_lidar: 'city',
-};
+export interface CollisionEvent {
+  otherId: number;
+  classType: string;
+  at: number;
+}
 
 export interface SimulationState {
   timestamp: number;
@@ -74,9 +65,8 @@ export interface SimulationState {
   controlSource: 'policy' | 'human' | 'oracle';
   lastTakeover?: TakeoverEvent;
   lastPlannerOutput: PlannerOutput | null;
-  maritimeTargets: AISTarget[];
-  maritimeEncounters: MaritimeEncounter[];
-  maritimeAction: string;
+  collisionCount: number;
+  lastCollision: CollisionEvent | null;
 }
 
 export class Simulation {
@@ -87,7 +77,8 @@ export class Simulation {
   private entityIdCounter: number = 0;
   private lastLidarPoints: LidarPoint[] = [];
   private lastPlannerOutput: PlannerOutput | null = null;
-  private colregsHelm: COLREGSHelm = createCOLREGSHelm();
+  private lidarConfig: LidarConfig = LIDAR_CONFIGS['browserLite']!;
+  private lidarEveryN = 2;
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -98,8 +89,10 @@ export class Simulation {
       useOracle: config.useOracle ?? false,
       maxDuration: config.maxDuration ?? 300,
       cityConfig: config.cityConfig ?? DEFAULT_CITY_CONFIG,
-      zone: config.zone ?? PROFILE_ZONES[profile] ?? 'city',
+      zone: 'city',
+      lidarEveryN: config.lidarEveryN ?? 2,
     };
+    this.lidarEveryN = this.config.lidarEveryN;
     
     this.rng = new SeededRandom(this.config.seed);
     this.recorder = new Recorder(
@@ -112,26 +105,14 @@ export class Simulation {
   }
   
   private initializeState(): SimulationState {
-    this.colregsHelm = createCOLREGSHelm();
     this.lastPlannerOutput = null;
     this.lastLidarPoints = [];
-    // Generate appropriate world map based on zone
-    const worldMap = this.generateWorldForZone();
-    
-    // Determine ego vehicle type and spawn point based on zone
-    const egoType = this.getEgoTypeForZone();
+    this.entityIdCounter = 0;
+    const worldMap = generateCityMap(this.config.seed, this.config.cityConfig);
     const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
-    const ego = createEgoState(egoType, spawnPoint, Math.PI / 2);
-    if (egoType === 'ship') {
-      // ~12 knots along heading so the COLREGs HUD is never stuck at 0
-      ego.velocity = vec3(0, 6, 0);
-    }
-    
-    // Create zone-appropriate traffic (no traffic for rail/harbour)
-    const trafficVehicles = this.spawnZoneTraffic(worldMap);
-    
-    // Create zone-appropriate pedestrians (none for harbour/rail)
-    const pedestrians = this.spawnZonePedestrians(worldMap);
+    const ego = createEgoState('car', spawnPoint, Math.PI / 2);
+    const trafficVehicles = this.spawnTrafficVehicles(worldMap, 16);
+    const pedestrians = this.spawnPedestrians(worldMap, 22);
     
     // Generate ride request only for city zones
     const rideRequests: RideRequest[] = [];
@@ -156,169 +137,13 @@ export class Simulation {
       isRunning: true,
       controlSource: 'policy',
       lastPlannerOutput: null,
-      maritimeTargets: this.config.zone === 'harbour' ? createHarbourTraffic() : [],
-      maritimeEncounters: [],
-      maritimeAction: 'Monitor situation',
+      collisionCount: 0,
+      lastCollision: null,
     };
   }
   
-  private generateWorldForZone(): WorldMap {
-    switch (this.config.zone) {
-      case 'highway': {
-        const highwayMap = generateHighwayMap(this.config.seed);
-        return {
-          lanes: highwayMap.lanes,
-          intersections: highwayMap.intersections,
-          trafficLights: highwayMap.trafficLights,
-          staticEntities: highwayMap.staticEntities,
-          spawnPoints: highwayMap.spawnPoints,
-          pickupPoints: highwayMap.pickupPoints,
-        };
-      }
-      case 'rail': {
-        const railMap = generateRailMap(this.config.seed);
-        return {
-          lanes: railMap.lanes,
-          intersections: railMap.intersections,
-          trafficLights: railMap.trafficLights,
-          staticEntities: railMap.staticEntities,
-          spawnPoints: railMap.spawnPoints,
-          pickupPoints: railMap.pickupPoints,
-        };
-      }
-      case 'harbour': {
-        const harbourMap = generateHarbourMap(this.config.seed);
-        return {
-          lanes: harbourMap.lanes,
-          intersections: harbourMap.intersections,
-          trafficLights: harbourMap.trafficLights,
-          staticEntities: harbourMap.staticEntities,
-          spawnPoints: harbourMap.spawnPoints,
-          pickupPoints: harbourMap.pickupPoints,
-        };
-      }
-      case 'city':
-      default:
-        return generateCityMap(this.config.seed, this.config.cityConfig);
-    }
-  }
-  
-  private getEgoTypeForZone(): VehicleType {
-    switch (this.config.zone) {
-      case 'highway': return 'truck';
-      case 'rail': return 'train';
-      case 'harbour': return 'ship';
-      case 'city':
-      default: return 'car';
-    }
-  }
-  
-  private spawnZoneTraffic(worldMap: WorldMap): TrafficVehicle[] {
-    switch (this.config.zone) {
-      case 'city':
-        return this.spawnTrafficVehicles(worldMap, 20);
-      case 'highway':
-        return this.spawnHighwayTraffic(worldMap, 15);
-      case 'rail':
-        return []; // No road traffic on rail
-      case 'harbour':
-        return []; // Ships handled separately via AIS
-      default:
-        return this.spawnTrafficVehicles(worldMap, 20);
-    }
-  }
-  
-  private spawnZonePedestrians(worldMap: WorldMap): Pedestrian[] {
-    switch (this.config.zone) {
-      case 'city':
-        return this.spawnPedestrians(worldMap, 30);
-      case 'highway':
-        return []; // No pedestrians on highway
-      case 'rail':
-        return this.spawnPlatformPedestrians(5); // Few pedestrians on platforms
-      case 'harbour':
-        return []; // No pedestrians on water
-      default:
-        return this.spawnPedestrians(worldMap, 30);
-    }
-  }
-  
-  private spawnHighwayTraffic(worldMap: WorldMap, count: number): TrafficVehicle[] {
-    const vehicles: TrafficVehicle[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      const laneIdx = this.rng.nextInt(0, worldMap.lanes.length - 1);
-      const lane = worldMap.lanes[laneIdx]!;
-      if (lane.points.length < 2) continue;
-      
-      const progress = this.rng.nextFloat(0.1, 0.9);
-      const pointIdx = Math.floor(progress * (lane.points.length - 1));
-      const point = lane.points[pointIdx]!;
-      
-      // Highway has mix of trucks and cars
-      const isTruck = this.rng.next() < 0.3;
-      
-      vehicles.push({
-        id: this.entityIdCounter++,
-        classType: isTruck ? 'truck' : 'car',
-        transform: { position: point.position, rotation: point.direction },
-        boundingBox: {
-          center: point.position,
-          size: isTruck ? vec3(12, 3.5, 2.6) : vec3(4.5, 1.8, 1.5),
-          yaw: point.direction,
-        },
-        velocity: vec3(0, 0, 0),
-        isStatic: false,
-        occlusionLevel: 0,
-        laneId: lane.id,
-        laneProgress: progress,
-        targetSpeed: point.speedLimit * this.rng.nextFloat(0.85, 1.0), // Highway speeds
-      });
-    }
-    
-    return vehicles;
-  }
-  
-  private spawnPlatformPedestrians(count: number): Pedestrian[] {
-    const pedestrians: Pedestrian[] = [];
-    
-    // Spawn pedestrians on rail platforms
-    for (let i = 0; i < count; i++) {
-      const x = 25 + this.rng.nextFloat(-3, 3); // Platform X
-      const y = this.rng.nextFloat(-200, 200); // Along platform
-      
-      pedestrians.push({
-        id: this.entityIdCounter++,
-        classType: 'pedestrian',
-        transform: { position: vec3(x, y, 0.9), rotation: this.rng.nextFloat(0, Math.PI * 2) },
-        boundingBox: {
-          center: vec3(x, y, 0.9),
-          size: vec3(0.5, 0.5, 1.7),
-          yaw: 0,
-        },
-        velocity: vec3(0, 0, 0),
-        isStatic: false,
-        occlusionLevel: 0,
-        targetPosition: vec3(x + this.rng.nextFloat(-5, 5), y + this.rng.nextFloat(-20, 20), 0),
-        state: 'walking',
-        waitTime: 0,
-      });
-    }
-    
-    return pedestrians;
-  }
-  
-  // Get current zone
   getZone(): ZoneType {
-    return this.config.zone;
-  }
-  
-  // Switch zone (for dynamic zone changes)
-  setZone(zone: ZoneType): void {
-    if (zone !== this.config.zone) {
-      this.config.zone = zone;
-      this.state = this.initializeState();
-    }
+    return 'city';
   }
   
   private spawnTrafficVehicles(worldMap: WorldMap, count: number): TrafficVehicle[] {
@@ -468,20 +293,18 @@ export class Simulation {
     ];
     
     const inBrowser = typeof window !== 'undefined';
-    const lidarConfig = inBrowser ? LIDAR_CONFIGS['browserLite']! : LIDAR_CONFIGS['roofLidar']!;
+    const lidarConfig = inBrowser ? this.lidarConfig : LIDAR_CONFIGS['roofLidar']!;
     const egoPos = this.state.ego.transform.position;
     const senseEntities = inBrowser
       ? allEntities.filter(e => {
           const dx = e.boundingBox.center.x - egoPos.x;
           const dy = e.boundingBox.center.y - egoPos.y;
-          const range = e.classType === 'building' ? 60 : 80;
+          const range = e.classType === 'building' ? 50 : 70;
           return dx * dx + dy * dy < range * range;
         })
       : allEntities;
     
-    // Browser: lidar every other frame to keep the render loop interactive.
-    // Reuse the previous point cloud on skipped frames so tracks do not die.
-    const runLidar = !inBrowser || (this.state.frameNumber % 2 === 0);
+    const runLidar = !inBrowser || (this.state.frameNumber % this.lidarEveryN === 0);
     if (runLidar) {
       this.lastLidarPoints = simulateLidarScan(
         lidarConfig,
@@ -519,6 +342,20 @@ export class Simulation {
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
     };
     
+    const hazard = obstacleAhead(this.state.ego, allEntities.filter(e => e.classType !== 'tree'), 45, 2.4);
+    if (hazard && this.state.controlSource !== 'human') {
+      plannerInput.detections = [
+        ...plannerInput.detections,
+        {
+          id: hazard.entity.id,
+          classType: hazard.entity.classType,
+          confidence: 1,
+          boundingBox: hazard.entity.boundingBox,
+          velocity: hazard.entity.velocity,
+        },
+      ];
+    }
+
     const { output: plannerOutput, newState: newPlannerState } = planTrajectory(
       plannerInput,
       this.state.plannerState
@@ -585,40 +422,41 @@ export class Simulation {
       this.state.controlSource = 'policy';
     }
 
-    if (this.config.zone === 'harbour' && !humanInput) {
-      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
-      this.state.maritimeEncounters = evaluateEncounters(
-        this.state.ego.transform.position,
-        this.state.ego.velocity,
-        this.state.ego.transform.rotation,
-        this.state.maritimeTargets,
-        this.colregsHelm
-      );
-      const helm = planCOLREGSManoeuvre(
-        this.state.ego.transform.rotation,
-        this.state.maritimeEncounters,
-        this.colregsHelm
-      );
-      this.state.maritimeAction = helm.action;
-      vehicleInput = {
-        throttle: helm.throttle,
-        steering: helm.steering,
-        brake: 0,
-      };
-      this.state.controlSource = 'policy';
-    } else if (this.config.zone === 'harbour') {
-      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
-      this.state.maritimeEncounters = evaluateEncounters(
-        this.state.ego.transform.position,
-        this.state.ego.velocity,
-        this.state.ego.transform.rotation,
-        this.state.maritimeTargets,
-        this.colregsHelm
-      );
+    if (hazard && this.state.controlSource !== 'human') {
+      const needStop = hazard.dist < 8 || (hazard.dist < 18 && vec3Length(this.state.ego.velocity) > 4);
+      if (needStop) {
+        vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
+      }
     }
-    
-    // Update ego vehicle
+
+    // Update ego vehicle (bicycle model)
     this.state.ego = updateVehicle(this.state.ego, vehicleInput, dt);
+
+    // NPC overlap: push cars apart and yield to ego
+    this.separateTraffic();
+
+    // Ego collision vs vehicles, peds, buildings, poles, curbs
+    const obstacles = [
+      ...this.state.trafficVehicles,
+      ...this.state.pedestrians,
+      ...this.state.worldMap.staticEntities.filter(e =>
+        e.classType === 'building' || e.classType === 'pole' || e.classType === 'barrier'
+        || e.classType === 'car' || e.classType === 'truck'
+      ),
+    ];
+    const egoBox = {
+      center: { ...this.state.ego.transform.position, z: 0.8 },
+      size: vec3(4.5, 1.8, 1.5),
+      yaw: this.state.ego.transform.rotation,
+    };
+    const hit = firstHit(boxToOBB(egoBox), obstacles.map(o => ({
+      id: o.id, classType: o.classType, box: o.boundingBox,
+    })), 0.02);
+    if (hit && hit.depth > 0.05) {
+      this.state.ego = resolveEgoCollision(this.state.ego, hit);
+      this.state.collisionCount += 1;
+      this.state.lastCollision = { otherId: hit.otherId, classType: hit.classType, at: this.state.timestamp };
+    }
     
     // Record frame
     this.recorder.recordFrame(
@@ -876,6 +714,44 @@ export class Simulation {
 
   getLastPlannerOutput(): PlannerOutput | null {
     return this.lastPlannerOutput;
+  }
+
+  setLidarQuality(config: LidarConfig, everyN: number) {
+    this.lidarConfig = config;
+    this.lidarEveryN = Math.max(1, everyN);
+  }
+
+  restart(seed?: number): void {
+    if (seed !== undefined) this.config.seed = seed;
+    this.rng = new SeededRandom(this.config.seed);
+    this.recorder.clear();
+    this.state = this.initializeState();
+  }
+
+  private separateTraffic(): void {
+    const cars = this.state.trafficVehicles;
+    const egoPos = this.state.ego.transform.position;
+    const egoBox = {
+      center: { ...egoPos, z: 0.8 },
+      size: vec3(4.5, 1.8, 1.5),
+      yaw: this.state.ego.transform.rotation,
+    };
+    for (let i = 0; i < cars.length; i++) {
+      const a = cars[i]!;
+      const pushedFromEgo = separateEntities(a.transform.position, a.boundingBox, egoBox);
+      if (pushedFromEgo) {
+        a.transform.position = pushedFromEgo;
+        a.boundingBox = { ...a.boundingBox, center: { ...pushedFromEgo, z: 0.8 } };
+        a.velocity = vec3(a.velocity.x * 0.2, a.velocity.y * 0.2, 0);
+      }
+      for (let j = i + 1; j < cars.length; j++) {
+        const b = cars[j]!;
+        const pushed = separateEntities(a.transform.position, a.boundingBox, b.boundingBox);
+        if (!pushed) continue;
+        a.transform.position = pushed;
+        a.boundingBox = { ...a.boundingBox, center: { ...pushed, z: 0.8 } };
+      }
+    }
   }
   
   getRecording(): Recording {

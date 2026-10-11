@@ -7,11 +7,10 @@ import * as THREE from 'three';
 import { egoToWorld, vec3Length } from '../sim/math';
 import type { EgoState, Entity, LidarPoint, PlannerOutput, Vec3 } from '../sim/types';
 import type { Track } from '../stacks/perception';
-import type { AISTarget, MaritimeEncounter } from '../stacks/maritime';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
 
-export type VizStack = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
+export type VizStack = 'tesla' | 'waymo' | 'waabi';
 
 const MAX_POINTS = 5000;
 const MAX_VOXELS = 500;
@@ -32,9 +31,6 @@ export interface PerceptionVizInput {
   groundTruth: Entity[];
   showGroundTruth: boolean;
   plannerOutput: PlannerOutput | null;
-  aisTargets: AISTarget[];
-  encounters: MaritimeEncounter[];
-  maritimeAction: string;
   visionDetections: VisionDetection[];
   occupancy?: BEVOccupancy;
 }
@@ -46,20 +42,6 @@ function pathColor(severity: DecisionInfo['severity']): number {
 }
 
 export function computeDecision(input: PerceptionVizInput): DecisionInfo {
-  if (input.stack === 'maritime') {
-    const primary = input.encounters
-      .filter(e => e.tcpa > 0)
-      .sort((a, b) => a.tcpa - b.tcpa)[0];
-    if (primary) {
-      const trend = primary.cpaDelta > 8 ? 'CPA opening' : primary.cpaDelta < -8 ? 'CPA closing' : 'CPA holding';
-      return {
-        text: `${input.maritimeAction} · ${primary.name} CPA ${Math.round(primary.cpa)}m (${trend}, was ${Math.round(primary.initialCpa)}m)`,
-        severity: primary.cpa < 200 ? 'slow' : 'go',
-      };
-    }
-    return { text: 'Open water: no collision risk', severity: 'go' };
-  }
-
   const ego = input.ego;
   const speed = vec3Length(ego.velocity);
   const heading = ego.transform.rotation;
@@ -138,8 +120,6 @@ export class PerceptionVisualizer {
   private predLines: THREE.Line[] = [];
   private planLine: THREE.Line;
   private frustumLines: THREE.Line[] = [];
-  private aisLines: THREE.Line[] = [];
-  private radarRing: THREE.Line;
   private lastLabelKey = '';
 
   constructor(scene: THREE.Scene) {
@@ -171,18 +151,6 @@ export class PerceptionVisualizer {
     this.planLine = new THREE.Line(planGeom, new THREE.LineBasicMaterial({ color: 0x33ff66, linewidth: 2 }));
     this.group.add(this.planLine);
 
-    const ringPts: THREE.Vector3[] = [];
-    for (let i = 0; i <= 48; i++) {
-      const a = (i / 48) * Math.PI * 2;
-      ringPts.push(new THREE.Vector3(Math.cos(a) * 80, 0.4, -Math.sin(a) * 80));
-    }
-    this.radarRing = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(ringPts),
-      new THREE.LineBasicMaterial({ color: 0x33ffaa, transparent: true, opacity: 0.35 })
-    );
-    this.radarRing.visible = false;
-    this.group.add(this.radarRing);
-
     for (let i = 0; i < MAX_PRED; i++) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12 * 3), 3));
@@ -207,7 +175,6 @@ export class PerceptionVisualizer {
     this.updatePlan(input, decision);
     this.updateLabels(input);
     this.updateFrustums(input);
-    this.updateMaritime(input);
     return decision;
   }
 
@@ -227,22 +194,15 @@ export class PerceptionVisualizer {
       n++;
     };
 
-    const useLidar = stack === 'waymo' || stack === 'aurora' || stack === 'rail' || stack === 'waabi';
+    const useLidar = stack === 'waymo' || stack === 'waabi';
     if (useLidar) {
       const step = Math.max(1, Math.ceil(lidarPoints.length / MAX_POINTS));
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
         const world = egoToWorld(p, ego.transform.position, ego.transform.rotation);
         if (p.z < 0.25 && i % 6 !== 0) continue;
-        if (stack === 'aurora' && p.radialVelocity !== undefined) {
-          const v = p.radialVelocity;
-          if (v < -1) push(world.x, world.y, world.z + 0.05, 0.1, 1, 0.2);
-          else if (v > 1) push(world.x, world.y, world.z + 0.05, 1, 0.15, 0.1);
-          else push(world.x, world.y, world.z + 0.05, 0.55, 0.55, 0.55);
-        } else {
-          const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
-          push(world.x, world.y, world.z + 0.05, 0.15 + h * 0.2, 0.4 + h * 0.5, 1 - h * 0.6);
-        }
+        const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
+        push(world.x, world.y, world.z + 0.05, 0.15 + h * 0.2, 0.4 + h * 0.5, 1 - h * 0.6);
       }
     }
 
@@ -477,37 +437,6 @@ export class PerceptionVisualizer {
     });
   }
 
-  private updateMaritime(input: PerceptionVizInput) {
-    const show = input.stack === 'maritime';
-    this.radarRing.visible = show;
-    if (!show) {
-      this.aisLines.forEach(l => { l.visible = false; });
-      return;
-    }
-    const ego = input.ego;
-    this.radarRing.position.set(ego.transform.position.x, 0, -ego.transform.position.y);
-
-    while (this.aisLines.length < input.aisTargets.length) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
-      const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffcc33 }));
-      this.group.add(line);
-      this.aisLines.push(line);
-    }
-    input.aisTargets.forEach((t, i) => {
-      const line = this.aisLines[i]!;
-      const arr = (line.geometry.getAttribute('position') as THREE.BufferAttribute).array as Float32Array;
-      arr[0] = ego.transform.position.x;
-      arr[1] = 2;
-      arr[2] = -ego.transform.position.y;
-      arr[3] = t.position.x;
-      arr[4] = 8;
-      arr[5] = -t.position.y;
-      (line.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
-      line.visible = true;
-    });
-    for (let i = input.aisTargets.length; i < this.aisLines.length; i++) this.aisLines[i]!.visible = false;
-  }
 }
 
 export function renderAIViewCanvas(
@@ -528,9 +457,6 @@ export function renderAIViewCanvas(
     tesla: 'Tesla-style · cameras + occupancy voxels',
     waymo: 'Waymo-style · lidar + radar + fused boxes',
     waabi: 'Waabi-style · BEV occupancy-flow',
-    aurora: 'Aurora-style · FMCW radial velocity',
-    rail: 'Rail · track-corridor obstacles',
-    maritime: 'Ship · radar / AIS + CPA vectors',
   };
   ctx.fillText(titles[input.stack], 8, 16);
 

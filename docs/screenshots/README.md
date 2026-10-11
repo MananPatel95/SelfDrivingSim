@@ -24,26 +24,14 @@ Compare mode (M key) split-screen:
 - Right: Waymo-style point cloud + fused boxes
 - Detection timing differences shown
 
-## Specialized Zones
+### 09-escape-menu.png
+Escape / gear pause menu: Resume, Restart, Quality, Perception, Shadow Mode, camera mode, controls.
 
-### 05-rail-train.png
-Rail zone (F5) showing:
-- Blue train on tracks
-- Moving Block signaling HUD
-- Level crossing warning
+### 10-manual-drive.png
+MANUAL badge after WASD / T takeover.
 
-### 06-highway-truck.png
-Highway zone (F4) showing:
-- 18-wheeler truck
-- FMCW radar HUD with velocity coloring
-- Braking distance vs detection range
-
-### 03-harbour-ship.png
-Harbour zone (F6) showing:
-- Container ship on water
-- Navigation buoys
-- COLREGs HUD (Rule 14 head-on)
-- AIS target tracking (CPA/TCPA)
+### 11-collision.png
+Ego stopped against an NPC with COLLISION flash (no interpenetration).
 
 ## Environment Effects
 
@@ -51,4 +39,4 @@ Harbour zone (F6) showing:
 Night mode with fog showing degraded visibility.
 
 ### 08-dashboard.png
-Dashboard with model selector showing learned models.
+Status HUD with speed, control, detections, collisions, and FPS.

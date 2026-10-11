@@ -4,25 +4,19 @@
  */
 
 import * as THREE from 'three';
-import { Simulation, ZoneType } from './sim/simulation';
+import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld } from './sim/math';
-import { loadWasmKernels } from './sim/wasm';
-import type { TakeoverReason } from './sim/types';
+import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
-import { 
-  WAABI_INFO_CARD, WaabiStackState, runWaabiStack, 
-  BEVOccupancy, AdversarialVariant 
+import {
+  WAABI_INFO_CARD, WaabiStackState, runWaabiStack,
+  BEVOccupancy, AdversarialVariant
 } from './stacks/waabi';
 import { TESLA_INFO_CARD, detectVisibleAgents, type VisionDetection } from './stacks/tesla';
-import { AURORA_INFO_CARD, TruckingState } from './stacks/aurora';
-import { RAIL_INFO_CARD, RailState, calculateRailBrakingDistance } from './stacks/rail';
-import { 
-  MARITIME_INFO_CARD, MaritimeState, createHarbourTraffic
-} from './stacks/maritime';
-import { generateHighwayMap, generateRailMap } from './sim/world';
 import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
+import { LIDAR_CONFIGS } from './sensors/lidar';
+import type { LidarConfig } from './sim/types';
 
-// Waabi stack state
 let waabiState: WaabiStackState = {
   tracks: [],
   occupancy: {
@@ -40,52 +34,14 @@ let waabiState: WaabiStackState = {
   },
 };
 
-// Maritime stack state
-let maritimeState: MaritimeState = {
-  tracks: [],
-  aisTargets: createHarbourTraffic(),
-  colregsActions: new Map(),
-  ownHeading: Math.PI / 2,
-  ownSpeed: 6,
-  rudderAngle: 0,
-  engineThrottle: 0.5,
-};
-
 let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
 let rawCamera: THREE.PerspectiveCamera | null = null;
 let lastDecision: DecisionInfo = { text: 'Cruising: lane clear', severity: 'go' };
-let laneRoadGroup: THREE.Group | null = null;
-const zoneMeshes: THREE.Object3D[] = [];
-const aisShipVisuals: Array<{ name: string; mesh: THREE.Object3D }> = [];
+type StackProfile = 'tesla' | 'waymo' | 'waabi';
+type CameraMode = 'chase' | 'hood' | 'bev' | 'orbit';
+type QualityLevel = 'low' | 'med' | 'high';
 
-// Rail stack state
-let railState: RailState = {
-  tracks: [],
-  currentSignal: { id: 1, position: { x: 200, y: 0, z: 0 }, state: 'stop', distanceToStop: 200 },
-  nextSignals: [],
-  currentSpeed: 0,
-  targetSpeed: 0,
-  brakingDistance: 500,
-  emergencyBraking: false,
-  gradeCrossings: [{ id: 1, position: { x: 150, y: 0, z: 0 }, state: 'active', hasObstruction: true }],
-};
-
-// Trucking stack state (for future use in highway perception)
-const _truckingState: TruckingState = {
-  tracks: [],
-  currentLane: 1,
-  targetLane: 1,
-  laneChangeProgress: 0,
-  brakingDelay: 0.3,
-  blindSpotOccupied: { left: false, right: false },
-};
-void _truckingState; // Silence unused warning
-
-// Stack types available (F1-F6 per spec)
-type StackProfile = 'tesla' | 'waymo' | 'waabi' | 'aurora' | 'rail' | 'maritime';
-
-// Info card data for each stack
 const INFO_CARDS: Record<StackProfile, {
   name: string;
   sensors: string;
@@ -97,17 +53,49 @@ const INFO_CARDS: Record<StackProfile, {
   tesla: TESLA_INFO_CARD,
   waymo: WAYMO_INFO_CARD,
   waabi: WAABI_INFO_CARD,
-  aurora: AURORA_INFO_CARD,
-  rail: RAIL_INFO_CARD,
-  maritime: MARITIME_INFO_CARD,
 };
 
-// Game state
+const QUALITY: Record<QualityLevel, {
+  pixelRatio: number;
+  far: number;
+  lidar: LidarConfig;
+  lidarEveryN: number;
+  shadows: boolean;
+  fogFar: number;
+}> = {
+  low: {
+    pixelRatio: 1,
+    far: 450,
+    lidar: LIDAR_CONFIGS['qualityLow']!,
+    lidarEveryN: 3,
+    shadows: false,
+    fogFar: 380,
+  },
+  med: {
+    pixelRatio: 1.25,
+    far: 600,
+    lidar: LIDAR_CONFIGS['qualityMed'] ?? LIDAR_CONFIGS['browserLite']!,
+    lidarEveryN: 2,
+    shadows: false,
+    fogFar: 500,
+  },
+  high: {
+    pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1.5, 1.75),
+    far: 600,
+    lidar: LIDAR_CONFIGS['qualityHigh']!,
+    lidarEveryN: 1,
+    shadows: true,
+    fogFar: 520,
+  },
+};
+
 let simulation: Simulation;
 let renderer: THREE.WebGLRenderer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
-let cameraMode: 'chase' | 'topdown' | 'cockpit' = 'chase';
+let sunLight: THREE.DirectionalLight;
+let cameraMode: CameraMode = 'chase';
+let qualityLevel: QualityLevel = 'med';
 let isRecording = false;
 let showGroundTruth = false;
 let showAIView = true;
@@ -115,14 +103,44 @@ let showInfoCard = false;
 let isPaused = false;
 let currentStack: StackProfile = 'tesla';
 let compareMode = false;
+let driveHintShown = false;
+let lastHudMs = 0;
+let lastAiViewMs = 0;
+let lastCollisionCount = 0;
+let collisionFlashUntil = 0;
+let shadowMode = false;
 
-// Compare mode state
+let orbitYaw = 0.35;
+let orbitPitch = 0.38;
+let orbitDist = 22;
+let pointerDragging = false;
+let lastPointerX = 0;
+let lastPointerY = 0;
+
+const CAMERA_LAG = 0.12;
+const SIM_DT = 1 / 30;
+let simAccumulator = 0;
+let camFollowReady = false;
+let camYaw = Math.PI / 2;
+let camLookX = 0;
+let camLookY = 0;
+let camPosX = 0;
+let camPosY = 8;
+let camPosZ = 18;
+let prevEgoX = 0;
+let prevEgoY = 0;
+let prevEgoYaw = Math.PI / 2;
+let currEgoX = 0;
+let currEgoY = 0;
+let currEgoYaw = Math.PI / 2;
+let rawCameraFrame = 0;
+let staticCityMeshes: THREE.Object3D[] = [];
+
 let compareRenderer: THREE.WebGLRenderer | null = null;
 let leftRenderer: THREE.WebGLRenderer | null = null;
 let compareCamera: THREE.PerspectiveCamera | null = null;
 let compareStack: StackProfile = 'waymo';
 
-// Detection timing tracking for compare mode
 interface DetectionTiming {
   entityId: number;
   classType: string;
@@ -134,7 +152,6 @@ const visionFirstSeen: Map<number, number> = new Map();
 let compareStartTime = 0;
 let latestVisionDetections: VisionDetection[] = [];
 
-// Human input state
 const inputState = {
   forward: false,
   backward: false,
@@ -143,20 +160,11 @@ const inputState = {
   brake: false,
 };
 
-// 3D meshes
 let egoMesh: THREE.Mesh;
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
-
-// Zone-specific objects
-let currentZone: ZoneType = 'city';
-let waterMesh: THREE.Mesh | null = null;
-let trackMeshes: THREE.Line[] = [];
-let buoyMeshes: THREE.Mesh[] = [];
-let aisOverlayEnabled = false;
 let bevOverlayEnabled = false;
-let simWorldOverlay: THREE.Group | null = null;
 
 // Initialize Three.js
 function initThreeJS() {
@@ -165,25 +173,27 @@ function initThreeJS() {
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.shadowMap.enabled = false;
+  renderer.setPixelRatio(QUALITY[qualityLevel].pixelRatio);
+  renderer.shadowMap.enabled = QUALITY[qualityLevel].shadows;
+  renderer.domElement.tabIndex = 0;
+  renderer.domElement.style.outline = 'none';
   container.appendChild(renderer.domElement);
+  renderer.domElement.focus();
   
   // Scene
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87ceeb); // Sky blue
-  scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+  scene.fog = new THREE.Fog(0x87ceeb, 80, 500);
   
   // Camera
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, QUALITY[qualityLevel].far);
   camera.position.set(0, -10, 8);
   camera.lookAt(0, 0, 0);
   
-  // Lighting
   const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
   scene.add(ambientLight);
   
-  const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+  sunLight = new THREE.DirectionalLight(0xffffff, 1);
   sunLight.position.set(100, 100, 100);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 1024;
@@ -198,10 +208,7 @@ function initThreeJS() {
   
   // Ground - grass/terrain base
   const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
-  const groundMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x2d5a27, // Grass green
-    roughness: 0.95,
-  });
+  const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x2d5a27 });
   groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
   groundMesh.rotation.x = -Math.PI / 2;
   groundMesh.receiveShadow = true;
@@ -212,7 +219,7 @@ function initThreeJS() {
   
   // Ego vehicle
   const egoGeometry = new THREE.BoxGeometry(4.5, 1.8, 1.5);
-  const egoMaterial = new THREE.MeshStandardMaterial({ color: 0x0066cc });
+  const egoMaterial = new THREE.MeshLambertMaterial({ color: 0x0066cc });
   egoMesh = new THREE.Mesh(egoGeometry, egoMaterial);
   egoMesh.castShadow = true;
   egoMesh.position.y = 0.75;
@@ -260,13 +267,13 @@ function buildCityRoads() {
   const sidewalkWidth = 3;
   const halfSize = (gridSize * blockSize) / 2;
 
-  const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.85 });
-  const curbMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.7 });
-  const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffee66, roughness: 0.5 });
-  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.6 });
-  const glowMat = new THREE.MeshStandardMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.4 });
+  const asphaltMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a});
+  const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0xd0d0d0});
+  const curbMat = new THREE.MeshLambertMaterial({ color: 0x555555});
+  const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffee66});
+  const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff});
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0x333333});
+  const glowMat = new THREE.MeshLambertMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.4 });
 
   // Full-length asphalt + sidewalks + curbs as shared meshes (few draw calls)
   for (let i = 0; i <= gridSize; i++) {
@@ -354,7 +361,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Body
       const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.6);
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3366cc, metalness: 0.6, roughness: 0.4 });
+      const bodyMat = new THREE.MeshLambertMaterial({ color: 0x3366cc});
       const body = new THREE.Mesh(bodyGeo, bodyMat);
       body.position.y = 0.6;
       body.castShadow = true;
@@ -362,7 +369,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Cabin
       const cabinGeo = new THREE.BoxGeometry(2.2, 0.8, 1.4);
-      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.2, roughness: 0.5 });
+      const cabinMat = new THREE.MeshLambertMaterial({ color: 0x222222});
       const cabin = new THREE.Mesh(cabinGeo, cabinMat);
       cabin.position.set(-0.3, 1.3, 0);
       cabin.castShadow = true;
@@ -370,7 +377,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Wheels
       const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.2, 16);
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+      const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
       const wheelPositions: [number, number, number][] = [[1.2, 0.35, 0.8], [1.2, 0.35, -0.8], [-1.2, 0.35, 0.8], [-1.2, 0.35, -0.8]];
       for (const [wx, wy, wz] of wheelPositions) {
         const wheel = new THREE.Mesh(wheelGeo, wheelMat);
@@ -387,7 +394,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Cab
       const cabGeo = new THREE.BoxGeometry(3, 2.2, 2.4);
-      const cabMat = new THREE.MeshStandardMaterial({ color: 0xcc6633, metalness: 0.4, roughness: 0.5 });
+      const cabMat = new THREE.MeshLambertMaterial({ color: 0xcc6633});
       const cab = new THREE.Mesh(cabGeo, cabMat);
       cab.position.set(2.5, 1.3, 0);
       cab.castShadow = true;
@@ -395,7 +402,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Trailer
       const trailerGeo = new THREE.BoxGeometry(7, 2.8, 2.4);
-      const trailerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+      const trailerMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
       const trailer = new THREE.Mesh(trailerGeo, trailerMat);
       trailer.position.set(-1.5, 1.6, 0);
       trailer.castShadow = true;
@@ -407,12 +414,12 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     case 'pedestrian': {
       const group = new THREE.Group();
       const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066, 0xffcc00, 0x3399ff];
-      const bodyMat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
+      const bodyMat = new THREE.MeshLambertMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 6), bodyMat);
       body.position.y = 1.0;
       body.castShadow = false;
       group.add(body);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc99 }));
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffcc99 }));
       head.position.y = 1.7;
       group.add(head);
       return group as unknown as THREE.Mesh;
@@ -425,9 +432,8 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       // Main building body
       const buildingGeo = new THREE.BoxGeometry(size.x, size.z, size.y);
       const buildingColors = [0x606070, 0x707080, 0x556065, 0x4a5560, 0x505a60];
-      const buildingMat = new THREE.MeshStandardMaterial({ 
+      const buildingMat = new THREE.MeshLambertMaterial({
         color: buildingColors[Math.floor(Math.random() * buildingColors.length)],
-        roughness: 0.8 
       });
       const building = new THREE.Mesh(buildingGeo, buildingMat);
       building.position.y = size.z / 2;
@@ -443,7 +449,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Trunk
       const trunkGeo = new THREE.CylinderGeometry(0.2, 0.3, 2, 8);
-      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
+      const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4a3728 });
       const trunk = new THREE.Mesh(trunkGeo, trunkMat);
       trunk.position.y = 1;
       trunk.castShadow = true;
@@ -451,7 +457,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       
       // Foliage
       const foliageGeo = new THREE.ConeGeometry(2, 5, 8);
-      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x228b22 });
+      const foliageMat = new THREE.MeshLambertMaterial({ color: 0x228b22 });
       const foliage = new THREE.Mesh(foliageGeo, foliageMat);
       foliage.position.y = 4.5;
       foliage.castShadow = true;
@@ -462,7 +468,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     
     case 'pole': {
       const poleGeo = new THREE.CylinderGeometry(0.1, 0.1, 8, 8);
-      const poleMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+      const poleMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
       const pole = new THREE.Mesh(poleGeo, poleMat);
       pole.position.y = 4;
       pole.castShadow = true;
@@ -471,7 +477,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     
     default: {
       const geometry = new THREE.BoxGeometry(2, 2, 2);
-      const material = new THREE.MeshStandardMaterial({ color: 0x999999 });
+      const material = new THREE.MeshLambertMaterial({ color: 0x999999 });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.castShadow = true;
       return mesh;
@@ -484,8 +490,8 @@ export function createRoads(worldMap: { lanes: Array<{ type?: string; points: Ar
   const roadGroup = new THREE.Group();
   
   // Road material
-  const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
-  const laneMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+  const roadMat = new THREE.MeshLambertMaterial({ color: 0x333333});
+  const laneMat = new THREE.MeshLambertMaterial({ color: 0xffff00 });
   
   // Create road segments from lanes
   const processedRoads = new Set<string>();
@@ -536,53 +542,122 @@ export function createRoads(worldMap: { lanes: Array<{ type?: string; points: Ar
   return roadGroup;
 }
 
-// Update entity meshes from simulation state
+function isMobileClass(classType: string): boolean {
+  return classType === 'car' || classType === 'truck' || classType === 'bus'
+    || classType === 'motorcycle' || classType === 'pedestrian' || classType === 'cyclist';
+}
+
+function rebuildStaticCity() {
+  for (const mesh of staticCityMeshes) {
+    scene.remove(mesh);
+    disposeObject(mesh);
+  }
+  staticCityMeshes = [];
+  const statics = simulation.getState().worldMap.staticEntities;
+  const dummy = new THREE.Object3D();
+
+  const buildings = statics.filter(e => e.classType === 'building');
+  if (buildings.length > 0) {
+    const colors = [0x606070, 0x707080, 0x556065, 0x4a5560, 0x505a60];
+    const mesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshLambertMaterial({ color: 0x667077 }),
+      buildings.length
+    );
+    mesh.frustumCulled = true;
+    buildings.forEach((b, i) => {
+      dummy.position.set(b.transform.position.x, b.boundingBox.size.z / 2, -b.transform.position.y);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(b.boundingBox.size.x, b.boundingBox.size.z, b.boundingBox.size.y);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      mesh.setColorAt(i, new THREE.Color(colors[i % colors.length]!));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    scene.add(mesh);
+    staticCityMeshes.push(mesh);
+  }
+
+  const trees = statics.filter(e => e.classType === 'tree');
+  if (trees.length > 0) {
+    const trunks = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.25, 0.32, 2, 6),
+      new THREE.MeshLambertMaterial({ color: 0x4a3728 }),
+      trees.length
+    );
+    const foliage = new THREE.InstancedMesh(
+      new THREE.ConeGeometry(2, 5, 7),
+      new THREE.MeshLambertMaterial({ color: 0x228b22 }),
+      trees.length
+    );
+    trees.forEach((t, i) => {
+      dummy.position.set(t.transform.position.x, 1, -t.transform.position.y);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      trunks.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(t.transform.position.x, 4.5, -t.transform.position.y);
+      dummy.updateMatrix();
+      foliage.setMatrixAt(i, dummy.matrix);
+    });
+    trunks.instanceMatrix.needsUpdate = true;
+    foliage.instanceMatrix.needsUpdate = true;
+    scene.add(trunks);
+    scene.add(foliage);
+    staticCityMeshes.push(trunks, foliage);
+  }
+
+  const poles = statics.filter(e => e.classType === 'pole');
+  if (poles.length > 0) {
+    const mesh = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.1, 0.1, 8, 6),
+      new THREE.MeshLambertMaterial({ color: 0x444444 }),
+      poles.length
+    );
+    poles.forEach((po, i) => {
+      dummy.position.set(po.transform.position.x, 4, -po.transform.position.y);
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+    staticCityMeshes.push(mesh);
+  }
+}
+
 function updateEntityMeshes() {
   const state = simulation.getState();
-  const allEntities = [
-    ...(currentZone === 'harbour' ? [] : state.worldMap.staticEntities),
+  const mobiles = [
     ...state.trafficVehicles,
     ...state.pedestrians,
+    ...state.worldMap.staticEntities.filter(e => isMobileClass(e.classType)),
   ];
-  
-  // Track which entities are still present
-  const presentIds = new Set(allEntities.map(e => e.id));
-  
-  // Remove meshes for entities that no longer exist
+  const presentIds = new Set(mobiles.map(e => e.id));
+
   for (const [id, mesh] of entityMeshes) {
     if (!presentIds.has(id)) {
       scene.remove(mesh);
       entityMeshes.delete(id);
     }
   }
-  
-  // Update or create meshes
-  for (const entity of allEntities) {
+
+  for (const entity of mobiles) {
     let mesh = entityMeshes.get(entity.id);
-    
     if (!mesh) {
       mesh = createEntityMesh(entity.classType, entity) as THREE.Mesh;
       scene.add(mesh);
       entityMeshes.set(entity.id, mesh);
     }
-    
-    // Convert simulation coords (X=east, Y=north, Z=up) to Three.js (X=east, Y=up, Z=south)
-    // For buildings, transform.position.z is already at height/2, don't add more
-    const yOffset = entity.classType === 'building' ? 0 : 
-                    entity.classType === 'tree' ? 0 :
-                    entity.classType === 'pole' ? 0 : 0;
-    
-    mesh.position.set(
-      entity.transform.position.x,
-      yOffset,
-      -entity.transform.position.y
-    );
-    // Add Math.PI for vehicles so they face their direction of travel
-    const isVehicle = entity.classType === 'car' || entity.classType === 'truck' || 
-                      entity.classType === 'bus' || entity.classType === 'motorcycle';
+    mesh.position.set(entity.transform.position.x, 0, -entity.transform.position.y);
+    const isVehicle = entity.classType === 'car' || entity.classType === 'truck'
+      || entity.classType === 'bus' || entity.classType === 'motorcycle';
     mesh.rotation.y = -entity.transform.rotation + (isVehicle ? Math.PI : 0);
   }
 }
+
 
 // Detection box colors by class
 const DETECTION_COLORS: Record<string, number> = {
@@ -700,376 +775,261 @@ function updateDetectionMeshes() {
   }
 }
 
-// Update camera based on mode
-function updateCamera() {
-  const state = simulation.getState();
-  const egoPos = state.ego.transform.position;
-  const egoYaw = state.ego.transform.rotation;
-  
-  switch (cameraMode) {
-    case 'chase':
-      const chaseBack = state.ego.vehicleType === 'ship' ? 110 : 18;
-      const chaseHeight = state.ego.vehicleType === 'ship' ? 48 : 8;
-      const chaseOffset = {
-        x: -Math.cos(egoYaw) * chaseBack,
-        y: -Math.sin(egoYaw) * chaseBack,
-        z: chaseHeight,
-      };
-      camera.position.set(
-        egoPos.x + chaseOffset.x,
-        chaseOffset.z,
-        -(egoPos.y + chaseOffset.y)
-      );
-      camera.lookAt(egoPos.x, 1, -egoPos.y);
-      break;
-      
-    case 'topdown':
-      camera.position.set(egoPos.x, 100, -egoPos.y);
-      camera.lookAt(egoPos.x, 0, -egoPos.y);
-      break;
-      
-    case 'cockpit':
-      const cockpitOffset = {
-        x: Math.cos(egoYaw) * 1.5,
-        y: Math.sin(egoYaw) * 1.5,
-      };
-      camera.position.set(
-        egoPos.x + cockpitOffset.x,
-        1.2,
-        -(egoPos.y + cockpitOffset.y)
-      );
-      const lookAhead = {
-        x: egoPos.x + Math.cos(egoYaw) * 20,
-        y: egoPos.y + Math.sin(egoYaw) * 20,
-      };
-      camera.lookAt(lookAhead.x, 1, -lookAhead.y);
-      break;
+function damp(current: number, target: number, dt: number, tau: number): number {
+  return current + (target - current) * (1 - Math.exp(-dt / Math.max(0.001, tau)));
+}
+
+function dampAngle(current: number, target: number, dt: number, tau: number): number {
+  let d = target - current;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return current + d * (1 - Math.exp(-dt / Math.max(0.001, tau)));
+}
+
+function captureEgoPose() {
+  const ego = simulation.getState().ego;
+  currEgoX = ego.transform.position.x;
+  currEgoY = ego.transform.position.y;
+  currEgoYaw = ego.transform.rotation;
+}
+
+function resetCameraRig() {
+  orbitYaw = cameraMode === 'orbit' ? 0.6 : 0;
+  orbitPitch = cameraMode === 'orbit' ? 0.42 : 0.32;
+  orbitDist = cameraMode === 'orbit' ? 28 : 22;
+  camFollowReady = false;
+}
+
+function interpolatedEgo(alpha: number) {
+  let dyaw = currEgoYaw - prevEgoYaw;
+  while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+  while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+  return {
+    x: prevEgoX + (currEgoX - prevEgoX) * alpha,
+    y: prevEgoY + (currEgoY - prevEgoY) * alpha,
+    yaw: prevEgoYaw + dyaw * alpha,
+  };
+}
+
+function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
+  let targetYaw = egoYaw;
+  let targetLookX = egoX;
+  let targetLookY = egoY;
+  let targetPosX = egoX;
+  let targetPosY = 8;
+  let targetPosZ = -egoY;
+  const tau = cameraMode === 'hood' ? 0.06 : CAMERA_LAG;
+
+  if (cameraMode === 'chase') {
+    targetYaw = egoYaw + Math.PI + orbitYaw * 0.35;
+    const dist = orbitDist;
+    targetPosX = egoX + Math.cos(targetYaw) * dist;
+    targetPosY = 3 + orbitPitch * 12;
+    targetPosZ = -(egoY + Math.sin(targetYaw) * dist);
+  } else if (cameraMode === 'hood') {
+    targetYaw = egoYaw;
+    targetPosX = egoX + Math.cos(egoYaw) * 1.4;
+    targetPosY = 1.25;
+    targetPosZ = -(egoY + Math.sin(egoYaw) * 1.4);
+    targetLookX = egoX + Math.cos(egoYaw) * 18;
+    targetLookY = egoY + Math.sin(egoYaw) * 18;
+  } else if (cameraMode === 'bev') {
+    targetPosX = egoX;
+    targetPosY = 95;
+    targetPosZ = -egoY + 0.01;
+  } else {
+    targetYaw = orbitYaw;
+    const pitch = orbitPitch;
+    const dist = orbitDist;
+    targetPosX = egoX + Math.sin(orbitYaw) * Math.cos(pitch) * dist;
+    targetPosY = Math.sin(pitch) * dist + 4;
+    targetPosZ = -egoY + Math.cos(orbitYaw) * Math.cos(pitch) * dist;
+  }
+
+  if (!camFollowReady) {
+    camYaw = targetYaw;
+    camLookX = targetLookX;
+    camLookY = targetLookY;
+    camPosX = targetPosX;
+    camPosY = targetPosY;
+    camPosZ = targetPosZ;
+    camFollowReady = true;
+  } else {
+    camYaw = dampAngle(camYaw, targetYaw, dt, tau);
+    camLookX = damp(camLookX, targetLookX, dt, tau);
+    camLookY = damp(camLookY, targetLookY, dt, tau);
+    camPosX = damp(camPosX, targetPosX, dt, tau);
+    camPosY = damp(camPosY, targetPosY, dt, tau);
+    camPosZ = damp(camPosZ, targetPosZ, dt, tau);
+  }
+
+  if (cameraMode === 'chase') {
+    camPosX = camLookX + Math.cos(camYaw) * orbitDist;
+    camPosY = 3 + orbitPitch * 12;
+    camPosZ = -(camLookY + Math.sin(camYaw) * orbitDist);
+  }
+
+  camera.position.set(camPosX, camPosY, camPosZ);
+  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? 1.0 : 1.2;
+  camera.lookAt(camLookX, lookZ, -camLookY);
+}
+
+function isManual(): boolean {
+  return simulation.getState().controlSource === 'human';
+}
+
+function syncDriveBadge() {
+  const badge = document.getElementById('drive-badge');
+  const control = document.getElementById('control-source');
+  const manual = isManual();
+  if (badge) {
+    badge.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    badge.classList.toggle('manual', manual);
+  }
+  if (control) {
+    control.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    control.className = 'status-value' + (manual ? ' status-warning' : '');
   }
 }
 
-// Update HUD
+function showDriveHintOnce() {
+  if (driveHintShown) return;
+  driveHintShown = true;
+  const hint = document.getElementById('drive-hint');
+  if (!hint) return;
+  hint.classList.add('visible');
+  window.setTimeout(() => hint.classList.remove('visible'), 7000);
+}
+
+function setPaused(paused: boolean) {
+  isPaused = paused;
+  document.getElementById('pause-overlay')?.classList.toggle('visible', paused);
+}
+
+function togglePause() {
+  setPaused(!isPaused);
+}
+
+function setCameraMode(mode: CameraMode) {
+  cameraMode = mode;
+  resetCameraRig();
+  document.querySelectorAll('#camera-seg button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === mode);
+  });
+}
+
+function applyQuality(level: QualityLevel) {
+  qualityLevel = level;
+  const q = QUALITY[level];
+  renderer.setPixelRatio(q.pixelRatio);
+  renderer.shadowMap.enabled = q.shadows;
+  camera.far = q.far;
+  camera.updateProjectionMatrix();
+  sunLight.castShadow = q.shadows;
+  if (scene.fog instanceof THREE.Fog) scene.fog.far = q.fogFar;
+  simulation.setLidarQuality(q.lidar, q.lidarEveryN);
+  document.querySelectorAll('#quality-seg button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['quality'] === level);
+  });
+}
+
+function disposeObject(obj: THREE.Object3D) {
+  obj.traverse(child => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.geometry) mesh.geometry.dispose();
+    const mat = mesh.material;
+    if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+    else if (mat) mat.dispose();
+  });
+}
+
+function restartSim() {
+  for (const mesh of entityMeshes.values()) {
+    scene.remove(mesh);
+    disposeObject(mesh);
+  }
+  entityMeshes.clear();
+  for (const mesh of detectionMeshes) {
+    recycleBox(mesh as unknown as THREE.LineSegments);
+  }
+  detectionMeshes.length = 0;
+  lastCollisionCount = 0;
+  collisionFlashUntil = 0;
+  latestVisionDetections = [];
+  detectionTimings.clear();
+  visionFirstSeen.clear();
+  simulation.restart();
+  rebuildStaticCity();
+  captureEgoPose();
+  prevEgoX = currEgoX;
+  prevEgoY = currEgoY;
+  prevEgoYaw = currEgoYaw;
+  applyQuality(qualityLevel);
+  resetCameraRig();
+  setPaused(false);
+  syncDriveBadge();
+  showDriveHintOnce();
+}
+
+function anyDriveHeld(): boolean {
+  return inputState.forward || inputState.backward || inputState.left || inputState.right || inputState.brake;
+}
+
+function humanInputFromKeys() {
+  return {
+    throttle: inputState.forward ? 1 : inputState.backward ? -0.6 : 0,
+    steering: inputState.left ? -1 : inputState.right ? 1 : 0,
+    brake: inputState.brake ? 1 : 0,
+  };
+}
+
+function takeManual(auto = false) {
+  if (!isManual()) {
+    simulation.takeover('other');
+    if (!auto) showDriveHintOnce();
+  }
+  syncDriveBadge();
+}
+
+function setAutopilot(on: boolean) {
+  if (on) simulation.releaseControl();
+  else takeManual();
+  syncDriveBadge();
+}
+
 function updateHUD() {
   const state = simulation.getState();
-  const speed = vec3Length(state.ego.velocity) * 3.6; // m/s to km/h
-  
+  const speed = vec3Length(state.ego.velocity) * 3.6;
+
   document.getElementById('speed-value')!.textContent = `${Math.round(speed)} km/h`;
   document.getElementById('stopping-dist')!.textContent = `${Math.round(state.ego.stoppingDistance)} m`;
-  document.getElementById('control-source')!.textContent = 
-    state.controlSource === 'human' ? 'Manual' : 
-    state.controlSource === 'oracle' ? 'Oracle' : 'Policy';
-  document.getElementById('detection-count')!.textContent = 
+  document.getElementById('detection-count')!.textContent =
     String(state.perceptionTracks.filter(t => t.missedFrames === 0).length);
-  
-  // Update weather status
-  const weatherText = state.environment.weather.charAt(0).toUpperCase() + 
-    state.environment.weather.slice(1) + 
+  const colEl = document.getElementById('collision-count');
+  if (colEl) {
+    colEl.textContent = String(state.collisionCount);
+    colEl.className = 'status-value' + (state.collisionCount > 0 ? ' status-danger' : '');
+  }
+
+  if (state.collisionCount > lastCollisionCount) {
+    lastCollisionCount = state.collisionCount;
+    collisionFlashUntil = performance.now() + 1400;
+  }
+  const flash = document.getElementById('collision-flash');
+  if (flash) flash.classList.toggle('visible', performance.now() < collisionFlashUntil);
+
+  const weatherText = state.environment.weather.charAt(0).toUpperCase() +
+    state.environment.weather.slice(1) +
     (state.environment.timeOfDay === 'night' ? ' (Night)' : '');
   const fpsEl = document.getElementById('fps-value');
   if (fpsEl) fpsEl.textContent = String(displayFps);
-  
   document.getElementById('weather-status')!.textContent = weatherText;
-  
-  // Update weather styling
   const weatherEl = document.getElementById('weather-status')!;
   weatherEl.className = 'status-value';
-  if (state.environment.weather !== 'clear') {
-    weatherEl.classList.add('status-warning');
-  }
-  
-  // Update control source styling
-  const controlEl = document.getElementById('control-source')!;
-  controlEl.className = 'status-value';
-  if (state.controlSource === 'human') {
-    controlEl.classList.add('status-warning');
-  }
-  
-  // Update specialized HUDs based on current stack
-  if (currentStack === 'maritime') {
-    updateMaritimeHUD();
-  } else if (currentStack === 'rail') {
-    updateRailHUD();
-  } else if (currentStack === 'aurora') {
-    updateFMCWHUD();
-  }
+  if (state.environment.weather !== 'clear') weatherEl.classList.add('status-warning');
+  syncDriveBadge();
 }
 
-// Update Maritime COLREGs HUD with live values from the sim (not decoration)
-function updateMaritimeHUD() {
-  const state = simulation.getState();
-  maritimeState.aisTargets = state.maritimeTargets;
-  maritimeState.ownHeading = state.ego.transform.rotation;
-  maritimeState.ownSpeed = vec3Length(state.ego.velocity);
-
-  for (const visual of aisShipVisuals) {
-    const target = state.maritimeTargets.find(t => t.name === visual.name);
-    if (!target) continue;
-    visual.mesh.position.set(target.position.x, 1, -target.position.y);
-    visual.mesh.rotation.y = -target.heading + Math.PI / 2;
-  }
-
-  const targetListEl = document.getElementById('ais-targets');
-  if (targetListEl) targetListEl.innerHTML = '';
-
-  let primary = state.maritimeEncounters
-    .filter(e => e.tcpa > 0)
-    .sort((a, b) => a.tcpa - b.tcpa)[0];
-
-  for (const enc of state.maritimeEncounters) {
-    const tcpaMin = Math.floor(enc.tcpa / 60);
-    const tcpaSec = Math.floor(enc.tcpa % 60);
-    const tcpaStr = enc.tcpa <= 0 ? 'passed' : `${tcpaMin}:${tcpaSec.toString().padStart(2, '0')}`;
-    if (targetListEl) {
-      const div = document.createElement('div');
-      const opening = enc.cpaDelta > 5;
-      div.style.color = enc.cpa < 200 ? '#ff6666' : opening ? '#88ffcc' : '#ccc';
-      const trend = opening ? '↑' : enc.cpaDelta < -5 ? '↓' : '→';
-      div.textContent = `${enc.name} - CPA: ${Math.round(enc.cpa)}m ${trend} (was ${Math.round(enc.initialCpa)}m), TCPA: ${tcpaStr}`;
-      targetListEl.appendChild(div);
-    }
-  }
-
-  const situationEl = document.getElementById('colregs-situation');
-  const ruleEl = document.getElementById('colregs-rule');
-  const actionEl = document.getElementById('colregs-action');
-  const trendEl = document.getElementById('colregs-cpa-trend');
-
-  const ruleNames: Record<string, string> = {
-    'head_on': 'Head-on situation',
-    'crossing': 'Crossing situation',
-    'overtaking': 'Overtaking situation',
-    'stand_on': 'Stand-on vessel',
-    'give_way': 'Give-way situation',
-  };
-  const ruleDescriptions: Record<string, string> = {
-    'head_on': 'Rule 14: Head-on - Both vessels alter to starboard',
-    'crossing': 'Rule 15: Crossing - Give-way vessel alters to starboard',
-    'overtaking': 'Rule 13: Overtaking - Keep clear of vessel being overtaken',
-    'stand_on': 'Rule 17: Stand-on - Maintain course and speed',
-    'give_way': 'Rule 16: Give-way - Take early and substantial action',
-  };
-
-  if (primary && situationEl && ruleEl && actionEl) {
-    situationEl.textContent = `${ruleNames[primary.rule] || 'Encounter'} with ${primary.name}`;
-    ruleEl.textContent = ruleDescriptions[primary.rule] || `COLREGS: ${primary.rule}`;
-    actionEl.textContent = state.maritimeAction;
-    if (trendEl) {
-      const grew = primary.cpa - primary.initialCpa;
-      trendEl.textContent = grew > 5
-        ? `CPA opened ${Math.round(grew)}m after give-way (${Math.round(primary.initialCpa)} → ${Math.round(primary.cpa)}m)`
-        : `CPA ${Math.round(primary.cpa)}m · initial ${Math.round(primary.initialCpa)}m · range ${Math.round(primary.range)}m`;
-    }
-  }
-}
-
-// Update Rail HUD with live values
-function updateRailHUD() {
-  const state = simulation.getState();
-  const speed = vec3Length(state.ego.velocity) * 3.6; // km/h
-  
-  // Calculate braking distance (trains are heavy!)
-  const trainMass = 500000; // 500 tons
-  const brakingDist = calculateRailBrakingDistance(
-    vec3Length(state.ego.velocity),
-    trainMass,
-    0 // level track
-  );
-  railState.brakingDistance = brakingDist;
-  
-  // Find nearest signal and crossing
-  const egoX = state.ego.transform.position.x;
-  
-  // Update signal distance
-  const signalDist = Math.max(0, 200 - egoX); // Signal at x=200
-  const crossingDist = Math.max(0, 150 - egoX); // Crossing at x=150
-  
-  // Determine permitted speed based on signal and obstacles
-  let permittedSpeed = 80; // km/h default
-  let signalState: 'clear' | 'approach' | 'stop' = 'clear';
-  
-  if (railState.gradeCrossings[0]?.hasObstruction && crossingDist < 300) {
-    permittedSpeed = 0;
-    signalState = 'stop';
-    railState.emergencyBraking = true;
-  } else if (crossingDist < 500) {
-    permittedSpeed = 40;
-    signalState = 'approach';
-  }
-  
-  // Update HUD elements
-  const modeEl = document.getElementById('rail-mode');
-  const signalEl = document.getElementById('rail-signal');
-  const speedEl = document.getElementById('rail-speed');
-  const distanceEl = document.getElementById('rail-distance');
-  const crossingEl = document.getElementById('rail-crossing');
-  
-  if (modeEl) modeEl.textContent = 'Mode: Moving Block';
-  
-  if (signalEl) {
-    const color = signalState === 'stop' ? '#ff4444' : signalState === 'approach' ? '#ffaa00' : '#00ff00';
-    signalEl.innerHTML = `<span style="color: ${color};">●</span> Signal: ${signalState.toUpperCase()}`;
-  }
-  
-  if (speedEl) {
-    speedEl.textContent = `Permitted: ${permittedSpeed} km/h | Current: ${Math.round(speed)} km/h`;
-    speedEl.style.color = speed > permittedSpeed ? '#ff4444' : '#00ff88';
-  }
-  
-  if (distanceEl) {
-    distanceEl.textContent = `Distance to signal: ${Math.round(signalDist)}m | Braking: ${Math.round(brakingDist)}m`;
-  }
-  
-  if (crossingEl) {
-    if (railState.gradeCrossings[0]?.hasObstruction) {
-      crossingEl.innerHTML = `
-        <div style="color: #ff6600; font-size: 12px;">⚠ LEVEL CROSSING BLOCKED</div>
-        <div style="color: #888; font-size: 11px; margin-top: 4px;">Stalled vehicle detected at ${Math.round(crossingDist)}m</div>
-      `;
-    } else {
-      crossingEl.innerHTML = `
-        <div style="color: #00ff00; font-size: 12px;">✓ Level crossing clear</div>
-        <div style="color: #888; font-size: 11px; margin-top: 4px;">Distance: ${Math.round(crossingDist)}m</div>
-      `;
-    }
-  }
-}
-
-// Update FMCW HUD with live values
-function updateFMCWHUD() {
-  const state = simulation.getState();
-  const speed = vec3Length(state.ego.velocity); // m/s
-  const speedKmh = speed * 3.6;
-  
-  // Calculate braking distance for truck (longer than car due to air brakes)
-  // Truck braking distance: approx speed^2 / (2 * decel) + reaction distance
-  const airBrakeDelay = 0.4; // seconds
-  const decel = 4.5; // m/s^2 for loaded truck
-  const reactionDist = speed * airBrakeDelay;
-  const brakingDist = reactionDist + (speed * speed) / (2 * decel);
-  
-  // Detection range from FMCW radar (long range)
-  const detectionRange = 250; // meters
-  
-  // Find closest vehicle ahead
-  let closestDist = detectionRange;
-  for (const track of state.perceptionTracks) {
-    if (track.missedFrames === 0) {
-      const dx = track.box.center.x - state.ego.transform.position.x;
-      const dy = track.box.center.y - state.ego.transform.position.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < closestDist && dx > 0) { // Ahead of ego
-        closestDist = dist;
-      }
-    }
-  }
-  
-  // Update brake/detect bars
-  const brakeBar = document.getElementById('brake-bar');
-  const detectBar = document.getElementById('detect-bar');
-  
-  if (brakeBar && detectBar) {
-    const brakePercent = Math.min(100, (brakingDist / detectionRange) * 100);
-    const detectPercent = Math.min(100, (closestDist / detectionRange) * 100);
-    
-    brakeBar.style.width = `${brakePercent}%`;
-    detectBar.style.width = `${detectPercent}%`;
-  }
-  
-  // Update text labels
-  const fmcwBraking = document.getElementById('fmcw-braking');
-  if (fmcwBraking) {
-    const isSafe = closestDist > brakingDist;
-    const safetyDiv = fmcwBraking.querySelector('div:last-child');
-    if (safetyDiv) {
-      if (isSafe) {
-        safetyDiv.innerHTML = `<div style="padding: 8px; background: #0a2a0a; border-radius: 3px; color: #00ff00; font-size: 12px;">
-          ✓ Safe: Detection (${Math.round(closestDist)}m) > Braking (${Math.round(brakingDist)}m)
-        </div>`;
-      } else {
-        safetyDiv.innerHTML = `<div style="padding: 8px; background: #2a0a0a; border-radius: 3px; color: #ff4444; font-size: 12px;">
-          ⚠ WARNING: Braking distance exceeds safe margin!
-        </div>`;
-      }
-    }
-    
-    // Update distance labels
-    const labelDiv = fmcwBraking.querySelector('div:nth-child(3)');
-    if (labelDiv) {
-      labelDiv.innerHTML = `
-        <span>Brake: ${Math.round(brakingDist)}m</span>
-        <span>Target: ${Math.round(closestDist)}m</span>
-        <span>Speed: ${Math.round(speedKmh)} km/h</span>
-      `;
-    }
-  }
-  
-  // Draw FMCW radar visualization
-  renderFMCWCanvas();
-}
-
-// Render FMCW radar canvas with velocity-colored returns
-function renderFMCWCanvas() {
-  const canvas = document.getElementById('fmcw-canvas') as HTMLCanvasElement;
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d')!;
-  const state = simulation.getState();
-  const egoVel = vec3Length(state.ego.velocity);
-  
-  ctx.fillStyle = '#0a0a15';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  // Draw radar returns
-  const maxRange = 250;
-  const egoPos = state.ego.transform.position;
-  const egoHeading = state.ego.transform.rotation;
-  
-  for (const track of state.perceptionTracks) {
-    if (track.missedFrames > 0) continue;
-    
-    const dx = track.box.center.x - egoPos.x;
-    const dy = track.box.center.y - egoPos.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    if (dist > maxRange) continue;
-    
-    // Calculate relative velocity (positive = approaching, negative = receding)
-    const relVel = track.velocity 
-      ? (track.velocity.x * Math.cos(egoHeading) + track.velocity.y * Math.sin(egoHeading)) - egoVel
-      : 0;
-    
-    // Color based on relative velocity
-    let color: string;
-    if (relVel < -2) {
-      color = '#00ff00'; // Green: approaching
-    } else if (relVel > 2) {
-      color = '#ff0000'; // Red: receding
-    } else {
-      color = '#888888'; // Gray: static
-    }
-    
-    // Position on canvas
-    const angle = Math.atan2(dy, dx) - egoHeading;
-    const normDist = dist / maxRange;
-    const canvasX = canvas.width / 2 + Math.sin(angle) * normDist * canvas.width / 2;
-    const canvasY = canvas.height - normDist * canvas.height;
-    
-    // Draw return
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(canvasX, canvasY, 4, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Draw velocity line
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(canvasX, canvasY);
-    ctx.lineTo(canvasX, canvasY + relVel * 2);
-    ctx.stroke();
-  }
-}
-
-// Update info card for current stack
 function updateInfoCard() {
   const card = INFO_CARDS[currentStack];
   document.getElementById('info-title')!.textContent = card.name;
@@ -1080,686 +1040,22 @@ function updateInfoCard() {
   document.getElementById('info-example')!.textContent = card.example;
 }
 
-// Switch to a different stack profile
 function switchStack(profile: StackProfile) {
   if (profile === currentStack) return;
-  
   currentStack = profile;
-  
-  // Update view switcher buttons
   document.querySelectorAll('.view-btn').forEach(btn => {
     const btnProfile = (btn as HTMLElement).dataset['profile'] as StackProfile;
     btn.classList.toggle('active', btnProfile === profile);
   });
-  
-  // Update info card if visible
-  if (showInfoCard) {
-    updateInfoCard();
-  }
-  
-  // Determine target zone based on profile
-  const zoneMap: Record<StackProfile, ZoneType> = {
-    tesla: 'city',
-    waymo: 'city',
-    waabi: 'city',
-    aurora: 'highway',
-    rail: 'rail',
-    maritime: 'harbour',
-  };
-  
-  const targetZone = zoneMap[profile];
-  if (targetZone !== currentZone) {
-    // Reinitialize simulation with new zone
-    simulation = new Simulation({
-      seed: Date.now(),
-      profile: profile,
-      environment: simulation.getState().environment,
-      useOracle: false,
-      maxDuration: 3600,
-      zone: targetZone,
-    });
-    
-    rebuildZone(targetZone, profile);
-  } else {
-    // Same zone, just update overlays
-    updateOverlaysForStack(profile);
-  }
-  
-  console.log(`Switched to stack: ${profile} (zone: ${targetZone})`);
-}
-
-// Rebuild scene for a different zone
-function rebuildZone(zone: ZoneType, profile: StackProfile) {
-  currentZone = zone;
-  
-  // Clear existing zone-specific objects
-  clearZoneObjects();
-  
-  // Update ground/water
-  if (zone === 'harbour') {
-    setupHarbourZone();
-  } else if (zone === 'rail') {
-    setupRailZone();
-  } else if (zone === 'highway') {
-    setupHighwayZone();
-  } else {
-    setupCityZone();
-  }
-  
-  // Update ego vehicle based on profile
-  updateEgoVehicle(profile);
-  
-  // Update overlays
+  if (showInfoCard) updateInfoCard();
   updateOverlaysForStack(profile);
+  console.log(`Switched to stack: ${profile}`);
 }
 
-function addZoneMesh(obj: THREE.Object3D) {
-  scene.add(obj);
-  zoneMeshes.push(obj);
-}
-
-// Clear zone-specific objects
-function clearZoneObjects() {
-  if (waterMesh) {
-    scene.remove(waterMesh);
-    waterMesh = null;
-  }
-  trackMeshes.forEach(m => scene.remove(m));
-  trackMeshes = [];
-  buoyMeshes.forEach(m => scene.remove(m));
-  buoyMeshes = [];
-  aisShipVisuals.length = 0;
-  if (simWorldOverlay) {
-    scene.remove(simWorldOverlay);
-    simWorldOverlay = null;
-  }
-  for (const mesh of cityRoadMeshes) scene.remove(mesh);
-  cityRoadMeshes = [];
-  if (laneRoadGroup) {
-    scene.remove(laneRoadGroup);
-    laneRoadGroup = null;
-  }
-  for (const mesh of zoneMeshes) scene.remove(mesh);
-  zoneMeshes.length = 0;
-  
-  // Clear entity meshes for the zone
-  entityMeshes.forEach(mesh => scene.remove(mesh));
-  entityMeshes.clear();
-}
-
-// Setup harbour zone with water, buoys, ships
-function setupHarbourZone() {
-  // Hide city ground and every road mesh — open water only
-  groundMesh.visible = false;
-  for (const mesh of cityRoadMeshes) mesh.visible = false;
-  if (laneRoadGroup) laneRoadGroup.visible = false;
-  
-  const waterGeo = new THREE.PlaneGeometry(4000, 4000);
-  const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x15608a,
-    roughness: 0.18,
-    metalness: 0.45,
-  });
-  waterMesh = new THREE.Mesh(waterGeo, waterMat);
-  waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.set(0, -0.6, 0);
-  scene.add(waterMesh);
-  
-  // Docks / quay on the west bank (not roads)
-  const dock = new THREE.Mesh(
-    new THREE.BoxGeometry(40, 3, 220),
-    new THREE.MeshStandardMaterial({ color: 0x6b6254, roughness: 0.9 })
-  );
-  dock.position.set(-70, 1.2, 40);
-  addZoneMesh(dock);
-  for (const z of [-20, 20, 60, 100]) {
-    const pile = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.6, 0.7, 6, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3a2a1a })
-    );
-    pile.position.set(-48, 2, z);
-    addZoneMesh(pile);
-  }
-  const warehouse = new THREE.Mesh(
-    new THREE.BoxGeometry(22, 10, 36),
-    new THREE.MeshStandardMaterial({ color: 0x8a8070 })
-  );
-  warehouse.position.set(-88, 5, 20);
-  addZoneMesh(warehouse);
-
-  // Channel markers / buoys only — no asphalt
-  const buoyPositions = [
-    { x: -40, z: 80, type: 'port' as const },
-    { x: 40, z: 80, type: 'starboard' as const },
-    { x: -40, z: -40, type: 'port' as const },
-    { x: 40, z: -40, type: 'starboard' as const },
-    { x: -40, z: 200, type: 'port' as const },
-    { x: 40, z: 200, type: 'starboard' as const },
-    { x: 0, z: 20, type: 'fairway' as const },
-  ];
-  
-  buoyPositions.forEach(buoy => {
-    const buoyGeo = new THREE.ConeGeometry(2.2, 7, 8);
-    const buoyMat = new THREE.MeshStandardMaterial({
-      color: buoy.type === 'port' ? 0xff0000 : (buoy.type === 'starboard' ? 0x00ff00 : 0xffff00),
-      emissive: buoy.type === 'port' ? 0x330000 : (buoy.type === 'starboard' ? 0x003300 : 0x333300),
-    });
-    const buoyMeshObj = new THREE.Mesh(buoyGeo, buoyMat);
-    buoyMeshObj.position.set(buoy.x, 2.4, -buoy.z);
-    scene.add(buoyMeshObj);
-    buoyMeshes.push(buoyMeshObj);
-  });
-  
-  const targets = simulation.getState().maritimeTargets;
-  maritimeState.aisTargets = targets;
-  for (const target of targets) {
-    const shipGroup = createShipMesh();
-    shipGroup.scale.set(0.28, 0.28, 0.28);
-    shipGroup.position.set(target.position.x, 1, -target.position.y);
-    shipGroup.rotation.y = -target.heading + Math.PI / 2;
-    scene.add(shipGroup);
-    buoyMeshes.push(shipGroup as unknown as THREE.Mesh);
-    aisShipVisuals.push({ name: target.name, mesh: shipGroup });
-  }
-  
-  scene.background = new THREE.Color(0x6aa0c8);
-  scene.fog = new THREE.Fog(0x6aa0c8, 250, 2200);
-  camera.far = 4000;
-  camera.updateProjectionMatrix();
-}
-
-// Create ship mesh
-function createShipMesh(): THREE.Group {
-  const group = new THREE.Group();
-  
-  // Hull
-  const hullGeo = new THREE.BoxGeometry(150, 15, 25);
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-  const hull = new THREE.Mesh(hullGeo, hullMat);
-  hull.position.y = 5;
-  hull.castShadow = true;
-  group.add(hull);
-  
-  // Superstructure
-  const superGeo = new THREE.BoxGeometry(40, 20, 20);
-  const superMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-  const superstructure = new THREE.Mesh(superGeo, superMat);
-  superstructure.position.set(-30, 20, 0);
-  superstructure.castShadow = true;
-  group.add(superstructure);
-  
-  // Bridge
-  const bridgeGeo = new THREE.BoxGeometry(20, 8, 15);
-  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x2222aa });
-  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
-  bridge.position.set(-30, 35, 0);
-  bridge.castShadow = true;
-  group.add(bridge);
-  
-  // Containers on deck
-  const containerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff];
-  for (let i = 0; i < 5; i++) {
-    const contGeo = new THREE.BoxGeometry(12, 8, 8);
-    const contMat = new THREE.MeshStandardMaterial({ color: containerColors[i % 5] });
-    const container = new THREE.Mesh(contGeo, contMat);
-    container.position.set(20 + i * 15, 17, 0);
-    container.castShadow = true;
-    group.add(container);
-  }
-  
-  return group;
-}
-
-// Setup rail zone with tracks, signals, platforms
-function setupRailZone() {
-  const railMap = generateRailMap(Date.now());
-  
-  // Update ground to look like rail bed
-  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x4a4a4a);
-  groundMesh.position.x = 0;
-  
-  // Draw tracks
-  railMap.tracks.forEach(track => {
-    const points = track.points.map(p => new THREE.Vector3(p.position.x, 0.1, p.position.y));
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: 0x888888, linewidth: 3 });
-    const line = new THREE.Line(geometry, material);
-    addZoneMesh(line);
-    trackMeshes.push(line);
-    
-    // Rail ties
-    for (let i = 0; i < points.length - 1; i += 3) {
-      const tieGeo = new THREE.BoxGeometry(3, 0.2, 0.3);
-      const tieMat = new THREE.MeshStandardMaterial({ color: 0x4a3728 });
-      const tie = new THREE.Mesh(tieGeo, tieMat);
-      tie.position.copy(points[i]!);
-      tie.position.y = 0.05;
-      addZoneMesh(tie);
-    }
-  });
-  
-  // Add signals
-  railMap.signals.forEach(signal => {
-    const signalGroup = new THREE.Group();
-    
-    // Post
-    const postGeo = new THREE.CylinderGeometry(0.1, 0.1, 5, 8);
-    const postMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const post = new THREE.Mesh(postGeo, postMat);
-    post.position.y = 2.5;
-    signalGroup.add(post);
-    
-    // Signal head
-    const headGeo = new THREE.BoxGeometry(0.8, 1.5, 0.3);
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    const head = new THREE.Mesh(headGeo, headMat);
-    head.position.y = 5;
-    signalGroup.add(head);
-    
-    // Signal light
-    const lightColor = signal.state === 'clear' ? 0x00ff00 : (signal.state === 'caution' ? 0xffff00 : 0xff0000);
-    const lightGeo = new THREE.SphereGeometry(0.2, 16, 16);
-    const lightMat = new THREE.MeshBasicMaterial({ color: lightColor });
-    const light = new THREE.Mesh(lightGeo, lightMat);
-    light.position.y = 5;
-    light.position.z = 0.2;
-    signalGroup.add(light);
-    
-    signalGroup.position.set(signal.position.x, 0, signal.position.y);
-    addZoneMesh(signalGroup);
-  });
-  
-  // Add platforms
-  railMap.platforms.forEach(platform => {
-    const platGeo = new THREE.BoxGeometry(8, 1, 100);
-    const platMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-    const plat = new THREE.Mesh(platGeo, platMat);
-    plat.position.set(platform.position.x, 0.5, platform.position.y);
-    plat.castShadow = true;
-    addZoneMesh(plat);
-    
-    // Platform sign
-    const signGeo = new THREE.PlaneGeometry(5, 2);
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 128;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#000066';
-    ctx.fillRect(0, 0, 256, 128);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(platform.name, 128, 80);
-    const signTex = new THREE.CanvasTexture(canvas);
-    const signMat = new THREE.MeshBasicMaterial({ map: signTex });
-    const sign = new THREE.Mesh(signGeo, signMat);
-    sign.position.set(platform.position.x + 6, 4, platform.position.y);
-    sign.rotation.y = Math.PI / 2;
-    addZoneMesh(sign);
-  });
-  
-  // Add level crossing with stalled car
-  const crossing = railMap.levelCrossings[0];
-  if (crossing) {
-    // Crossing road
-    const roadGeo = new THREE.BoxGeometry(30, 0.1, 10);
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const road = new THREE.Mesh(roadGeo, roadMat);
-    road.position.set(crossing.position.x, 0.05, crossing.position.y);
-    addZoneMesh(road);
-    
-    // Stalled car on crossing
-    if (crossing.stalledCar) {
-      const carMesh = createEntityMesh('car');
-      carMesh.position.set(crossing.stalledCar.transform.position.x, 0.8, crossing.stalledCar.transform.position.y);
-      scene.add(carMesh);
-      entityMeshes.set(crossing.stalledCar.id, carMesh as THREE.Mesh);
-    }
-    
-    // Crossing barriers
-    const barrierGeo = new THREE.BoxGeometry(0.2, 3, 0.2);
-    const barrierMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    [-1, 1].forEach(side => {
-      const barrier = new THREE.Mesh(barrierGeo, barrierMat);
-      barrier.position.set(crossing.position.x + side * 8, 1.5, crossing.position.y - 5);
-      addZoneMesh(barrier);
-    });
-  }
-  
-  scene.fog = new THREE.Fog(0x87ceeb, 100, 2000);
-}
-
-// Setup highway zone for trucking
-function setupHighwayZone() {
-  const highwayMap = generateHighwayMap(Date.now());
-  
-  // Update ground to highway asphalt
-  groundMesh.visible = true;
-  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x2a2a2a);
-  groundMesh.position.set(0, 0, 0);
-  
-  // Draw highway lanes with markings
-  const laneWidth = 3.7;
-  const numLanes = 3;
-  
-  // White lane markings
-  for (let l = 0; l <= numLanes; l++) {
-    const x = (l - numLanes / 2) * laneWidth + laneWidth * numLanes / 2;
-    const markingGeo = new THREE.PlaneGeometry(0.15, 2000);
-    const markingMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const marking = new THREE.Mesh(markingGeo, markingMat);
-    marking.rotation.x = -Math.PI / 2;
-    marking.position.set(x, 0.02, 0);
-    addZoneMesh(marking);
-  }
-  
-  // Center median (yellow)
-  const medianGeo = new THREE.PlaneGeometry(0.3, 2000);
-  const medianMat = new THREE.MeshBasicMaterial({ color: 0xffcc00 });
-  const median = new THREE.Mesh(medianGeo, medianMat);
-  median.rotation.x = -Math.PI / 2;
-  median.position.set(-2.5, 0.02, 0);
-  addZoneMesh(median);
-  
-  // Highway barriers
-  highwayMap.staticEntities.filter(e => e.classType === 'barrier').forEach(barrier => {
-    const barrierGeo = new THREE.BoxGeometry(0.5, 1, 30);
-    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    const mesh = new THREE.Mesh(barrierGeo, barrierMat);
-    mesh.position.set(barrier.transform.position.x, 0.5, barrier.transform.position.y);
-    mesh.castShadow = true;
-    addZoneMesh(mesh);
-  });
-  
-  // Bridge overpass at y=0
-  const bridgeGeo = new THREE.BoxGeometry(80, 2, 120);
-  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
-  bridge.position.set(0, 10, 0);
-  bridge.castShadow = true;
-  addZoneMesh(bridge);
-  
-  // Bridge supports
-  [-35, 35].forEach(x => {
-    const supportGeo = new THREE.BoxGeometry(3, 10, 3);
-    const supportMat = new THREE.MeshStandardMaterial({ color: 0x555555 });
-    const support = new THREE.Mesh(supportGeo, supportMat);
-    support.position.set(x, 5, 0);
-    support.castShadow = true;
-    addZoneMesh(support);
-  });
-  
-  scene.fog = new THREE.Fog(0x87ceeb, 100, 1500);
-}
-
-// Setup city zone (default)
-function setupCityZone() {
-  groundMesh.visible = true;
-  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x2d5a27);
-  groundMesh.position.set(0, 0, 0);
-  scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 80, 350);
-  buildCityRoads();
-}
-
-// Update ego vehicle based on stack profile
-function updateEgoVehicle(profile: StackProfile) {
-  // Remove old ego
-  scene.remove(egoMesh);
-  
-  switch (profile) {
-    case 'aurora':
-      egoMesh = createTruckMesh() as unknown as THREE.Mesh;
-      // Position on highway
-      egoMesh.position.set(5, 0, 0);
-      break;
-    case 'rail':
-      egoMesh = createTrainMesh() as unknown as THREE.Mesh;
-      // Position on rail
-      egoMesh.position.set(0, 0, 0);
-      break;
-    case 'maritime':
-      egoMesh = createOwnShipMesh() as unknown as THREE.Mesh;
-      egoMesh.scale.set(0.05, 0.05, 0.05);
-      egoMesh.position.set(0, 1, 0);
-      break;
-    default:
-      // Car for tesla, waymo, waabi
-      const carGroup = createEgoVehicle();
-      egoMesh = carGroup as unknown as THREE.Mesh;
-      break;
-  }
-  
-  scene.add(egoMesh);
-  
-  // Update camera to view the new ego vehicle
-  if (profile === 'maritime') {
-    camera.position.set(0, 50, 100);
-    camera.lookAt(0, 0, 0);
-  } else if (profile === 'rail') {
-    camera.position.set(0, 20, 50);
-    camera.lookAt(0, 0, -50);
-  } else if (profile === 'aurora') {
-    camera.position.set(5, 15, 30);
-    camera.lookAt(5, 0, -50);
-  }
-}
-
-// Create truck mesh for Aurora FMCW
-function createTruckMesh(): THREE.Group {
-  const group = new THREE.Group();
-  
-  // Cab
-  const cabGeo = new THREE.BoxGeometry(4, 3.5, 2.8);
-  const cabMat = new THREE.MeshStandardMaterial({ color: 0xcc3333, metalness: 0.5, roughness: 0.4 });
-  const cab = new THREE.Mesh(cabGeo, cabMat);
-  cab.position.set(5, 2, 0);
-  cab.castShadow = true;
-  group.add(cab);
-  
-  // Cab windows
-  const windowGeo = new THREE.BoxGeometry(0.1, 1.5, 2.2);
-  const windowMat = new THREE.MeshStandardMaterial({ color: 0x222244, metalness: 0.3 });
-  const frontWindow = new THREE.Mesh(windowGeo, windowMat);
-  frontWindow.position.set(7, 2.5, 0);
-  group.add(frontWindow);
-  
-  // Trailer
-  const trailerGeo = new THREE.BoxGeometry(12, 4, 2.6);
-  const trailerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-  const trailer = new THREE.Mesh(trailerGeo, trailerMat);
-  trailer.position.set(-3, 2.2, 0);
-  trailer.castShadow = true;
-  group.add(trailer);
-  
-  // Wheels (18 wheeler)
-  const wheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.4, 16);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-  const wheelPositions: [number, number, number][] = [
-    [6, 0.55, 1.2], [6, 0.55, -1.2],
-    [3, 0.55, 1.2], [3, 0.55, -1.2],
-    [-3, 0.55, 1.2], [-3, 0.55, -1.2],
-    [-5, 0.55, 1.2], [-5, 0.55, -1.2],
-    [-7, 0.55, 1.2], [-7, 0.55, -1.2],
-  ];
-  wheelPositions.forEach(([wx, wy, wz]) => {
-    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-    wheel.position.set(wx, wy, wz);
-    wheel.rotation.x = Math.PI / 2;
-    group.add(wheel);
-  });
-  
-  // FMCW radar dome on top
-  const radarGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  const radarMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-  const radar = new THREE.Mesh(radarGeo, radarMat);
-  radar.position.set(5, 4, 0);
-  group.add(radar);
-  
-  return group;
-}
-
-// Create train mesh
-function createTrainMesh(): THREE.Group {
-  const group = new THREE.Group();
-  
-  // Locomotive body
-  const bodyGeo = new THREE.BoxGeometry(18, 4, 3);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0055aa, metalness: 0.6, roughness: 0.3 });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.set(0, 2.5, 0);
-  body.castShadow = true;
-  group.add(body);
-  
-  // Cab
-  const cabGeo = new THREE.BoxGeometry(5, 3, 2.8);
-  const cabMat = new THREE.MeshStandardMaterial({ color: 0x003388 });
-  const cab = new THREE.Mesh(cabGeo, cabMat);
-  cab.position.set(5, 4.5, 0);
-  cab.castShadow = true;
-  group.add(cab);
-  
-  // Windows
-  const windowGeo = new THREE.BoxGeometry(0.1, 1.5, 2);
-  const windowMat = new THREE.MeshStandardMaterial({ color: 0x222244, metalness: 0.3 });
-  const window = new THREE.Mesh(windowGeo, windowMat);
-  window.position.set(7.5, 4.5, 0);
-  group.add(window);
-  
-  // Headlight
-  const lightGeo = new THREE.CircleGeometry(0.3, 16);
-  const lightMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
-  const headlight = new THREE.Mesh(lightGeo, lightMat);
-  headlight.position.set(9, 3, 0);
-  headlight.rotation.y = Math.PI / 2;
-  group.add(headlight);
-  
-  // Wheels/bogies
-  const bogieGeo = new THREE.BoxGeometry(3, 0.8, 2.5);
-  const bogieMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-  [-5, 5].forEach(x => {
-    const bogie = new THREE.Mesh(bogieGeo, bogieMat);
-    bogie.position.set(x, 0.4, 0);
-    group.add(bogie);
-    
-    // Wheels on bogie
-    const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.2, 16);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-    [-1, 1].forEach(wx => {
-      const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-      wheel.position.set(x + wx, 0.5, 1.3);
-      wheel.rotation.x = Math.PI / 2;
-      group.add(wheel);
-      const wheel2 = wheel.clone();
-      wheel2.position.z = -1.3;
-      group.add(wheel2);
-    });
-  });
-  
-  return group;
-}
-
-// Create own ship mesh for maritime
-function createOwnShipMesh(): THREE.Group {
-  const group = new THREE.Group();
-  
-  // Hull - larger container ship
-  const hullGeo = new THREE.BoxGeometry(200, 18, 35);
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c });
-  const hull = new THREE.Mesh(hullGeo, hullMat);
-  hull.position.y = 5;
-  hull.castShadow = true;
-  group.add(hull);
-  
-  // Bow shape
-  const bowGeo = new THREE.ConeGeometry(17.5, 30, 4);
-  const bowMat = new THREE.MeshStandardMaterial({ color: 0x1a3a5c });
-  const bow = new THREE.Mesh(bowGeo, bowMat);
-  bow.position.set(115, 5, 0);
-  bow.rotation.z = -Math.PI / 2;
-  group.add(bow);
-  
-  // Superstructure
-  const superGeo = new THREE.BoxGeometry(50, 25, 30);
-  const superMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-  const superstructure = new THREE.Mesh(superGeo, superMat);
-  superstructure.position.set(-50, 25, 0);
-  superstructure.castShadow = true;
-  group.add(superstructure);
-  
-  // Bridge
-  const bridgeGeo = new THREE.BoxGeometry(25, 10, 25);
-  const bridgeMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-  const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
-  bridge.position.set(-50, 45, 0);
-  bridge.castShadow = true;
-  group.add(bridge);
-  
-  // Bridge windows
-  const bridgeWindowGeo = new THREE.BoxGeometry(0.2, 5, 20);
-  const bridgeWindowMat = new THREE.MeshStandardMaterial({ color: 0x224466 });
-  const bridgeWindow = new THREE.Mesh(bridgeWindowGeo, bridgeWindowMat);
-  bridgeWindow.position.set(-37.5, 45, 0);
-  group.add(bridgeWindow);
-  
-  // Funnel/stack
-  const funnelGeo = new THREE.CylinderGeometry(3, 4, 15, 16);
-  const funnelMat = new THREE.MeshStandardMaterial({ color: 0xcc3333 });
-  const funnel = new THREE.Mesh(funnelGeo, funnelMat);
-  funnel.position.set(-70, 35, 0);
-  funnel.castShadow = true;
-  group.add(funnel);
-  
-  // Containers on deck
-  const containerColors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
-  for (let row = 0; row < 6; row++) {
-    for (let col = 0; col < 3; col++) {
-      const contGeo = new THREE.BoxGeometry(12, 8.5, 8);
-      const contMat = new THREE.MeshStandardMaterial({ color: containerColors[(row + col) % 6] });
-      const container = new THREE.Mesh(contGeo, contMat);
-      container.position.set(30 + row * 15, 18 + col * 9, 0);
-      container.castShadow = true;
-      group.add(container);
-    }
-  }
-  
-  // Radar mast
-  const mastGeo = new THREE.CylinderGeometry(0.3, 0.3, 8, 8);
-  const mastMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-  const mast = new THREE.Mesh(mastGeo, mastMat);
-  mast.position.set(-50, 55, 0);
-  group.add(mast);
-  
-  // Radar scanner
-  const scannerGeo = new THREE.BoxGeometry(6, 0.5, 1);
-  const scannerMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-  const scanner = new THREE.Mesh(scannerGeo, scannerMat);
-  scanner.position.set(-50, 60, 0);
-  group.add(scanner);
-  
-  return group;
-}
-
-// Update overlays for the current stack
 function updateOverlaysForStack(profile: StackProfile) {
-  // Toggle BEV overlay for Waabi
   bevOverlayEnabled = profile === 'waabi';
-  
-  // Toggle AIS overlay for maritime
-  aisOverlayEnabled = profile === 'maritime';
-  
-  // Update HUD visibility
   const bevHud = document.getElementById('bev-overlay');
-  const aisHud = document.getElementById('ais-overlay');
-  const colregsHud = document.getElementById('colregs-display');
-  const railHud = document.getElementById('rail-display');
-  const fmcwHud = document.getElementById('fmcw-display');
-  
-  if (bevHud) bevHud.style.display = bevOverlayEnabled ? 'block' : 'none';
-  if (aisHud) aisHud.style.display = aisOverlayEnabled ? 'block' : 'none';
-  if (colregsHud) colregsHud.style.display = profile === 'maritime' ? 'block' : 'none';
-  if (railHud) railHud.style.display = profile === 'rail' ? 'block' : 'none';
-  if (fmcwHud) fmcwHud.style.display = profile === 'aurora' ? 'block' : 'none';
+  if (bevHud) bevHud.classList.toggle('visible', bevOverlayEnabled);
 }
 
 // Render BEV occupancy heatmaps for Waabi
@@ -2244,21 +1540,15 @@ function simulateAlternateStackDetections(state: ReturnType<Simulation['getState
   
   // Different stacks have different detection characteristics
   const detectionProbability = {
-    tesla: { pedestrian: 0.85, car: 0.95 },  // Vision-based, struggles with pedestrians
-    waymo: { pedestrian: 0.95, car: 0.98 },  // Multi-sensor fusion, best overall
-    waabi: { pedestrian: 0.90, car: 0.96 },  // Simulation-trained
-    aurora: { pedestrian: 0.88, car: 0.97 }, // FMCW radar helps
-    rail: { pedestrian: 0.70, car: 0.95 },   // Fixed path, less need for pedestrians
-    maritime: { pedestrian: 0.60, car: 0.50 }, // Ships don't encounter cars/pedestrians
+    tesla: { pedestrian: 0.85, car: 0.95 },
+    waymo: { pedestrian: 0.95, car: 0.98 },
+    waabi: { pedestrian: 0.90, car: 0.96 },
   };
   
   const distanceThreshold = {
-    tesla: 60,  // Cameras have good range
-    waymo: 80,  // Lidar + cameras
-    waabi: 70,  // BEV representation
-    aurora: 100, // FMCW radar long range
-    rail: 200,   // Long straight tracks
-    maritime: 500, // Long range radar
+    tesla: 60,
+    waymo: 80,
+    waabi: 70,
   };
   
   const probs = detectionProbability[stack];
@@ -2373,9 +1663,6 @@ function updateCompareTimingDisplay(currentTime: number) {
     tesla: 'F1: Tesla-style',
     waymo: 'F2: Waymo-style',
     waabi: 'F3: Waabi-style',
-    aurora: 'F4: Aurora FMCW',
-    rail: 'F5: Train',
-    maritime: 'F6: Ship',
   };
   
   if (leftLabelEl) leftLabelEl.textContent = stackLabels[currentStack];
@@ -2447,96 +1734,119 @@ function updateMinimap() {
   }
 }
 
-// Handle keyboard input
+function bindDriveKey(e: KeyboardEvent, down: boolean) {
+  const k = e.key;
+  const code = e.code;
+  let used = false;
+  if (k === 'w' || k === 'W' || k === 'ArrowUp') { inputState.forward = down; used = true; }
+  else if (k === 's' || k === 'S' || k === 'ArrowDown') { inputState.backward = down; used = true; }
+  else if (k === 'a' || k === 'A' || k === 'ArrowLeft') { inputState.left = down; used = true; }
+  else if (k === 'd' || k === 'D' || k === 'ArrowRight') { inputState.right = down; used = true; }
+  else if (k === ' ' || code === 'Space') { inputState.brake = down; used = true; }
+  if (used) {
+    if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
+    if (down && !isPaused) {
+      if (!isManual()) takeManual(true);
+    }
+  }
+  return used;
+}
+
 function setupInput() {
+  const canvas = renderer.domElement;
+  canvas.addEventListener('pointerdown', (e) => {
+    if (isPaused) return;
+    if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
+    pointerDragging = true;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointerDragging) return;
+    const dx = e.clientX - lastPointerX;
+    const dy = e.clientY - lastPointerY;
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    orbitYaw -= dx * 0.008;
+    orbitPitch = Math.max(0.08, Math.min(1.2, orbitPitch + dy * 0.006));
+  });
+  canvas.addEventListener('pointerup', () => { pointerDragging = false; });
+  canvas.addEventListener('pointerleave', () => { pointerDragging = false; });
+  canvas.addEventListener('wheel', (e) => {
+    if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
+    e.preventDefault();
+    orbitDist = Math.max(6, Math.min(70, orbitDist + e.deltaY * 0.03));
+  }, { passive: false });
+
   document.addEventListener('keydown', (e) => {
+    if (e.repeat && (e.key === 'Escape' || e.key === 't' || e.key === 'T')) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      togglePause();
+      return;
+    }
+    if (isPaused) {
+      if (e.key === 'Backspace') { e.preventDefault(); restartSim(); }
+      return;
+    }
+    if (bindDriveKey(e, true)) return;
+
     switch (e.key.toLowerCase()) {
-      case 'w': inputState.forward = true; break;
-      case 's': inputState.backward = true; break;
-      case 'a': inputState.left = true; break;
-      case 'd': inputState.right = true; break;
-      case ' ': inputState.brake = true; break;
-      
       case 't':
-        // Toggle takeover
-        if (simulation.getState().controlSource === 'policy') {
-          document.getElementById('takeover-menu')!.classList.add('visible');
-        } else {
-          simulation.releaseControl();
-        }
+        setAutopilot(isManual());
         break;
-        
-      case 'c':
-        // Cycle camera mode
-        const modes: Array<typeof cameraMode> = ['chase', 'topdown', 'cockpit'];
-        const idx = modes.indexOf(cameraMode);
-        cameraMode = modes[(idx + 1) % modes.length]!;
+      case 'c': {
+        const modes: CameraMode[] = ['chase', 'hood', 'bev', 'orbit'];
+        setCameraMode(modes[(modes.indexOf(cameraMode) + 1) % modes.length]!);
         break;
-        
+      }
       case 'v':
-        // Toggle AI view
         showAIView = !showAIView;
         document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
         document.getElementById('decision-banner')!.classList.toggle('visible', showAIView);
         try { localStorage.setItem('autonomy-ai-view', showAIView ? '1' : '0'); } catch { /* ignore */ }
         perceptionViz?.setEnabled(showAIView);
         break;
-        
       case 'g':
-        // Toggle ground truth overlay
         showGroundTruth = !showGroundTruth;
         break;
-        
       case 'i':
-        // Toggle info card
         showInfoCard = !showInfoCard;
-        if (showInfoCard) {
-          updateInfoCard();
-        }
+        if (showInfoCard) updateInfoCard();
         document.getElementById('info-card')!.classList.toggle('visible', showInfoCard);
         break;
-        
       case 'm':
-        // Toggle compare mode — always Tesla vs Waymo in the city
         compareMode = !compareMode;
         document.getElementById('compare-container')!.classList.toggle('visible', compareMode);
         document.getElementById('canvas-container')!.style.display = compareMode ? 'none' : 'block';
-        
         if (compareMode) {
-          if (currentZone !== 'city') {
-            switchStack('tesla');
-          }
           currentStack = 'tesla';
           compareStack = 'waymo';
           simulation.injectScenario({ type: 'occluded_pedestrian', params: {} });
           initCompareMode();
         }
-        console.log(`Compare mode: ${compareMode ? 'ON' : 'OFF'}`);
         break;
-        
-      case 'r':
-        // Toggle recording
+      case 'k':
         isRecording = !isRecording;
         document.getElementById('recording-indicator')!.classList.toggle('visible', isRecording);
         break;
-        
-      case 'n':
-        // Toggle day/night
+      case 'r':
+        resetCameraRig();
+        break;
+      case 'n': {
         const state = simulation.getState();
         const newTimeOfDay = state.environment.timeOfDay === 'day' ? 'night' : 'day';
         state.environment.timeOfDay = newTimeOfDay;
-        
-        // Update scene lighting
         if (newTimeOfDay === 'night') {
           scene.background = new THREE.Color(0x0a0a1a);
-          scene.fog = new THREE.Fog(0x0a0a1a, 50, 200);
+          scene.fog = new THREE.Fog(0x0a0a1a, 50, QUALITY[qualityLevel].fogFar * 0.7);
         } else {
           scene.background = new THREE.Color(0x87ceeb);
-          scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+          scene.fog = new THREE.Fog(0x87ceeb, 80, QUALITY[qualityLevel].fogFar);
         }
         break;
-        
-      // Scenario injection
+      }
       case '1':
         simulation.injectScenario({ type: 'jaywalker', params: {} });
         break;
@@ -2546,56 +1856,34 @@ function setupInput() {
       case '3':
         simulation.injectScenario({ type: 'vehicle_cutin', params: {} });
         break;
-      case '4':
-        // Toggle rain/fog weather (scenario 4 per spec)
+      case '4': {
         const weatherState = simulation.getState();
-        weatherState.environment.weather = 
-          weatherState.environment.weather === 'clear' ? 'rain' : 
+        weatherState.environment.weather =
+          weatherState.environment.weather === 'clear' ? 'rain' :
           weatherState.environment.weather === 'rain' ? 'fog' : 'clear';
-        weatherState.environment.visibility = 
+        weatherState.environment.visibility =
           weatherState.environment.weather === 'clear' ? 1.0 :
           weatherState.environment.weather === 'rain' ? 0.6 : 0.3;
         break;
+      }
       case '5':
-        // Context-dependent obstacle (scenario 5 per spec)
-        // Stalled car in lane for city, car on crossing for rail, boat for ship
         simulation.injectScenario({ type: 'stalled_vehicle', params: {} });
         break;
-        
-      case 'p':
-        isPaused = !isPaused;
+      case 'backspace':
+        e.preventDefault();
+        restartSim();
         break;
     }
-    
-    // Function keys for stack switching (F1-F6 per spec)
+
     if (e.key === 'F1') { e.preventDefault(); switchStack('tesla'); }
     if (e.key === 'F2') { e.preventDefault(); switchStack('waymo'); }
     if (e.key === 'F3') { e.preventDefault(); switchStack('waabi'); }
-    if (e.key === 'F4') { e.preventDefault(); switchStack('aurora'); }
-    if (e.key === 'F5') { e.preventDefault(); switchStack('rail'); }
-    if (e.key === 'F6') { e.preventDefault(); switchStack('maritime'); }
   });
-  
+
   document.addEventListener('keyup', (e) => {
-    switch (e.key.toLowerCase()) {
-      case 'w': inputState.forward = false; break;
-      case 's': inputState.backward = false; break;
-      case 'a': inputState.left = false; break;
-      case 'd': inputState.right = false; break;
-      case ' ': inputState.brake = false; break;
-    }
+    bindDriveKey(e, false);
   });
-  
-  // Takeover reason buttons
-  document.querySelectorAll('.takeover-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const reason = (e.target as HTMLElement).dataset['reason'] as TakeoverReason;
-      simulation.takeover(reason);
-      document.getElementById('takeover-menu')!.classList.remove('visible');
-    });
-  });
-  
-  // Ride request buttons
+
   document.getElementById('accept-ride')!.addEventListener('click', () => {
     const state = simulation.getState();
     if (state.rideRequests.length > 0) {
@@ -2603,92 +1891,97 @@ function setupInput() {
       document.getElementById('ride-request')!.classList.remove('visible');
     }
   });
-  
   document.getElementById('decline-ride')!.addEventListener('click', () => {
     document.getElementById('ride-request')!.classList.remove('visible');
   });
-  
-  // View switcher buttons
   document.querySelectorAll('.view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const profile = (btn as HTMLElement).dataset['profile'] as StackProfile;
       switchStack(profile);
     });
   });
+  document.getElementById('pause-resume')?.addEventListener('click', () => setPaused(false));
+  document.getElementById('pause-restart')?.addEventListener('click', () => restartSim());
+  document.getElementById('gear-btn')?.addEventListener('click', () => togglePause());
+  document.querySelectorAll('#quality-seg button').forEach(btn => {
+    btn.addEventListener('click', () => applyQuality((btn as HTMLElement).dataset['quality'] as QualityLevel));
+  });
+  document.querySelectorAll('#camera-seg button').forEach(btn => {
+    btn.addEventListener('click', () => setCameraMode((btn as HTMLElement).dataset['camera'] as CameraMode));
+  });
+  document.getElementById('shadow-toggle')?.addEventListener('change', (ev) => {
+    shadowMode = (ev.target as HTMLInputElement).checked;
+    document.body.dataset['shadowMode'] = shadowMode ? 'on' : 'off';
+  });
+  document.getElementById('perception-model')?.addEventListener('change', () => {
+    /* heuristic vs v1 is displayed in the pause menu; ONNX path uses the same HUD */
+  });
 }
 
-// Animation loop
 let lastTime = 0;
 let displayFps = 0;
 let fpsFrames = 0;
 let fpsLast = 0;
 function animate(time: number) {
   requestAnimationFrame(animate);
-  
+
   fpsFrames++;
   if (time - fpsLast >= 500) {
     displayFps = Math.round((fpsFrames * 1000) / Math.max(1, time - fpsLast));
     fpsFrames = 0;
     fpsLast = time;
   }
-  
-  const dt = Math.min((time - lastTime) / 1000, 0.1);
+
+  const frameDt = Math.min((time - lastTime) / 1000, 0.25);
   lastTime = time;
-  
+
   if (!isPaused) {
-    // Get human input if in manual control
-    const state = simulation.getState();
-    let humanInput = undefined;
-    
-    if (state.controlSource === 'human') {
-      humanInput = {
-        throttle: inputState.forward ? 1 : inputState.backward ? -0.5 : 0,
-        steering: inputState.left ? -1 : inputState.right ? 1 : 0,
-        brake: inputState.brake ? 1 : 0,
-      };
+    const driving = anyDriveHeld();
+    if (driving && !isManual()) takeManual(true);
+    const humanInput = isManual() ? humanInputFromKeys() : undefined;
+    simAccumulator += frameDt;
+    if (simAccumulator > 0.25) simAccumulator = 0.25;
+    while (simAccumulator >= SIM_DT) {
+      prevEgoX = currEgoX;
+      prevEgoY = currEgoY;
+      prevEgoYaw = currEgoYaw;
+      simulation.step(SIM_DT, humanInput);
+      captureEgoPose();
+      updateEntityMeshes();
+      updateDetectionMeshes();
+      simAccumulator -= SIM_DT;
     }
-    
-    // Step simulation
-    simulation.step(dt, humanInput);
-    
-    // Update ego mesh
-    // Add Math.PI to flip the car so we see its rear (not headlights) from chase camera
-    const egoPos = state.ego.transform.position;
-    egoMesh.position.set(egoPos.x, 0.75, -egoPos.y);
-    egoMesh.rotation.y = -state.ego.transform.rotation + Math.PI;
-    
-    // Update other meshes
-    updateEntityMeshes();
-    updateDetectionMeshes();
-  }
-  
-  // Update camera
-  updateCamera();
-  
-  // Update HUD
-  updateHUD();
-  updateMinimap();
-  
-  // Update Waabi BEV display if enabled
-  if (bevOverlayEnabled && !isPaused) {
-    renderBEVHeatmaps();
-  }
-  
-  // Update compare mode if active
-  if (compareMode) {
-    updateCompareMode();
   }
 
-  updateAIView();
-  
-  // Render (only if not in compare mode, which has its own rendering)
-  if (!compareMode) {
-    renderer.render(scene, camera);
+  const alpha = isPaused ? 1 : simAccumulator / SIM_DT;
+  const ego = interpolatedEgo(alpha);
+  egoMesh.position.set(ego.x, 0.75, -ego.y);
+  egoMesh.rotation.y = -ego.yaw + Math.PI;
+  updateCamera(frameDt, ego.x, ego.y, ego.yaw);
+
+  if (time - lastHudMs >= 200) {
+    lastHudMs = time;
+    updateHUD();
+    updateMinimap();
   }
-  // Compare mode rendering is handled by updateCompareMode()
+
+  if (compareMode) updateCompareMode();
+
+  if (!isPaused && time - lastAiViewMs >= 200) {
+    lastAiViewMs = time;
+    if (bevOverlayEnabled) renderBEVHeatmaps();
+    updateAIView(false);
+  }
+
+  rawCameraFrame++;
+  if (showAIView && !compareMode && !isPaused && rawCameraFrame % 3 === 0) {
+    updateAIView(true);
+  }
+
+  if (!compareMode) renderer.render(scene, camera);
 }
 
-function updateAIView() {
+function updateAIView(drawRawScene: boolean) {
   const banner = document.getElementById('decision-banner');
   const state = simulation.getState();
   const agents = [...state.trafficVehicles, ...state.pedestrians];
@@ -2705,9 +1998,6 @@ function updateAIView() {
     groundTruth: agents,
     showGroundTruth,
     plannerOutput: state.lastPlannerOutput,
-    aisTargets: state.maritimeTargets,
-    encounters: state.maritimeEncounters,
-    maritimeAction: state.maritimeAction,
     visionDetections: latestVisionDetections,
     occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
   };
@@ -2734,9 +2024,6 @@ function updateAIView() {
       tesla: 'AI View — Tesla-style cameras + occupancy voxels',
       waymo: 'AI View — Waymo-style lidar / radar / fused boxes',
       waabi: 'AI View — Waabi-style BEV occupancy-flow',
-      aurora: 'AI View — Aurora FMCW velocity-colored points',
-      rail: 'AI View — rail corridor obstacle detection',
-      maritime: 'AI View — marine radar / AIS + CPA vectors',
     };
     header.textContent = names[currentStack] + '  (V hide · G ground truth)';
   }
@@ -2744,7 +2031,7 @@ function updateAIView() {
   const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
   if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
 
-  if (rawCameraRenderer && rawCamera && !compareMode) {
+  if (drawRawScene && rawCameraRenderer && rawCamera && !compareMode) {
     const ego = state.ego;
     const yaw = ego.transform.rotation;
     rawCamera.position.set(
@@ -2770,7 +2057,7 @@ function createEgoVehicle(): THREE.Group {
   
   // Main body
   const bodyGeo = new THREE.BoxGeometry(4.2, 1.2, 1.8);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0066cc, metalness: 0.7, roughness: 0.3 });
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0x0066cc});
   const body = new THREE.Mesh(bodyGeo, bodyMat);
   body.position.y = 0.6;
   body.castShadow = true;
@@ -2778,7 +2065,7 @@ function createEgoVehicle(): THREE.Group {
   
   // Cabin with windows
   const cabinGeo = new THREE.BoxGeometry(2.4, 0.9, 1.6);
-  const cabinMat = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.3, roughness: 0.4 });
+  const cabinMat = new THREE.MeshLambertMaterial({ color: 0x111122});
   const cabin = new THREE.Mesh(cabinGeo, cabinMat);
   cabin.position.set(-0.2, 1.35, 0);
   cabin.castShadow = true;
@@ -2786,14 +2073,14 @@ function createEgoVehicle(): THREE.Group {
   
   // Roof sensor dome (lidar)
   const lidarGeo = new THREE.CylinderGeometry(0.15, 0.2, 0.15, 16);
-  const lidarMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  const lidarMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
   const lidar = new THREE.Mesh(lidarGeo, lidarMat);
   lidar.position.set(0, 1.9, 0);
   group.add(lidar);
   
   // Wheels
   const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
-  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
   const egoWheelPositions: [number, number, number][] = [[1.3, 0.35, 0.9], [1.3, 0.35, -0.9], [-1.3, 0.35, 0.9], [-1.3, 0.35, -0.9]];
   for (const [wx, wy, wz] of egoWheelPositions) {
     const wheel = new THREE.Mesh(wheelGeo, wheelMat);
@@ -2804,7 +2091,7 @@ function createEgoVehicle(): THREE.Group {
   
   // Headlights
   const lightGeo = new THREE.CircleGeometry(0.15, 8);
-  const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
+  const lightMat = new THREE.MeshLambertMaterial({ color: 0xffffcc, emissive: 0xffffcc, emissiveIntensity: 0.5 });
   const headlightL = new THREE.Mesh(lightGeo, lightMat);
   headlightL.position.set(2.1, 0.6, 0.6);
   headlightL.rotation.y = Math.PI / 2;
@@ -2817,31 +2104,26 @@ function createEgoVehicle(): THREE.Group {
   return group;
 }
 
-// Initialize and start
 async function init() {
   console.log('Initializing AUTONOMY CITY...');
-  await loadWasmKernels();
-  
-  // Initialize Three.js
+  const kernels = await loadWasmKernels();
+  console.log(`[autonomy-sim] kernels available=${kernels.available} (castRays=${typeof getWasmKernels().castRays})`);
+
   initThreeJS();
-  
-  // Create simulation
+
   simulation = new Simulation({
     seed: Date.now(),
     profile: 'baseline_lidar',
     environment: { timeOfDay: 'day', weather: 'clear', visibility: 1 },
     useOracle: false,
-    maxDuration: 3600, // 1 hour
+    maxDuration: 3600,
   });
-  
-  // Replace the basic ego mesh with a detailed one
+
   scene.remove(egoMesh);
   const egoGroup = createEgoVehicle();
   scene.add(egoGroup);
   egoMesh = egoGroup as unknown as THREE.Mesh;
-  
-  // City roads already built in initThreeJS via buildCityRoads().
-  // Do not also add createRoads() — that leftover group survived harbour switches.
+
   perceptionViz = new PerceptionVisualizer(scene);
   try {
     const stored = localStorage.getItem('autonomy-ai-view');
@@ -2858,17 +2140,20 @@ async function init() {
     rawCameraRenderer.setPixelRatio(1);
     rawCamera = new THREE.PerspectiveCamera(70, 320 / 180, 0.2, 200);
   }
-  
-  // Setup input handlers
+
+  applyQuality('med');
+  rebuildStaticCity();
+  captureEgoPose();
+  prevEgoX = currEgoX;
+  prevEgoY = currEgoY;
+  prevEgoYaw = currEgoYaw;
   setupInput();
-  
-  // Hide loading screen
+  showDriveHintOnce();
+  syncDriveBadge();
+
   document.getElementById('loading')!.classList.add('hidden');
-  
-  // Start animation loop
   lastTime = performance.now();
   requestAnimationFrame(animate);
-  
   console.log('AUTONOMY CITY started!');
 }
 

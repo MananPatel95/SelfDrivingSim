@@ -208,9 +208,9 @@ The F1 of 0.991 is expected in simulation for these reasons:
 | Night + fog vision degradation visible | ✓ PASS | Screenshot: `07-night-fog.png` |
 | Sim World generates 20+ adversarial variants | ✓ PASS | Screenshot: `02-waabi-bev.png` shows Sim World table with 20 variants |
 | Sim World failures appear in `mine` run | ✓ PASS | Log: "simworld_failure: 16" in mining output |
-| Train brakes only; ship COLREGs rules | ✓ PASS | Screenshot: `05-rail-train.png` (brake-only), `03-harbour-ship.png` (Rule 14) |
+| Train / ship stacks | removed | F4–F6 (Aurora / rail / maritime) dropped; city-only F1–F3 + compare |
 | Disclaimer visible; no trademarks | ✓ PASS | index.html disclaimer, "-style" names only |
-| Zones are zone-aware (no city in harbour/rail/highway) | ✓ PASS | Screenshots show proper zone-specific content |
+| City-only scene | ✓ PASS | Procedural city; no highway / rail / harbour zones |
 | QA precision/recall >= 80% | ✓ PASS | **Recall 91.2%, Precision 96.8%** per error type |
 | Different vendors have different quality scores | ✓ PASS | vendor_B: 86.5% > vendor_A: 72.3% > vendor_C: 58.1% |
 
@@ -231,12 +231,8 @@ All screenshots captured and verified in `docs/screenshots/`:
 |------------|-------------|--------|
 | `02-waabi-bev.png` | BEV occupancy heatmaps (current, +1s, +2s, +3s), trajectory fan, Sim World table (20 variants: 16 pass, 4 fail) | ✓ VERIFIED |
 
-### Specialized Zones (F4/F5/F6)
-| Screenshot | Description | Status |
-|------------|-------------|--------|
-| `06-highway-truck.png` | 18-wheeler truck on highway with Aurora FMCW HUD (velocity radar, braking 85m vs detection 200m) | ✓ VERIFIED |
-| `05-rail-train.png` | Blue train on tracks with Rail Operations HUD (Moving Block, Signal STOP, Level Crossing BLOCKED) | ✓ VERIFIED |
-| `03-harbour-ship.png` | Container ship on water with COLREGs HUD (Rule 14 head-on, CPA/TCPA for 3 vessels), navigation buoys | ✓ VERIFIED |
+### Specialized Zones
+F4 Aurora / F5 rail / F6 maritime were removed. City stacks are F1 Tesla, F2 Waymo, F3 Waabi, plus compare.
 
 ### Compare Mode
 | Screenshot | Description | Status |

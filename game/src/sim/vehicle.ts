@@ -108,18 +108,13 @@ export function updateVehicle(
   let newSpeed = signedSpeed + accel * dt;
   newSpeed = clamp(newSpeed, -params.maxSpeed * 0.3, params.maxSpeed);
   
-  // Ships keep a cruise speed unless the operator is braking
-  if (state.vehicleType === 'ship' && brake < 0.05 && newSpeed < 6) {
-    newSpeed = Math.min(6, newSpeed + params.maxAccel * dt);
-  }
-  
-  if (Math.abs(newSpeed) < 0.1 && Math.abs(throttle) < 0.1 && state.vehicleType !== 'ship') {
+  if (Math.abs(newSpeed) < 0.1 && Math.abs(throttle) < 0.1) {
     newSpeed = 0;
   }
   
-  // Kinematic bicycle model
+  // Kinematic bicycle model (TypeScript; not the Rust step_vehicle kernel)
   let yawRate = 0;
-  if (Math.abs(newSpeed) > 0.1 && state.vehicleType !== 'train') {
+  if (Math.abs(newSpeed) > 0.1) {
     yawRate = (newSpeed / params.wheelbase) * Math.tan(steeringAngle);
   }
   
@@ -169,130 +164,4 @@ export function createEgoState(
   };
 }
 
-// Train-specific dynamics (1D track following)
-export function updateTrain(
-  state: EgoState,
-  input: VehicleInput,
-  trackPoints: Vec3[],
-  currentTrackIndex: number,
-  dt: number
-): { state: EgoState; trackIndex: number } {
-  const params = VEHICLE_PARAMS.train;
-  
-  // Update speed along track
-  let accel = 0;
-  if (input.brake > 0) {
-    const brakeAccel = (params.brakeForce * input.brake) / params.mass;
-    accel = -brakeAccel;
-  } else {
-    accel = input.throttle * params.maxAccel;
-  }
-  
-  let newSpeed = state.velocity.x + accel * dt;
-  newSpeed = clamp(newSpeed, 0, params.maxSpeed);
-  
-  // Move along track
-  let distance = newSpeed * dt;
-  let idx = currentTrackIndex;
-  
-  while (distance > 0 && idx < trackPoints.length - 1) {
-    const current = trackPoints[idx]!;
-    const next = trackPoints[idx + 1]!;
-    const segmentLength = Math.sqrt(
-      (next.x - current.x) ** 2 + (next.y - current.y) ** 2
-    );
-    
-    if (distance < segmentLength) {
-      const t = distance / segmentLength;
-      const newPos: Vec3 = {
-        x: current.x + (next.x - current.x) * t,
-        y: current.y + (next.y - current.y) * t,
-        z: current.z,
-      };
-      const yaw = Math.atan2(next.y - current.y, next.x - current.x);
-      
-      return {
-        state: {
-          ...state,
-          transform: { position: newPos, rotation: yaw },
-          velocity: vec3(newSpeed, 0, 0),
-          acceleration: vec3(accel, 0, 0),
-          stoppingDistance: (newSpeed * newSpeed) / (2 * params.maxDecel),
-        },
-        trackIndex: idx,
-      };
-    }
-    
-    distance -= segmentLength;
-    idx++;
-  }
-  
-  // Reached end of track
-  return {
-    state: {
-      ...state,
-      velocity: vec3(0, 0, 0),
-      acceleration: vec3(0, 0, 0),
-      stoppingDistance: 0,
-    },
-    trackIndex: idx,
-  };
-}
-
-// Ship dynamics (simple hull model with large turning circle)
-export function updateShip(
-  state: EgoState,
-  input: VehicleInput,
-  dt: number
-): EgoState {
-  const params = VEHICLE_PARAMS.ship;
-  
-  // Update throttle (very slow response)
-  let accel = input.throttle * params.maxAccel;
-  if (input.brake > 0) {
-    // Reverse thrust
-    accel = -params.maxDecel * input.brake;
-  }
-  
-  const currentSpeed = Math.sqrt(state.velocity.x ** 2 + state.velocity.y ** 2) || state.velocity.x;
-  let newSpeed = currentSpeed + accel * dt;
-  // Cruise at ~12 knots unless braking
-  if (input.brake < 0.05 && newSpeed < 6) {
-    newSpeed = Math.min(6, newSpeed + params.maxAccel * 2 * dt);
-  }
-  newSpeed = clamp(newSpeed, -params.maxSpeed * 0.1, params.maxSpeed);
-  
-  // Large turning circle - yaw rate depends on speed and rudder
-  const rudder = input.steering * params.maxSteeringAngle;
-  const yawRate = (newSpeed / params.wheelbase) * Math.sin(rudder) * 0.1; // Very slow turn
-  
-  const newYaw = normalizeAngle(state.transform.rotation + yawRate * dt);
-  
-  const vx = newSpeed * Math.cos(newYaw);
-  const vy = newSpeed * Math.sin(newYaw);
-  
-  const newPos: Vec3 = {
-    x: state.transform.position.x + vx * dt,
-    y: state.transform.position.y + vy * dt,
-    z: state.transform.position.z,
-  };
-  
-  // Water drag
-  const drag = 0.5 * params.dragCoeff * newSpeed * newSpeed;
-  const dragDecel = drag / params.mass;
-  
-  return {
-    ...state,
-    transform: { position: newPos, rotation: newYaw },
-    velocity: vec3(
-      (newSpeed - dragDecel * dt * Math.sign(newSpeed || 1)) * Math.cos(newYaw),
-      (newSpeed - dragDecel * dt * Math.sign(newSpeed || 1)) * Math.sin(newYaw),
-      0
-    ),
-    acceleration: vec3(accel, 0, 0),
-    steering: rudder,
-    throttle: input.throttle,
-    brake: input.brake,
-    stoppingDistance: (newSpeed * newSpeed) / (2 * params.maxDecel),
-  };
-}
+// F5/F6 helpers removed; city vehicles stay on this TypeScript bicycle model.
