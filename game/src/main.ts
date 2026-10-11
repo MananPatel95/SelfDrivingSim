@@ -907,14 +907,15 @@ function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
   const vx = state.velocity.x;
   const vy = state.velocity.y;
   const speed = Math.hypot(vx, vy);
-  const reverse = (state.bodyVx ?? 0) < -0.7 || !!state.inReverse && (state.bodyVx ?? 0) < -0.15;
-  if (reverse) return egoYaw + Math.PI;
-  if (speed > 1.8) {
+  // Stay behind the nose. Do not swing onto the velocity vector (that reads as a slide)
+  // and do not flip around when reversing.
+  if (speed > 1.8 && (state.bodyVx ?? 0) > 1.2) {
     const velYaw = Math.atan2(vy, vx);
     let d = velYaw - egoYaw;
     while (d > Math.PI) d -= Math.PI * 2;
     while (d < -Math.PI) d += Math.PI * 2;
-    const blend = clamp((speed - 1.8) / 8, 0, 0.85);
+    if (Math.abs(d) > 0.9) return egoYaw;
+    const blend = clamp((speed - 1.8) / 8, 0, 0.25);
     return egoYaw + d * blend;
   }
   return egoYaw;
