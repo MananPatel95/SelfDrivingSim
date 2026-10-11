@@ -364,11 +364,11 @@
     }
     #start-menu.hidden { display: none; }
     #start-card {
-      width: min(560px, 92vw);
+      width: min(640px, 94vw);
       background: rgba(10, 14, 22, 0.96);
       border: 1px solid #3a4a66;
       border-radius: 14px;
-      padding: 28px 28px 22px;
+      padding: 22px 22px 18px;
     }
     #start-card h1 {
       font-size: 28px;
@@ -400,20 +400,37 @@
       color: #7fd7ff;
       margin-bottom: 8px;
     }
-    #start-dir { display: flex; gap: 6px; margin-bottom: 18px; }
-    #start-dir button {
-      flex: 1;
-      padding: 8px 6px;
-      border-radius: 6px;
-      border: 1px solid #445;
-      background: #1a2230;
-      color: #fff;
-      cursor: pointer;
-      font-size: 13px;
+    #start-map {
+      width: 100%;
+      height: 280px;
+      display: block;
+      background: #1a2a22;
+      border-radius: 8px;
+      border: 1px solid #345;
+      cursor: crosshair;
+      margin-bottom: 8px;
     }
-    #start-dir button.active { background: #0066cc; border-color: #08f; }
+    #start-status { color: #cfe; font-size: 13px; min-height: 1.3em; margin-bottom: 12px; }
     .start-actions { display: flex; gap: 10px; }
     .start-actions .pause-btn { flex: 1; }
+    .start-actions .pause-btn:disabled { opacity: 0.45; cursor: default; }
+    #raw-camera-canvas { cursor: pointer; }
+    #takeover-btn {
+      position: absolute;
+      top: 96px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 16;
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 1px solid #fa0;
+      background: rgba(40, 24, 0, 0.92);
+      color: #ffe08a;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+    }
+    #takeover-btn.hidden { display: none; }
 
     #pause-menu {
       width: min(520px, 92vw);
@@ -674,6 +691,7 @@
     </div>
 
     <div id="drive-badge" class="hud">AUTOPILOT</div>
+    <button id="takeover-btn" class="hidden" type="button">Take over</button>
     <div id="drive-hint" class="hud">W throttle · S brake then reverse · A/D steer · Space handbrake. Hold right mouse to look. T autopilot.</div>
     <div id="collision-flash" class="hud">COLLISION</div>
 
@@ -720,7 +738,7 @@
         <div id="ai-view-header">AI View — F1 · Tesla-style</div>
         <div id="ai-view-insets">
           <div class="inset">
-            <div class="inset-label" id="ai-view-raw-label">Front camera (vision)</div>
+            <div class="inset-label" id="ai-view-raw-label">Front camera — click for 1st person</div>
             <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
           </div>
           <div class="inset">
@@ -851,23 +869,18 @@
     <div id="start-menu" class="hud-interactive">
       <div id="start-card">
         <h1>AUTONOMY CITY</h1>
-        <p class="start-lead">The car is parked at an intersection. Nothing moves until you choose how to leave.</p>
+        <p class="start-lead">The car stays parked until you pick a trip on the map.</p>
         <ul>
           <li><b>F1 Tesla-style</b> uses cameras only. Depth is inferred from the picture.</li>
           <li><b>F2 Waymo-style</b> fuses lidar, radar, and a prior map.</li>
           <li><b>F3 Waabi-style</b> predicts where space will be occupied in the next few seconds.</li>
         </ul>
-        <p class="start-note">Pick a direction, then drive it yourself or send the autopilot that way. T switches later. WASD drives. The front wheels steer.</p>
-        <div class="start-label">Direction</div>
-        <div id="start-dir">
-          <button type="button" data-yaw="1.5707963267948966" class="active">North</button>
-          <button type="button" data-yaw="0">East</button>
-          <button type="button" data-yaw="-1.5707963267948966">South</button>
-          <button type="button" data-yaw="3.141592653589793">West</button>
-        </div>
+        <p class="start-note">Click a start point, then an end point. Watch the autopilot drive that route, or drive it yourself. Take over any time. Click the front camera for a first-person view.</p>
+        <canvas id="start-map" width="560" height="280"></canvas>
+        <div id="start-status">Click the map to set a start point on a road.</div>
         <div class="start-actions">
-          <button type="button" id="start-manual" class="pause-btn">Drive manually</button>
-          <button type="button" id="start-auto" class="pause-btn primary">Start autopilot</button>
+          <button type="button" id="start-manual" class="pause-btn" disabled>Drive this route</button>
+          <button type="button" id="start-auto" class="pause-btn primary" disabled>Watch autopilot</button>
         </div>
       </div>
     </div>

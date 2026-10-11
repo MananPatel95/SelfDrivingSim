@@ -64,6 +64,57 @@ export function pointOnRoad(
     || distToNearestRoadAxis(y, half, config.blockSize) < limit;
 }
 
+const MAP_HALF = 300;
+const MAP_BLOCK = 100;
+
+export function nearestGridLine(v: number): number {
+  return nearestRoadLine(v, MAP_HALF, MAP_BLOCK, 6);
+}
+
+/** Pull a map click onto the nearest road centerline so the trip starts on asphalt. */
+export function snapToRoad(x: number, y: number): Vec3 {
+  const nx = nearestGridLine(x);
+  const ny = nearestGridLine(y);
+  const cx = Math.max(-MAP_HALF, Math.min(MAP_HALF, x));
+  const cy = Math.max(-MAP_HALF, Math.min(MAP_HALF, y));
+  if (Math.abs(cx - nx) <= Math.abs(cy - ny)) return vec3(nx, cy, 0);
+  return vec3(cx, ny, 0);
+}
+
+/** Manhattan route along the road grid, sampled every few metres for the planner. */
+export function roadRoute(start: Vec3, end: Vec3): Vec3[] {
+  const onNS = (p: Vec3) => Math.abs(p.x - nearestGridLine(p.x))
+    <= Math.abs(p.y - nearestGridLine(p.y));
+  const startNS = onNS(start);
+  const endNS = onNS(end);
+  const pts: Vec3[] = [start];
+  if (startNS && endNS) {
+    const crossY = nearestGridLine(end.y);
+    pts.push(vec3(start.x, crossY, 0), vec3(end.x, crossY, 0));
+  } else if (!startNS && !endNS) {
+    const crossX = nearestGridLine(end.x);
+    pts.push(vec3(crossX, start.y, 0), vec3(crossX, end.y, 0));
+  } else if (startNS) {
+    pts.push(vec3(start.x, end.y, 0));
+  } else {
+    pts.push(vec3(end.x, start.y, 0));
+  }
+  pts.push(end);
+  const out: Vec3[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]!;
+    const b = pts[i + 1]!;
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(dist / 8));
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      out.push(vec3(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 0));
+    }
+  }
+  out.push(end);
+  return out;
+}
+
 export function generatePassengerName(rng: SeededRandom): string {
   const firstName = FIRST_NAMES[rng.nextInt(0, FIRST_NAMES.length - 1)]!;
   const lastName = LAST_NAMES[rng.nextInt(0, LAST_NAMES.length - 1)]!;

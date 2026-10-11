@@ -11,7 +11,7 @@ import {
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
   TrafficVehicle, updateTrafficVehicle, Pedestrian, updatePedestrian,
   shouldYieldToPedestrian, type RoadActor,
-  generateRideRequest
+  generateRideRequest, roadRoute
 } from './world';
 
 export type ZoneType = 'city';
@@ -722,6 +722,21 @@ export class Simulation {
       throttleFiltered: 0,
       brakeFiltered: 0,
     };
+  }
+
+  /** Place the car on a start point and follow a road route to the end. */
+  beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
+    const route = roadRoute(start, end);
+    const next = route[Math.min(1, route.length - 1)] ?? end;
+    const yaw = Math.atan2(next.y - start.y, next.x - start.x);
+    this.faceAndPark(yaw);
+    this.state.ego = {
+      ...this.state.ego,
+      transform: { position: { x: start.x, y: start.y, z: 0 }, rotation: yaw },
+    };
+    this.state.route = route;
+    this.state.plannerState = createPlannerState();
+    this.state.controlSource = mode;
   }
   
   acceptRide(rideId: number): void {

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
+import { snapToRoad, roadRoute } from './sim/world';
 import {
   AXLE_HEIGHT,
   BODY_CENTER_LOCAL_Y,
@@ -115,6 +116,9 @@ let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
 let gameStarted = false;
+let observing = false;
+let tripStart: { x: number; y: number } | null = null;
+let tripEnd: { x: number; y: number } | null = null;
 let currentStack: StackProfile = 'tesla';
 let compareMode = false;
 let driveHintShown = false;
@@ -1024,6 +1028,7 @@ function syncDriveBadge() {
     badge.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
     badge.classList.toggle('manual', manual);
   }
+  document.getElementById('takeover-btn')?.classList.toggle('hidden', !gameStarted || manual);
   if (control) {
     control.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
     control.className = 'status-value' + (manual ? ' status-warning' : '');
@@ -1128,6 +1133,7 @@ function humanInputFromKeys() {
 }
 
 function takeManual(auto = false) {
+  observing = false;
   if (!isManual()) {
     simulation.takeover('other');
     if (!auto) showDriveHintOnce();
@@ -1243,7 +1249,7 @@ function updateViewExplainer(profile: StackProfile = currentStack) {
   setText('camera-explainer-uses', cam.uses);
   setText('camera-explainer-diff', cam.diff);
   setText('ai-view-header', `${aiViewTitle(profile)}  ·  V hide · G ground truth`);
-  setText('ai-view-raw-label', stack.rawLabel);
+  setText('ai-view-raw-label', `${stack.rawLabel} — click for 1st person`);
   setText('ai-view-perc-label', stack.percLabel);
   syncCompareChrome();
 }
@@ -2204,29 +2210,99 @@ function setupInput() {
     updatePhysDebug();
   });
 
-  document.querySelectorAll('#start-dir button').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#start-dir button').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const yaw = Number((btn as HTMLElement).dataset['yaw'] ?? Math.PI / 2);
-      simulation.faceAndPark(yaw);
-      captureEgoPose();
-      prevEgoX = currEgoX;
-      prevEgoY = currEgoY;
-      prevEgoYaw = currEgoYaw;
-    });
+  const startMap = document.getElementById('start-map') as HTMLCanvasElement | null;
+  startMap?.addEventListener('click', (ev) => {
+    const rect = startMap.getBoundingClientRect();
+    const u = (ev.clientX - rect.left) / rect.width;
+    const v = (ev.clientY - rect.top) / rect.height;
+    const world = snapToRoad(-300 + u * 600, 300 - v * 600);
+    if (!tripStart || tripEnd) {
+      tripStart = world;
+      tripEnd = null;
+    } else {
+      tripEnd = world;
+    }
+    drawStartMap();
+    refreshStartButtons();
   });
   document.getElementById('start-manual')?.addEventListener('click', () => beginGame('manual'));
   document.getElementById('start-auto')?.addEventListener('click', () => beginGame('autopilot'));
+  document.getElementById('takeover-btn')?.addEventListener('click', () => takeManual());
+  document.getElementById('raw-camera-canvas')?.addEventListener('click', () => {
+    if (!gameStarted) return;
+    setCameraMode(cameraMode === 'hood' ? 'chase' : 'hood');
+  });
+  drawStartMap();
+  refreshStartButtons();
+}
+
+function refreshStartButtons() {
+  const ready = !!(tripStart && tripEnd);
+  const manual = document.getElementById('start-manual') as HTMLButtonElement | null;
+  const auto = document.getElementById('start-auto') as HTMLButtonElement | null;
+  if (manual) manual.disabled = !ready;
+  if (auto) auto.disabled = !ready;
+  const status = document.getElementById('start-status');
+  if (!status) return;
+  if (!tripStart) status.textContent = 'Click the map to set a start point on a road.';
+  else if (!tripEnd) status.textContent = 'Click where the trip should end.';
+  else status.textContent = 'Watch the autopilot drive this route, or drive it yourself.';
+}
+
+function drawStartMap() {
+  const canvas = document.getElementById('start-map') as HTMLCanvasElement | null;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const w = canvas.width;
+  const h = canvas.height;
+  const half = 300;
+  const span = 600;
+  const toX = (x: number) => ((x + half) / span) * w;
+  const toY = (y: number) => ((half - y) / span) * h;
+  ctx.fillStyle = '#1a2a22';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = '#d5d8dc';
+  for (let i = 0; i <= 6; i++) {
+    const p = -half + i * 100;
+    const rw = (14 / span) * w;
+    ctx.fillRect(toX(p) - rw / 2, 0, rw, h);
+    ctx.fillRect(0, toY(p) - rw / 2, w, rw);
+  }
+  if (tripStart && tripEnd) {
+    const route = roadRoute({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 });
+    ctx.strokeStyle = '#7fd7ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    route.forEach((p, i) => {
+      const x = toX(p.x);
+      const y = toY(p.y);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+  const dot = (p: { x: number; y: number }, color: string) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(toX(p.x), toY(p.y), 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  if (tripStart) dot(tripStart, '#3d6');
+  if (tripEnd) dot(tripEnd, '#f55');
 }
 
 function beginGame(mode: 'manual' | 'autopilot') {
-  if (gameStarted) return;
-  const active = document.querySelector('#start-dir button.active') as HTMLElement | null;
-  const yaw = Number(active?.dataset['yaw'] ?? Math.PI / 2);
-  simulation.faceAndPark(yaw);
-  if (mode === 'manual') simulation.takeover('other');
-  else simulation.releaseControl();
+  if (gameStarted || !tripStart || !tripEnd) return;
+  simulation.beginTrip(
+    { ...tripStart, z: 0 },
+    { ...tripEnd, z: 0 },
+    mode === 'manual' ? 'human' : 'policy'
+  );
+  observing = mode === 'autopilot';
   gameStarted = true;
   document.getElementById('start-menu')?.classList.add('hidden');
   inputState.forward = false;
@@ -2234,6 +2310,7 @@ function beginGame(mode: 'manual' | 'autopilot') {
   inputState.left = false;
   inputState.right = false;
   inputState.brake = false;
+  setCameraMode('chase');
   captureEgoPose();
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
@@ -2263,7 +2340,7 @@ function animate(time: number) {
 
   if (gameStarted && !isPaused) {
     const driving = anyDriveHeld();
-    if (driving && !isManual()) takeManual(true);
+    if (driving && !isManual() && !observing) takeManual(true);
     const humanInput = isManual() ? humanInputFromKeys() : undefined;
     simAccumulator += frameDt;
     if (simAccumulator > 0.25) simAccumulator = 0.25;
