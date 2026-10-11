@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   vec3, vec3Add, vec3Sub, vec3Scale, vec3Dot, vec3Length, vec3Normalize,
-  vec3Distance, rotateVec3, normalizeAngle, calculateIoU3D, calculateTTC,
+  vec3Distance, rotateVec3, egoToWorld, normalizeAngle, calculateIoU3D, calculateTTC,
   calculateCPA, calculateBrakingDistance, SeededRandom, pointInBox, boxOverlap2D
 } from './math';
 import type { BoundingBox3D } from './types';
@@ -57,6 +57,13 @@ describe('Rotation', () => {
     expect(result.x).toBeCloseTo(0);
     expect(result.y).toBeCloseTo(1);
     expect(result.z).toBe(0);
+  });
+
+  it('egoToWorld maps a forward point when yaw is +Y', () => {
+    const world = egoToWorld(vec3(5, 0, 1), vec3(10, 20, 0), Math.PI / 2);
+    expect(world.x).toBeCloseTo(10);
+    expect(world.y).toBeCloseTo(25);
+    expect(world.z).toBeCloseTo(1);
   });
 
   it('normalizeAngle keeps angles in [-pi, pi]', () => {

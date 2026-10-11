@@ -3,7 +3,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { determineCOLREGSRule, calculateCPATCPA } from './maritime';
+import {
+  determineCOLREGSRule, calculateCPATCPA, createHarbourTraffic,
+  createCOLREGSHelm, evaluateEncounters, planCOLREGSManoeuvre, stepAISTargets,
+} from './maritime';
 import { vec3 } from '../sim/math';
 
 describe('COLREGs rule determination', () => {
@@ -91,3 +94,52 @@ describe('CPA/TCPA calculation', () => {
     expect(tcpa).toBeLessThan(20); // Should meet within reasonable time
   });
 });
+
+describe('harbour COLREGs encounter', () => {
+  it('spawns targets with CPA in the hundreds of metres, not a collision', () => {
+    const targets = createHarbourTraffic();
+    const egoPos = vec3(0, 0, 0);
+    const egoVel = vec3(0, 6, 0);
+    for (const t of targets) {
+      const tv = {
+        x: Math.cos(t.courseOverGround) * t.speedOverGround,
+        y: Math.sin(t.courseOverGround) * t.speedOverGround,
+        z: 0,
+      };
+      const { cpa } = calculateCPATCPA(egoPos, egoVel, t.position, tv);
+      expect(cpa).toBeGreaterThan(200);
+      expect(Math.hypot(t.position.x, t.position.y)).toBeGreaterThan(300);
+    }
+  });
+
+  it('opens CPA after the starboard give-way', () => {
+    const targets = createHarbourTraffic();
+    const helm = createCOLREGSHelm();
+    const egoPos = vec3(0, 0, 0);
+    const heading = Math.PI / 2;
+    const encounters = evaluateEncounters(egoPos, vec3(0, 6, 0), heading, targets, helm);
+    const cargo = encounters.find(e => e.name === 'CARGO STAR')!;
+    expect(cargo.cpa).toBeGreaterThan(200);
+    expect(cargo.cpa).toBeLessThan(500);
+
+    const { steering } = planCOLREGSManoeuvre(heading, encounters, helm);
+    expect(steering).toBeLessThan(0);
+
+    // Integrate a short starboard turn and confirm CPA grows
+    let yaw = heading;
+    let pos = { ...egoPos };
+    let moved = stepAISTargets(targets, 0);
+    for (let i = 0; i < 80; i++) {
+      yaw -= 0.06 * (1 / 10);
+      const speed = 6;
+      pos = { x: pos.x + speed * Math.cos(yaw) * 0.1, y: pos.y + speed * Math.sin(yaw) * 0.1, z: 0 };
+      moved = stepAISTargets(moved, 0.1);
+    }
+    const after = evaluateEncounters(pos, {
+      x: 6 * Math.cos(yaw), y: 6 * Math.sin(yaw), z: 0,
+    }, yaw, moved, helm);
+    const cargoAfter = after.find(e => e.name === 'CARGO STAR')!;
+    expect(cargoAfter.cpa).toBeGreaterThan(cargo.cpa + 20);
+  });
+});
+

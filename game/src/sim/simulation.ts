@@ -5,7 +5,7 @@
 
 import type {
   Entity, EgoState, Environment, Scenario,
-  RideRequest, TakeoverEvent, Vec3, VehicleType
+  RideRequest, TakeoverEvent, Vec3, VehicleType, LidarPoint
 } from './types';
 import { 
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
@@ -15,12 +15,18 @@ import {
 
 // Zone types for different simulation environments
 export type ZoneType = 'city' | 'highway' | 'rail' | 'harbour';
-import { vec3, vec3Distance, SeededRandom } from './math';
+import { vec3, vec3Distance, SeededRandom, egoToWorld } from './math';
 import { createEgoState, updateVehicle, VehicleInput } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
 import { planTrajectory, createPlannerState, PlannerState, oracleSupervisor } from '../planning/planner';
 import { Recorder, Recording } from '../recorder/recorder';
+import type { PlannerOutput } from './types';
+import {
+  AISTarget, COLREGSHelm, MaritimeEncounter,
+  createHarbourTraffic, createCOLREGSHelm, stepAISTargets,
+  evaluateEncounters, planCOLREGSManoeuvre,
+} from '../stacks/maritime';
 
 export interface SimulationConfig {
   seed: number;
@@ -67,6 +73,10 @@ export interface SimulationState {
   isRunning: boolean;
   controlSource: 'policy' | 'human' | 'oracle';
   lastTakeover?: TakeoverEvent;
+  lastPlannerOutput: PlannerOutput | null;
+  maritimeTargets: AISTarget[];
+  maritimeEncounters: MaritimeEncounter[];
+  maritimeAction: string;
 }
 
 export class Simulation {
@@ -75,6 +85,9 @@ export class Simulation {
   private recorder: Recorder;
   private rng: SeededRandom;
   private entityIdCounter: number = 0;
+  private lastLidarPoints: LidarPoint[] = [];
+  private lastPlannerOutput: PlannerOutput | null = null;
+  private colregsHelm: COLREGSHelm = createCOLREGSHelm();
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -99,6 +112,9 @@ export class Simulation {
   }
   
   private initializeState(): SimulationState {
+    this.colregsHelm = createCOLREGSHelm();
+    this.lastPlannerOutput = null;
+    this.lastLidarPoints = [];
     // Generate appropriate world map based on zone
     const worldMap = this.generateWorldForZone();
     
@@ -106,6 +122,10 @@ export class Simulation {
     const egoType = this.getEgoTypeForZone();
     const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
     const ego = createEgoState(egoType, spawnPoint, Math.PI / 2);
+    if (egoType === 'ship') {
+      // ~12 knots along heading so the COLREGs HUD is never stuck at 0
+      ego.velocity = vec3(0, 6, 0);
+    }
     
     // Create zone-appropriate traffic (no traffic for rail/harbour)
     const trafficVehicles = this.spawnZoneTraffic(worldMap);
@@ -135,6 +155,10 @@ export class Simulation {
       activeScenarios: [],
       isRunning: true,
       controlSource: 'policy',
+      lastPlannerOutput: null,
+      maritimeTargets: this.config.zone === 'harbour' ? createHarbourTraffic() : [],
+      maritimeEncounters: [],
+      maritimeAction: 'Monitor situation',
     };
   }
   
@@ -333,23 +357,67 @@ export class Simulation {
   private spawnPedestrians(_worldMap: WorldMap, count: number): Pedestrian[] {
     const pedestrians: Pedestrian[] = [];
     
+    // City grid parameters (must match rendering)
+    const gridSize = 6;
+    const blockSize = 100;
+    const halfSize = (gridSize * blockSize) / 2;
+    const roadWidth = 14;
+    const sidewalkOffset = roadWidth / 2 + 1.5; // Place on sidewalk
+    
+    const nearSpawn: Array<[number, number, number]> = [
+      [8.5, 18, Math.PI / 2],
+      [-8.5, 22, -Math.PI / 2],
+      [8.5, -12, Math.PI / 2],
+      [-8.5, 6, Math.PI],
+      [10, 30, 0],
+      [-10, 14, Math.PI],
+      [7, 40, Math.PI / 2],
+      [-7, -8, -Math.PI / 2],
+    ];
+    for (const [px, py, dir] of nearSpawn) {
+      pedestrians.push({
+        id: this.entityIdCounter++,
+        classType: 'pedestrian',
+        transform: { position: vec3(px, py, 0.9), rotation: dir },
+        boundingBox: { center: vec3(px, py, 0.9), size: vec3(0.5, 0.5, 1.7), yaw: dir },
+        velocity: vec3(Math.cos(dir) * 1.2, Math.sin(dir) * 1.2, 0),
+        isStatic: false,
+        occlusionLevel: 0,
+        targetPosition: vec3(px + Math.cos(dir) * 40, py + Math.sin(dir) * 40, 0),
+        state: 'walking',
+        waitTime: 0,
+      });
+    }
+    
     for (let i = 0; i < count; i++) {
-      const x = this.rng.nextFloat(-200, 200);
-      const y = this.rng.nextFloat(-200, 200);
+      // Pick a random road to place pedestrian on sidewalk
+      const roadIndex = this.rng.nextInt(0, gridSize);
+      const roadPos = -halfSize + roadIndex * blockSize;
+      const alongRoad = this.rng.nextFloat(-halfSize + 20, halfSize - 20);
+      
+      // Randomly choose NS or EW road, left or right sidewalk
+      const isNSRoad = this.rng.nextFloat(0, 1) > 0.5;
+      const isLeftSide = this.rng.nextFloat(0, 1) > 0.5;
+      const sideOffset = isLeftSide ? -sidewalkOffset : sidewalkOffset;
+      
+      const x = isNSRoad ? roadPos + sideOffset : alongRoad;
+      const y = isNSRoad ? alongRoad : roadPos + sideOffset;
+      
+      const walkDir = isNSRoad ? (isLeftSide ? -Math.PI / 2 : Math.PI / 2) : (isLeftSide ? Math.PI : 0);
       
       pedestrians.push({
         id: this.entityIdCounter++,
         classType: 'pedestrian',
-        transform: { position: vec3(x, y, 0.9), rotation: this.rng.nextFloat(0, Math.PI * 2) },
+        transform: { position: vec3(x, y, 0.9), rotation: walkDir + this.rng.nextFloat(-0.3, 0.3) },
         boundingBox: {
           center: vec3(x, y, 0.9),
           size: vec3(0.5, 0.5, 1.7),
           yaw: 0,
         },
-        velocity: vec3(0, 0, 0),
+        velocity: vec3(Math.cos(walkDir) * 1.2, Math.sin(walkDir) * 1.2, 0), // Walking speed ~1.2 m/s
         isStatic: false,
         occlusionLevel: 0,
-        targetPosition: vec3(x + this.rng.nextFloat(-30, 30), y + this.rng.nextFloat(-30, 30), 0),
+        targetPosition: vec3(x + Math.cos(walkDir) * 50, y + Math.sin(walkDir) * 50, 0),
         state: 'walking',
         waitTime: 0,
       });
@@ -399,28 +467,54 @@ export class Simulation {
       ...this.state.pedestrians,
     ];
     
-    // Simulate lidar
-    const lidarScan = simulateLidarScan(
-      LIDAR_CONFIGS['roofLidar']!,
-      this.state.ego,
-      allEntities,
-      this.state.environment,
-      this.state.timestamp,
-      this.config.seed
-    );
+    const inBrowser = typeof window !== 'undefined';
+    const lidarConfig = inBrowser ? LIDAR_CONFIGS['browserLite']! : LIDAR_CONFIGS['roofLidar']!;
+    const egoPos = this.state.ego.transform.position;
+    const senseEntities = inBrowser
+      ? allEntities.filter(e => {
+          const dx = e.boundingBox.center.x - egoPos.x;
+          const dy = e.boundingBox.center.y - egoPos.y;
+          const range = e.classType === 'building' ? 60 : 80;
+          return dx * dx + dy * dy < range * range;
+        })
+      : allEntities;
     
-    // Run perception
+    // Browser: lidar every other frame to keep the render loop interactive.
+    // Reuse the previous point cloud on skipped frames so tracks do not die.
+    const runLidar = !inBrowser || (this.state.frameNumber % 2 === 0);
+    if (runLidar) {
+      this.lastLidarPoints = simulateLidarScan(
+        lidarConfig,
+        this.state.ego,
+        senseEntities,
+        this.state.environment,
+        this.state.timestamp,
+        this.config.seed
+      ).points;
+    }
+    
+    // Run perception (boxes are in ego frame; convert for planning / display)
     const { detections, tracks } = runPerception(
-      lidarScan.points,
+      this.lastLidarPoints,
       this.state.perceptionTracks,
       dt
     );
     this.state.perceptionTracks = tracks;
     
+    const yaw = this.state.ego.transform.rotation;
+    const worldDetections = detections.map(d => ({
+      ...d,
+      boundingBox: {
+        ...d.boundingBox,
+        center: egoToWorld(d.boundingBox.center, egoPos, yaw),
+        yaw: d.boundingBox.yaw + yaw,
+      },
+    }));
+    
     // Plan trajectory
     const plannerInput = {
       egoState: this.state.ego,
-      detections,
+      detections: worldDetections,
       route: this.state.route,
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
     };
@@ -430,6 +524,8 @@ export class Simulation {
       this.state.plannerState
     );
     this.state.plannerState = newPlannerState;
+    this.lastPlannerOutput = plannerOutput;
+    this.state.lastPlannerOutput = plannerOutput;
     
     // Determine control input
     let vehicleInput: VehicleInput;
@@ -488,6 +584,38 @@ export class Simulation {
       };
       this.state.controlSource = 'policy';
     }
+
+    if (this.config.zone === 'harbour' && !humanInput) {
+      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
+      this.state.maritimeEncounters = evaluateEncounters(
+        this.state.ego.transform.position,
+        this.state.ego.velocity,
+        this.state.ego.transform.rotation,
+        this.state.maritimeTargets,
+        this.colregsHelm
+      );
+      const helm = planCOLREGSManoeuvre(
+        this.state.ego.transform.rotation,
+        this.state.maritimeEncounters,
+        this.colregsHelm
+      );
+      this.state.maritimeAction = helm.action;
+      vehicleInput = {
+        throttle: helm.throttle,
+        steering: helm.steering,
+        brake: 0,
+      };
+      this.state.controlSource = 'policy';
+    } else if (this.config.zone === 'harbour') {
+      this.state.maritimeTargets = stepAISTargets(this.state.maritimeTargets, dt);
+      this.state.maritimeEncounters = evaluateEncounters(
+        this.state.ego.transform.position,
+        this.state.ego.velocity,
+        this.state.ego.transform.rotation,
+        this.state.maritimeTargets,
+        this.colregsHelm
+      );
+    }
     
     // Update ego vehicle
     this.state.ego = updateVehicle(this.state.ego, vehicleInput, dt);
@@ -499,7 +627,7 @@ export class Simulation {
       this.state.ego,
       allEntities,
       trafficLights,
-      { lidarPoints: lidarScan.points },
+      { lidarPoints: this.lastLidarPoints },
       { timestamp: this.state.timestamp, detections },
       plannerInput,
       plannerOutput,
@@ -740,6 +868,14 @@ export class Simulation {
   
   getState(): SimulationState {
     return this.state;
+  }
+
+  getLidarPoints(): LidarPoint[] {
+    return this.lastLidarPoints;
+  }
+
+  getLastPlannerOutput(): PlannerOutput | null {
+    return this.lastPlannerOutput;
   }
   
   getRecording(): Recording {

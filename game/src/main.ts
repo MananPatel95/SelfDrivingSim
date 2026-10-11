@@ -5,21 +5,22 @@
 
 import * as THREE from 'three';
 import { Simulation, ZoneType } from './sim/simulation';
-import { vec3Length } from './sim/math';
+import { vec3Length, egoToWorld } from './sim/math';
+import { loadWasmKernels } from './sim/wasm';
 import type { TakeoverReason } from './sim/types';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import { 
   WAABI_INFO_CARD, WaabiStackState, runWaabiStack, 
   BEVOccupancy, AdversarialVariant 
 } from './stacks/waabi';
-import { TESLA_INFO_CARD } from './stacks/tesla';
+import { TESLA_INFO_CARD, detectVisibleAgents, type VisionDetection } from './stacks/tesla';
 import { AURORA_INFO_CARD, TruckingState } from './stacks/aurora';
 import { RAIL_INFO_CARD, RailState, calculateRailBrakingDistance } from './stacks/rail';
 import { 
-  MARITIME_INFO_CARD, MaritimeState,
-  calculateCPATCPA, determineCOLREGSRule
+  MARITIME_INFO_CARD, MaritimeState, createHarbourTraffic
 } from './stacks/maritime';
 import { generateHighwayMap, generateRailMap } from './sim/world';
+import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
 
 // Waabi stack state
 let waabiState: WaabiStackState = {
@@ -42,17 +43,21 @@ let waabiState: WaabiStackState = {
 // Maritime stack state
 let maritimeState: MaritimeState = {
   tracks: [],
-  aisTargets: [
-    { mmsi: 123456789, name: 'CARGO STAR', position: { x: -80, y: 100, z: 0 }, courseOverGround: Math.PI / 4, speedOverGround: 5, heading: Math.PI / 4, vesselType: 'cargo', length: 150, beam: 25 },
-    { mmsi: 234567890, name: 'TANKER PRIME', position: { x: 60, y: -80, z: 0 }, courseOverGround: -Math.PI / 3, speedOverGround: 4, heading: -Math.PI / 3, vesselType: 'tanker', length: 200, beam: 30 },
-    { mmsi: 345678901, name: 'FERRY SWIFT', position: { x: 100, y: 150, z: 0 }, courseOverGround: Math.PI, speedOverGround: 8, heading: Math.PI, vesselType: 'passenger', length: 100, beam: 20 },
-  ],
+  aisTargets: createHarbourTraffic(),
   colregsActions: new Map(),
-  ownHeading: 0,
-  ownSpeed: 5,
+  ownHeading: Math.PI / 2,
+  ownSpeed: 6,
   rudderAngle: 0,
   engineThrottle: 0.5,
 };
+
+let perceptionViz: PerceptionVisualizer | null = null;
+let rawCameraRenderer: THREE.WebGLRenderer | null = null;
+let rawCamera: THREE.PerspectiveCamera | null = null;
+let lastDecision: DecisionInfo = { text: 'Cruising: lane clear', severity: 'go' };
+let laneRoadGroup: THREE.Group | null = null;
+const zoneMeshes: THREE.Object3D[] = [];
+const aisShipVisuals: Array<{ name: string; mesh: THREE.Object3D }> = [];
 
 // Rail stack state
 let railState: RailState = {
@@ -105,7 +110,7 @@ let camera: THREE.PerspectiveCamera;
 let cameraMode: 'chase' | 'topdown' | 'cockpit' = 'chase';
 let isRecording = false;
 let showGroundTruth = false;
-let showAIView = false;
+let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
 let currentStack: StackProfile = 'tesla';
@@ -125,7 +130,9 @@ interface DetectionTiming {
   firstDetectedByRight: number | null;
 }
 const detectionTimings: Map<number, DetectionTiming> = new Map();
+const visionFirstSeen: Map<number, number> = new Map();
 let compareStartTime = 0;
+let latestVisionDetections: VisionDetection[] = [];
 
 // Human input state
 const inputState = {
@@ -156,11 +163,10 @@ function initThreeJS() {
   const container = document.getElementById('canvas-container')!;
   
   // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.shadowMap.enabled = false;
   container.appendChild(renderer.domElement);
   
   // Scene
@@ -169,7 +175,7 @@ function initThreeJS() {
   scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
   
   // Camera
-  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 4000);
   camera.position.set(0, -10, 8);
   camera.lookAt(0, 0, 0);
   
@@ -180,8 +186,8 @@ function initThreeJS() {
   const sunLight = new THREE.DirectionalLight(0xffffff, 1);
   sunLight.position.set(100, 100, 100);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.width = 2048;
-  sunLight.shadow.mapSize.height = 2048;
+  sunLight.shadow.mapSize.width = 1024;
+  sunLight.shadow.mapSize.height = 1024;
   sunLight.shadow.camera.near = 10;
   sunLight.shadow.camera.far = 500;
   sunLight.shadow.camera.left = -200;
@@ -190,21 +196,19 @@ function initThreeJS() {
   sunLight.shadow.camera.bottom = -200;
   scene.add(sunLight);
   
-  // Ground
+  // Ground - grass/terrain base
   const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
   const groundMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x333333,
-    roughness: 0.9,
+    color: 0x2d5a27, // Grass green
+    roughness: 0.95,
   });
   groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
   groundMesh.rotation.x = -Math.PI / 2;
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
   
-  // Grid helper for roads
-  const gridHelper = new THREE.GridHelper(600, 60, 0x444444, 0x333333);
-  gridHelper.position.y = 0.01;
-  scene.add(gridHelper);
+  // Build proper city roads, sidewalks, crosswalks
+  buildCityRoads();
   
   // Ego vehicle
   const egoGeometry = new THREE.BoxGeometry(4.5, 1.8, 1.5);
@@ -220,6 +224,125 @@ function initThreeJS() {
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
+}
+
+// City road infrastructure meshes
+let cityRoadMeshes: THREE.Object3D[] = [];
+
+function addInstanced(
+  geom: THREE.BufferGeometry,
+  mat: THREE.Material,
+  transforms: Array<{ x: number; y: number; z: number; sx?: number; sy?: number; sz?: number; ry?: number }>
+) {
+  if (transforms.length === 0) return;
+  const mesh = new THREE.InstancedMesh(geom, mat, transforms.length);
+  mesh.frustumCulled = true;
+  const dummy = new THREE.Object3D();
+  transforms.forEach((t, i) => {
+    dummy.position.set(t.x, t.y, t.z);
+    dummy.rotation.set(0, t.ry ?? 0, 0);
+    dummy.scale.set(t.sx ?? 1, t.sy ?? 1, t.sz ?? 1);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
+  cityRoadMeshes.push(mesh);
+}
+
+function buildCityRoads() {
+  for (const mesh of cityRoadMeshes) scene.remove(mesh);
+  cityRoadMeshes = [];
+
+  const gridSize = 6;
+  const blockSize = 100;
+  const roadWidth = 14;
+  const sidewalkWidth = 3;
+  const halfSize = (gridSize * blockSize) / 2;
+
+  const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0xd0d0d0, roughness: 0.85 });
+  const curbMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.7 });
+  const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffee66, roughness: 0.5 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.6 });
+  const glowMat = new THREE.MeshStandardMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.4 });
+
+  // Full-length asphalt + sidewalks + curbs as shared meshes (few draw calls)
+  for (let i = 0; i <= gridSize; i++) {
+    const pos = -halfSize + i * blockSize;
+    const nsRoad = new THREE.Mesh(new THREE.PlaneGeometry(roadWidth, gridSize * blockSize), asphaltMat);
+    nsRoad.rotation.x = -Math.PI / 2;
+    nsRoad.position.set(pos, 0.01, 0);
+    nsRoad.receiveShadow = true;
+    scene.add(nsRoad);
+    cityRoadMeshes.push(nsRoad);
+
+    const ewRoad = new THREE.Mesh(new THREE.PlaneGeometry(gridSize * blockSize, roadWidth), asphaltMat);
+    ewRoad.rotation.x = -Math.PI / 2;
+    ewRoad.position.set(0, 0.01, -pos);
+    ewRoad.receiveShadow = true;
+    scene.add(ewRoad);
+    cityRoadMeshes.push(ewRoad);
+
+    for (const side of [-1, 1]) {
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.15, gridSize * blockSize), sidewalkMat);
+      sw.position.set(pos + side * (roadWidth / 2 + sidewalkWidth / 2), 0.075, 0);
+      scene.add(sw);
+      cityRoadMeshes.push(sw);
+
+      const swE = new THREE.Mesh(new THREE.BoxGeometry(gridSize * blockSize, 0.15, sidewalkWidth), sidewalkMat);
+      swE.position.set(0, 0.075, -pos + side * (roadWidth / 2 + sidewalkWidth / 2));
+      scene.add(swE);
+      cityRoadMeshes.push(swE);
+
+      const curb = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, gridSize * blockSize), curbMat);
+      curb.position.set(pos + side * (roadWidth / 2), 0.1, 0);
+      scene.add(curb);
+      cityRoadMeshes.push(curb);
+    }
+  }
+
+  const dashX: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+  const dashZ: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+  const cross: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+  const poles: Array<{ x: number; y: number; z: number }> = [];
+  const lamps: Array<{ x: number; y: number; z: number }> = [];
+
+  for (let i = 0; i <= gridSize; i++) {
+    const pos = -halfSize + i * blockSize;
+    for (let j = 0; j < gridSize; j++) {
+      const start = -halfSize + j * blockSize + 12;
+      for (let k = 0; k < blockSize - 24; k += 6) {
+        dashX.push({ x: pos, y: 0.03, z: -(start + k) });
+        dashZ.push({ x: start + k, y: 0.03, z: -pos, ry: Math.PI / 2 });
+      }
+    }
+  }
+
+  for (let i = 0; i <= gridSize; i++) {
+    for (let j = 0; j <= gridSize; j++) {
+      const x = -halfSize + i * blockSize;
+      const z = halfSize - j * blockSize;
+      for (let s = -3; s <= 3; s++) {
+        cross.push({ x: x + s * 0.9, y: 0.03, z: z + roadWidth / 2 + 2.2 });
+        cross.push({ x: x + s * 0.9, y: 0.03, z: z - roadWidth / 2 - 2.2 });
+        cross.push({ x: x + roadWidth / 2 + 2.2, y: 0.03, z: z + s * 0.9, ry: Math.PI / 2 });
+        cross.push({ x: x - roadWidth / 2 - 2.2, y: 0.03, z: z + s * 0.9, ry: Math.PI / 2 });
+      }
+      for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+        poles.push({ x: x + dx * (roadWidth / 2 + 2), y: 3, z: z + dz * (roadWidth / 2 + 2) });
+        lamps.push({ x: x + dx * (roadWidth / 2 + 2), y: 6, z: z + dz * (roadWidth / 2 + 2) });
+      }
+    }
+  }
+
+  addInstanced(new THREE.BoxGeometry(0.18, 0.02, 3.2), yellowMat, [...dashX, ...dashZ]);
+  addInstanced(new THREE.BoxGeometry(0.5, 0.02, 3.5), whiteMat, cross);
+  addInstanced(new THREE.CylinderGeometry(0.1, 0.14, 6, 6), poleMat, poles);
+  addInstanced(new THREE.BoxGeometry(0.4, 0.15, 0.4), glowMat, lamps);
+
+  console.log(`Built city roads: ${cityRoadMeshes.length} objects (instanced markings)`);
 }
 
 // Create mesh for entity with proper styling
@@ -283,23 +406,15 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     
     case 'pedestrian': {
       const group = new THREE.Group();
-      
-      // Body
-      const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.8, 4, 8);
-      const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066];
+      const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066, 0xffcc00, 0x3399ff];
       const bodyMat = new THREE.MeshStandardMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.position.y = 0.8;
-      body.castShadow = true;
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.0, 4, 6), bodyMat);
+      body.position.y = 1.0;
+      body.castShadow = false;
       group.add(body);
-      
-      // Head
-      const headGeo = new THREE.SphereGeometry(0.15, 8, 8);
-      const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
-      const head = new THREE.Mesh(headGeo, headMat);
-      head.position.y = 1.45;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffcc99 }));
+      head.position.y = 1.7;
       group.add(head);
-      
       return group as unknown as THREE.Mesh;
     }
     
@@ -316,41 +431,9 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       });
       const building = new THREE.Mesh(buildingGeo, buildingMat);
       building.position.y = size.z / 2;
-      building.castShadow = true;
+      building.castShadow = false;
       building.receiveShadow = true;
       group.add(building);
-      
-      // Windows (grid pattern)
-      const windowMat = new THREE.MeshStandardMaterial({ color: 0x88bbff, emissive: 0x223344, emissiveIntensity: 0.3 });
-      const windowHeight = 2;
-      const windowWidth = 1.5;
-      const floors = Math.floor(size.z / 4);
-      const windowsPerSide = Math.floor(size.x / 3);
-      
-      for (let floor = 1; floor < floors; floor++) {
-        for (let w = 0; w < windowsPerSide; w++) {
-          const windowGeo = new THREE.PlaneGeometry(windowWidth, windowHeight);
-          
-          // Front face
-          const windowFront = new THREE.Mesh(windowGeo, windowMat);
-          windowFront.position.set(
-            (w - windowsPerSide / 2 + 0.5) * 3,
-            floor * 4,
-            size.y / 2 + 0.01
-          );
-          group.add(windowFront);
-          
-          // Back face
-          const windowBack = new THREE.Mesh(windowGeo, windowMat);
-          windowBack.position.set(
-            (w - windowsPerSide / 2 + 0.5) * 3,
-            floor * 4,
-            -size.y / 2 - 0.01
-          );
-          windowBack.rotation.y = Math.PI;
-          group.add(windowBack);
-        }
-      }
       
       return group as unknown as THREE.Mesh;
     }
@@ -397,7 +480,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
 }
 
 // Create road network visualization
-function createRoads(worldMap: { lanes: Array<{ points: Array<{ position: { x: number; y: number }; width: number }> }> }) {
+export function createRoads(worldMap: { lanes: Array<{ type?: string; points: Array<{ position: { x: number; y: number }; width: number }> }> }) {
   const roadGroup = new THREE.Group();
   
   // Road material
@@ -408,6 +491,7 @@ function createRoads(worldMap: { lanes: Array<{ points: Array<{ position: { x: n
   const processedRoads = new Set<string>();
   
   for (const lane of worldMap.lanes) {
+    if (lane.type && lane.type !== 'driving') continue;
     if (lane.points.length < 2) continue;
     
     for (let i = 0; i < lane.points.length - 1; i++) {
@@ -456,7 +540,7 @@ function createRoads(worldMap: { lanes: Array<{ points: Array<{ position: { x: n
 function updateEntityMeshes() {
   const state = simulation.getState();
   const allEntities = [
-    ...state.worldMap.staticEntities,
+    ...(currentZone === 'harbour' ? [] : state.worldMap.staticEntities),
     ...state.trafficVehicles,
     ...state.pedestrians,
   ];
@@ -493,103 +577,125 @@ function updateEntityMeshes() {
       yOffset,
       -entity.transform.position.y
     );
-    mesh.rotation.y = -entity.transform.rotation;
+    // Add Math.PI for vehicles so they face their direction of travel
+    const isVehicle = entity.classType === 'car' || entity.classType === 'truck' || 
+                      entity.classType === 'bus' || entity.classType === 'motorcycle';
+    mesh.rotation.y = -entity.transform.rotation + (isVehicle ? Math.PI : 0);
   }
+}
+
+// Detection box colors by class
+const DETECTION_COLORS: Record<string, number> = {
+  car: 0x00ff00,
+  truck: 0x00cc00,
+  bus: 0x00aa00,
+  pedestrian: 0xff00ff,
+  cyclist: 0x00ffff,
+  motorcycle: 0xffff00,
+  default: 0x00ff00,
+};
+
+const boxPool: THREE.LineSegments[] = [];
+const unitBoxGeom = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
+
+function acquireBox(color: number): THREE.LineSegments {
+  const existing = boxPool.pop();
+  if (existing) {
+    (existing.material as THREE.LineBasicMaterial).color.setHex(color);
+    existing.visible = true;
+    return existing;
+  }
+  const mat = new THREE.LineBasicMaterial({ color, linewidth: 2 });
+  const line = new THREE.LineSegments(unitBoxGeom, mat);
+  scene.add(line);
+  return line;
+}
+
+function recycleBox(mesh: THREE.LineSegments) {
+  mesh.visible = false;
+  boxPool.push(mesh);
+}
+
+function placeWorldBox(
+  mesh: THREE.LineSegments,
+  center: { x: number; y: number; z: number },
+  size: { x: number; y: number; z: number },
+  yaw: number
+) {
+  const sx = Math.max(size.x, 0.6);
+  const sy = Math.max(size.y, 0.6);
+  const sz = Math.max(size.z, 0.8);
+  mesh.position.set(center.x, Math.max(center.z, sz / 2), -center.y);
+  mesh.scale.set(sx, sz, sy);
+  mesh.rotation.y = -yaw;
+}
+
+function trackBoxInWorld(det: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number } }, ego: { transform: { position: { x: number; y: number; z: number }; rotation: number } }) {
+  const world = egoToWorld(det.box.center, ego.transform.position, ego.transform.rotation);
+  return {
+    center: world,
+    size: det.box.size,
+    yaw: det.box.yaw + ego.transform.rotation,
+  };
 }
 
 // Update detection visualization
 function updateDetectionMeshes() {
-  // Clear old detection meshes
   for (const mesh of detectionMeshes) {
-    scene.remove(mesh);
+    recycleBox(mesh as unknown as THREE.LineSegments);
   }
   detectionMeshes.length = 0;
   
-  if (!showGroundTruth) return;
-  
   const state = simulation.getState();
-  
-  // Get perception detections
   const detections = state.perceptionTracks.filter(t => t.missedFrames === 0);
+  const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
   
-  // Get ground truth
-  const groundTruth = [
-    ...state.trafficVehicles,
-    ...state.pedestrians,
-  ];
-  
-  // Match detections to ground truth
   for (const det of detections) {
-    // Find matching ground truth
-    let matched = false;
-    for (const gt of groundTruth) {
-      const dx = det.box.center.x - gt.boundingBox.center.x;
-      const dy = det.box.center.y - gt.boundingBox.center.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < 2) {
-        matched = true;
-        break;
-      }
-    }
-    
-    // Create visualization box
-    const geometry = new THREE.BoxGeometry(
-      det.box.size.x,
-      det.box.size.z,
-      det.box.size.y
-    );
-    const material = new THREE.MeshBasicMaterial({
-      color: matched ? 0x00ff00 : 0xff8800, // Green = matched, Orange = false positive
-      wireframe: true,
-      transparent: true,
-      opacity: 0.8,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(
-      det.box.center.x,
-      det.box.center.z + det.box.size.z / 2,
-      -det.box.center.y
-    );
-    mesh.rotation.y = -det.box.yaw;
-    scene.add(mesh);
-    detectionMeshes.push(mesh);
+    const world = trackBoxInWorld(det, state.ego);
+    const boxColor = DETECTION_COLORS[det.classType] ?? DETECTION_COLORS.default ?? 0x00ff00;
+    const mesh = acquireBox(boxColor);
+    placeWorldBox(mesh, world.center, world.size, world.yaw);
+    detectionMeshes.push(mesh as unknown as THREE.Mesh);
   }
   
-  // Show false negatives (ground truth not detected)
+  // Always also draw a class-colored box on nearby GT so boxes are visible
+  // even when the lidar tracker is still warming up.
   for (const gt of groundTruth) {
-    let detected = false;
+    const dx = gt.boundingBox.center.x - state.ego.transform.position.x;
+    const dy = gt.boundingBox.center.y - state.ego.transform.position.y;
+    if (dx * dx + dy * dy > 80 * 80) continue;
+    
+    let covered = false;
     for (const det of detections) {
-      const dx = det.box.center.x - gt.boundingBox.center.x;
-      const dy = det.box.center.y - gt.boundingBox.center.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 2) {
-        detected = true;
+      const world = trackBoxInWorld(det, state.ego);
+      const ddx = world.center.x - gt.boundingBox.center.x;
+      const ddy = world.center.y - gt.boundingBox.center.y;
+      if (ddx * ddx + ddy * ddy < 4) {
+        covered = true;
         break;
       }
     }
+    if (covered) continue;
     
-    if (!detected) {
-      const geometry = new THREE.BoxGeometry(
-        gt.boundingBox.size.x,
-        gt.boundingBox.size.z,
-        gt.boundingBox.size.y
-      );
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xff0000, // Red = false negative
-        wireframe: true,
-        transparent: true,
-        opacity: 0.8,
+    const color = showGroundTruth ? 0xff0000 : (DETECTION_COLORS[gt.classType] ?? 0x00ff00);
+    const mesh = acquireBox(color);
+    placeWorldBox(mesh, gt.boundingBox.center, gt.boundingBox.size, gt.boundingBox.yaw);
+    detectionMeshes.push(mesh as unknown as THREE.Mesh);
+  }
+
+  if (showGroundTruth) {
+    for (const det of detections) {
+      const world = trackBoxInWorld(det, state.ego);
+      const hit = groundTruth.some(gt => {
+        const dx = world.center.x - gt.boundingBox.center.x;
+        const dy = world.center.y - gt.boundingBox.center.y;
+        return dx * dx + dy * dy < 9;
       });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(
-        gt.boundingBox.center.x,
-        gt.boundingBox.center.z + gt.boundingBox.size.z / 2,
-        -gt.boundingBox.center.y
-      );
-      mesh.rotation.y = -gt.boundingBox.yaw;
-      scene.add(mesh);
-      detectionMeshes.push(mesh);
+      if (!hit) {
+        const mesh = acquireBox(0xff8800);
+        placeWorldBox(mesh, world.center, world.size, world.yaw);
+        detectionMeshes.push(mesh as unknown as THREE.Mesh);
+      }
     }
   }
 }
@@ -602,10 +708,12 @@ function updateCamera() {
   
   switch (cameraMode) {
     case 'chase':
+      const chaseBack = state.ego.vehicleType === 'ship' ? 110 : 18;
+      const chaseHeight = state.ego.vehicleType === 'ship' ? 48 : 8;
       const chaseOffset = {
-        x: -Math.cos(egoYaw) * 12,
-        y: -Math.sin(egoYaw) * 12,
-        z: 6,
+        x: -Math.cos(egoYaw) * chaseBack,
+        y: -Math.sin(egoYaw) * chaseBack,
+        z: chaseHeight,
       };
       camera.position.set(
         egoPos.x + chaseOffset.x,
@@ -656,6 +764,9 @@ function updateHUD() {
   const weatherText = state.environment.weather.charAt(0).toUpperCase() + 
     state.environment.weather.slice(1) + 
     (state.environment.timeOfDay === 'night' ? ' (Night)' : '');
+  const fpsEl = document.getElementById('fps-value');
+  if (fpsEl) fpsEl.textContent = String(displayFps);
+  
   document.getElementById('weather-status')!.textContent = weatherText;
   
   // Update weather styling
@@ -682,90 +793,71 @@ function updateHUD() {
   }
 }
 
-// Update Maritime COLREGs HUD with live values
+// Update Maritime COLREGs HUD with live values from the sim (not decoration)
 function updateMaritimeHUD() {
   const state = simulation.getState();
-  const egoPos = state.ego.transform.position;
-  const egoVel = state.ego.velocity;
-  const egoHeading = state.ego.transform.rotation;
-  
-  // Update ship positions based on simulation time
-  maritimeState.aisTargets.forEach(target => {
-    target.position.x += Math.cos(target.courseOverGround) * target.speedOverGround * 0.016;
-    target.position.y += Math.sin(target.courseOverGround) * target.speedOverGround * 0.016;
-  });
-  
-  // Calculate CPA/TCPA for each target
-  interface TargetInfo { name: string; cpa: number; tcpa: number; rule: string }
-  let closestTarget: TargetInfo | undefined;
-  let minTcpa = Infinity;
-  
+  maritimeState.aisTargets = state.maritimeTargets;
+  maritimeState.ownHeading = state.ego.transform.rotation;
+  maritimeState.ownSpeed = vec3Length(state.ego.velocity);
+
+  for (const visual of aisShipVisuals) {
+    const target = state.maritimeTargets.find(t => t.name === visual.name);
+    if (!target) continue;
+    visual.mesh.position.set(target.position.x, 1, -target.position.y);
+    visual.mesh.rotation.y = -target.heading + Math.PI / 2;
+  }
+
   const targetListEl = document.getElementById('ais-targets');
   if (targetListEl) targetListEl.innerHTML = '';
-  
-  for (const target of maritimeState.aisTargets) {
-    const { cpa, tcpa } = calculateCPATCPA(
-      egoPos,
-      egoVel,
-      target.position,
-      { x: Math.cos(target.courseOverGround) * target.speedOverGround, 
-        y: Math.sin(target.courseOverGround) * target.speedOverGround, z: 0 }
-    );
-    
-    const rule = determineCOLREGSRule(egoPos, egoHeading, target.position, target.heading);
-    
-    // Format TCPA as minutes:seconds
-    const tcpaMin = Math.floor(tcpa / 60);
-    const tcpaSec = Math.floor(tcpa % 60);
-    const tcpaStr = tcpa < 0 ? 'passed' : `${tcpaMin}:${tcpaSec.toString().padStart(2, '0')}`;
-    
+
+  let primary = state.maritimeEncounters
+    .filter(e => e.tcpa > 0)
+    .sort((a, b) => a.tcpa - b.tcpa)[0];
+
+  for (const enc of state.maritimeEncounters) {
+    const tcpaMin = Math.floor(enc.tcpa / 60);
+    const tcpaSec = Math.floor(enc.tcpa % 60);
+    const tcpaStr = enc.tcpa <= 0 ? 'passed' : `${tcpaMin}:${tcpaSec.toString().padStart(2, '0')}`;
     if (targetListEl) {
       const div = document.createElement('div');
-      const isRisk = cpa < 200 && tcpa > 0 && tcpa < 600;
-      div.style.color = isRisk ? '#ff4444' : '#ccc';
-      div.textContent = `${target.name} - CPA: ${Math.round(cpa)}m, TCPA: ${tcpaStr}`;
+      const opening = enc.cpaDelta > 5;
+      div.style.color = enc.cpa < 200 ? '#ff6666' : opening ? '#88ffcc' : '#ccc';
+      const trend = opening ? '↑' : enc.cpaDelta < -5 ? '↓' : '→';
+      div.textContent = `${enc.name} - CPA: ${Math.round(enc.cpa)}m ${trend} (was ${Math.round(enc.initialCpa)}m), TCPA: ${tcpaStr}`;
       targetListEl.appendChild(div);
     }
-    
-    if (tcpa > 0 && tcpa < minTcpa && cpa < 500) {
-      minTcpa = tcpa;
-      closestTarget = { name: target.name, cpa, tcpa, rule };
-    }
   }
-  
-  // Update situation display
+
   const situationEl = document.getElementById('colregs-situation');
   const ruleEl = document.getElementById('colregs-rule');
   const actionEl = document.getElementById('colregs-action');
-  
-  if (closestTarget && situationEl && ruleEl && actionEl) {
-    const ruleNames: Record<string, string> = {
-      'head_on': 'Head-on situation',
-      'crossing': 'Crossing situation',
-      'overtaking': 'Overtaking situation',
-      'stand_on': 'Stand-on vessel',
-      'give_way': 'Give-way situation',
-    };
-    
-    const ruleDescriptions: Record<string, string> = {
-      'head_on': 'Rule 14: Head-on - Both vessels alter to starboard',
-      'crossing': 'Rule 15: Crossing - Give-way vessel alters to starboard',
-      'overtaking': 'Rule 13: Overtaking - Keep clear of vessel being overtaken',
-      'stand_on': 'Rule 17: Stand-on - Maintain course and speed',
-      'give_way': 'Rule 16: Give-way - Take early and substantial action',
-    };
-    
-    const actions: Record<string, string> = {
-      'head_on': `ACTION: Alter course 20° to starboard`,
-      'crossing': `ACTION: Alter course to pass astern`,
-      'overtaking': `ACTION: Maintain safe passing distance`,
-      'stand_on': `ACTION: Maintain course and speed`,
-      'give_way': `ACTION: Alter course to starboard`,
-    };
-    
-    situationEl.textContent = `${ruleNames[closestTarget.rule] || 'Encounter'} with ${closestTarget.name}`;
-    ruleEl.textContent = ruleDescriptions[closestTarget.rule] || `COLREGS: ${closestTarget.rule}`;
-    actionEl.textContent = actions[closestTarget.rule] || 'Monitor situation';
+  const trendEl = document.getElementById('colregs-cpa-trend');
+
+  const ruleNames: Record<string, string> = {
+    'head_on': 'Head-on situation',
+    'crossing': 'Crossing situation',
+    'overtaking': 'Overtaking situation',
+    'stand_on': 'Stand-on vessel',
+    'give_way': 'Give-way situation',
+  };
+  const ruleDescriptions: Record<string, string> = {
+    'head_on': 'Rule 14: Head-on - Both vessels alter to starboard',
+    'crossing': 'Rule 15: Crossing - Give-way vessel alters to starboard',
+    'overtaking': 'Rule 13: Overtaking - Keep clear of vessel being overtaken',
+    'stand_on': 'Rule 17: Stand-on - Maintain course and speed',
+    'give_way': 'Rule 16: Give-way - Take early and substantial action',
+  };
+
+  if (primary && situationEl && ruleEl && actionEl) {
+    situationEl.textContent = `${ruleNames[primary.rule] || 'Encounter'} with ${primary.name}`;
+    ruleEl.textContent = ruleDescriptions[primary.rule] || `COLREGS: ${primary.rule}`;
+    actionEl.textContent = state.maritimeAction;
+    if (trendEl) {
+      const grew = primary.cpa - primary.initialCpa;
+      trendEl.textContent = grew > 5
+        ? `CPA opened ${Math.round(grew)}m after give-way (${Math.round(primary.initialCpa)} → ${Math.round(primary.cpa)}m)`
+        : `CPA ${Math.round(primary.cpa)}m · initial ${Math.round(primary.initialCpa)}m · range ${Math.round(primary.range)}m`;
+    }
   }
 }
 
@@ -1061,6 +1153,11 @@ function rebuildZone(zone: ZoneType, profile: StackProfile) {
   updateOverlaysForStack(profile);
 }
 
+function addZoneMesh(obj: THREE.Object3D) {
+  scene.add(obj);
+  zoneMeshes.push(obj);
+}
+
 // Clear zone-specific objects
 function clearZoneObjects() {
   if (waterMesh) {
@@ -1071,10 +1168,19 @@ function clearZoneObjects() {
   trackMeshes = [];
   buoyMeshes.forEach(m => scene.remove(m));
   buoyMeshes = [];
+  aisShipVisuals.length = 0;
   if (simWorldOverlay) {
     scene.remove(simWorldOverlay);
     simWorldOverlay = null;
   }
+  for (const mesh of cityRoadMeshes) scene.remove(mesh);
+  cityRoadMeshes = [];
+  if (laneRoadGroup) {
+    scene.remove(laneRoadGroup);
+    laneRoadGroup = null;
+  }
+  for (const mesh of zoneMeshes) scene.remove(mesh);
+  zoneMeshes.length = 0;
   
   // Clear entity meshes for the zone
   entityMeshes.forEach(mesh => scene.remove(mesh));
@@ -1083,64 +1189,83 @@ function clearZoneObjects() {
 
 // Setup harbour zone with water, buoys, ships
 function setupHarbourZone() {
-  // Hide city ground, use water instead
+  // Hide city ground and every road mesh — open water only
   groundMesh.visible = false;
+  for (const mesh of cityRoadMeshes) mesh.visible = false;
+  if (laneRoadGroup) laneRoadGroup.visible = false;
   
-  // Water surface - large ocean-like area
-  const waterGeo = new THREE.PlaneGeometry(2000, 2000);
+  const waterGeo = new THREE.PlaneGeometry(4000, 4000);
   const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x1a5276,
-    roughness: 0.2,
-    metalness: 0.4,
-    transparent: true,
-    opacity: 0.95,
+    color: 0x15608a,
+    roughness: 0.18,
+    metalness: 0.45,
   });
   waterMesh = new THREE.Mesh(waterGeo, waterMat);
   waterMesh.rotation.x = -Math.PI / 2;
-  waterMesh.position.set(0, -1, 0);
+  waterMesh.position.set(0, -0.6, 0);
   scene.add(waterMesh);
   
-  // Add buoys closer to origin for visibility (scale down positions)
+  // Docks / quay on the west bank (not roads)
+  const dock = new THREE.Mesh(
+    new THREE.BoxGeometry(40, 3, 220),
+    new THREE.MeshStandardMaterial({ color: 0x6b6254, roughness: 0.9 })
+  );
+  dock.position.set(-70, 1.2, 40);
+  addZoneMesh(dock);
+  for (const z of [-20, 20, 60, 100]) {
+    const pile = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6, 0.7, 6, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a2a1a })
+    );
+    pile.position.set(-48, 2, z);
+    addZoneMesh(pile);
+  }
+  const warehouse = new THREE.Mesh(
+    new THREE.BoxGeometry(22, 10, 36),
+    new THREE.MeshStandardMaterial({ color: 0x8a8070 })
+  );
+  warehouse.position.set(-88, 5, 20);
+  addZoneMesh(warehouse);
+
+  // Channel markers / buoys only — no asphalt
   const buoyPositions = [
-    { x: -30, z: -50, type: 'port' as const },
-    { x: 30, z: -50, type: 'starboard' as const },
-    { x: -30, z: 50, type: 'port' as const },
-    { x: 30, z: 50, type: 'starboard' as const },
-    { x: 0, z: 0, type: 'fairway' as const },
+    { x: -40, z: 80, type: 'port' as const },
+    { x: 40, z: 80, type: 'starboard' as const },
+    { x: -40, z: -40, type: 'port' as const },
+    { x: 40, z: -40, type: 'starboard' as const },
+    { x: -40, z: 200, type: 'port' as const },
+    { x: 40, z: 200, type: 'starboard' as const },
+    { x: 0, z: 20, type: 'fairway' as const },
   ];
   
   buoyPositions.forEach(buoy => {
-    const buoyGeo = new THREE.ConeGeometry(2, 6, 8);
+    const buoyGeo = new THREE.ConeGeometry(2.2, 7, 8);
     const buoyMat = new THREE.MeshStandardMaterial({
       color: buoy.type === 'port' ? 0xff0000 : (buoy.type === 'starboard' ? 0x00ff00 : 0xffff00),
       emissive: buoy.type === 'port' ? 0x330000 : (buoy.type === 'starboard' ? 0x003300 : 0x333300),
     });
     const buoyMeshObj = new THREE.Mesh(buoyGeo, buoyMat);
-    buoyMeshObj.position.set(buoy.x, 2, buoy.z);
-    buoyMeshObj.castShadow = true;
+    buoyMeshObj.position.set(buoy.x, 2.4, -buoy.z);
     scene.add(buoyMeshObj);
     buoyMeshes.push(buoyMeshObj);
   });
   
-  // Add other ships (scaled down for visibility)
-  const shipPositions = [
-    { x: -80, z: 100, heading: Math.PI / 4, name: 'CARGO STAR' },
-    { x: 60, z: -80, heading: -Math.PI / 3, name: 'TANKER PRIME' },
-    { x: 100, z: 150, heading: Math.PI, name: 'FERRY SWIFT' },
-  ];
-  
-  shipPositions.forEach((target, i) => {
+  const targets = simulation.getState().maritimeTargets;
+  maritimeState.aisTargets = targets;
+  for (const target of targets) {
     const shipGroup = createShipMesh();
-    shipGroup.scale.set(0.1, 0.1, 0.1); // Scale down to 10%
-    shipGroup.position.set(target.x, 1, target.z);
+    shipGroup.scale.set(0.28, 0.28, 0.28);
+    shipGroup.position.set(target.position.x, 1, -target.position.y);
     shipGroup.rotation.y = -target.heading + Math.PI / 2;
     scene.add(shipGroup);
-    entityMeshes.set(5000 + i, shipGroup as unknown as THREE.Mesh);
-  });
+    buoyMeshes.push(shipGroup as unknown as THREE.Mesh);
+    aisShipVisuals.push({ name: target.name, mesh: shipGroup });
+  }
   
-  // Sky and fog for maritime
-  scene.background = new THREE.Color(0x6699cc);
-  scene.fog = new THREE.Fog(0x6699cc, 100, 800);
+  scene.background = new THREE.Color(0x6aa0c8);
+  scene.fog = new THREE.Fog(0x6aa0c8, 250, 2200);
+  camera.far = 4000;
+  camera.updateProjectionMatrix();
 }
 
 // Create ship mesh
@@ -1199,7 +1324,7 @@ function setupRailZone() {
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({ color: 0x888888, linewidth: 3 });
     const line = new THREE.Line(geometry, material);
-    scene.add(line);
+    addZoneMesh(line);
     trackMeshes.push(line);
     
     // Rail ties
@@ -1209,7 +1334,7 @@ function setupRailZone() {
       const tie = new THREE.Mesh(tieGeo, tieMat);
       tie.position.copy(points[i]!);
       tie.position.y = 0.05;
-      scene.add(tie);
+      addZoneMesh(tie);
     }
   });
   
@@ -1241,7 +1366,7 @@ function setupRailZone() {
     signalGroup.add(light);
     
     signalGroup.position.set(signal.position.x, 0, signal.position.y);
-    scene.add(signalGroup);
+    addZoneMesh(signalGroup);
   });
   
   // Add platforms
@@ -1251,7 +1376,7 @@ function setupRailZone() {
     const plat = new THREE.Mesh(platGeo, platMat);
     plat.position.set(platform.position.x, 0.5, platform.position.y);
     plat.castShadow = true;
-    scene.add(plat);
+    addZoneMesh(plat);
     
     // Platform sign
     const signGeo = new THREE.PlaneGeometry(5, 2);
@@ -1270,7 +1395,7 @@ function setupRailZone() {
     const sign = new THREE.Mesh(signGeo, signMat);
     sign.position.set(platform.position.x + 6, 4, platform.position.y);
     sign.rotation.y = Math.PI / 2;
-    scene.add(sign);
+    addZoneMesh(sign);
   });
   
   // Add level crossing with stalled car
@@ -1281,7 +1406,7 @@ function setupRailZone() {
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
     const road = new THREE.Mesh(roadGeo, roadMat);
     road.position.set(crossing.position.x, 0.05, crossing.position.y);
-    scene.add(road);
+    addZoneMesh(road);
     
     // Stalled car on crossing
     if (crossing.stalledCar) {
@@ -1297,7 +1422,7 @@ function setupRailZone() {
     [-1, 1].forEach(side => {
       const barrier = new THREE.Mesh(barrierGeo, barrierMat);
       barrier.position.set(crossing.position.x + side * 8, 1.5, crossing.position.y - 5);
-      scene.add(barrier);
+      addZoneMesh(barrier);
     });
   }
   
@@ -1325,7 +1450,7 @@ function setupHighwayZone() {
     const marking = new THREE.Mesh(markingGeo, markingMat);
     marking.rotation.x = -Math.PI / 2;
     marking.position.set(x, 0.02, 0);
-    scene.add(marking);
+    addZoneMesh(marking);
   }
   
   // Center median (yellow)
@@ -1334,7 +1459,7 @@ function setupHighwayZone() {
   const median = new THREE.Mesh(medianGeo, medianMat);
   median.rotation.x = -Math.PI / 2;
   median.position.set(-2.5, 0.02, 0);
-  scene.add(median);
+  addZoneMesh(median);
   
   // Highway barriers
   highwayMap.staticEntities.filter(e => e.classType === 'barrier').forEach(barrier => {
@@ -1343,7 +1468,7 @@ function setupHighwayZone() {
     const mesh = new THREE.Mesh(barrierGeo, barrierMat);
     mesh.position.set(barrier.transform.position.x, 0.5, barrier.transform.position.y);
     mesh.castShadow = true;
-    scene.add(mesh);
+    addZoneMesh(mesh);
   });
   
   // Bridge overpass at y=0
@@ -1352,7 +1477,7 @@ function setupHighwayZone() {
   const bridge = new THREE.Mesh(bridgeGeo, bridgeMat);
   bridge.position.set(0, 10, 0);
   bridge.castShadow = true;
-  scene.add(bridge);
+  addZoneMesh(bridge);
   
   // Bridge supports
   [-35, 35].forEach(x => {
@@ -1361,7 +1486,7 @@ function setupHighwayZone() {
     const support = new THREE.Mesh(supportGeo, supportMat);
     support.position.set(x, 5, 0);
     support.castShadow = true;
-    scene.add(support);
+    addZoneMesh(support);
   });
   
   scene.fog = new THREE.Fog(0x87ceeb, 100, 1500);
@@ -1370,10 +1495,11 @@ function setupHighwayZone() {
 // Setup city zone (default)
 function setupCityZone() {
   groundMesh.visible = true;
-  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x333333);
+  (groundMesh.material as THREE.MeshStandardMaterial).color.setHex(0x2d5a27);
   groundMesh.position.set(0, 0, 0);
   scene.background = new THREE.Color(0x87ceeb);
-  scene.fog = new THREE.Fog(0x87ceeb, 100, 500);
+  scene.fog = new THREE.Fog(0x87ceeb, 80, 350);
+  buildCityRoads();
 }
 
 // Update ego vehicle based on stack profile
@@ -1394,8 +1520,7 @@ function updateEgoVehicle(profile: StackProfile) {
       break;
     case 'maritime':
       egoMesh = createOwnShipMesh() as unknown as THREE.Mesh;
-      // Position in harbour - scale down for visibility
-      egoMesh.scale.set(0.1, 0.1, 0.1);
+      egoMesh.scale.set(0.05, 0.05, 0.05);
       egoMesh.position.set(0, 1, 0);
       break;
     default:
@@ -1686,7 +1811,8 @@ function renderBEVHeatmaps() {
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 1, y + 1, cellWidth - 4, cellHeight - 22);
     
-    // Render occupancy grid
+    ctx.fillStyle = '#12182a';
+    ctx.fillRect(x + 2, y + 2, cellWidth - 6, cellHeight - 24);
     renderOccupancyGrid(ctx, occ, x + 2, y + 2, cellWidth - 6, cellHeight - 24);
     
     // Draw label
@@ -1758,7 +1884,12 @@ function renderOccupancyGrid(
         const g = Math.max(0, Math.min(255, Math.floor((1 - value) * 255)));
         const b = Math.max(0, 150 - Math.floor(value * 150));
         ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.fillRect(x + gx * cellW, y + (gridSize - gy - 1) * cellH, cellW + 0.5, cellH + 0.5);
+        ctx.fillRect(
+          x + gx * cellW,
+          y + (gridSize - gy - 1) * cellH,
+          Math.max(cellW + 0.8, 3),
+          Math.max(cellH + 0.8, 3)
+        );
       }
     }
   }
@@ -1876,6 +2007,7 @@ function initCompareMode() {
   
   // Reset timing tracking
   detectionTimings.clear();
+  visionFirstSeen.clear();
   compareStartTime = performance.now();
 }
 
@@ -1891,15 +2023,15 @@ function updateCompareMode() {
   const state = simulation.getState();
   const currentTime = (performance.now() - compareStartTime) / 1000;
   
-  // Get detections from both stacks
-  const leftDetections = state.perceptionTracks.filter(t => t.missedFrames === 0);
+  // Tesla pane: vision-only (camera FOV). Waymo pane: lidar-like fusion.
+  const visibleAgents = [...state.trafficVehicles, ...state.pedestrians];
+  const visionDets = detectVisibleAgents(state.ego, visibleAgents);
+  latestVisionDetections = visionDets;
   
-  // Simulate right stack with different detection characteristics
-  // (In a real implementation, would run full second stack)
+  const leftDetections = visionDets;
   const rightDetections = simulateAlternateStackDetections(state, compareStack);
   
-  // Track detection timing for ground truth entities
-  const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
+  const groundTruth = visibleAgents;
   
   for (const gt of groundTruth) {
     let timing = detectionTimings.get(gt.id);
@@ -1913,15 +2045,14 @@ function updateCompareMode() {
       detectionTimings.set(gt.id, timing);
     }
     
-    // Check if left stack detected it
+    // Vision can be later/weaker than lidar, but not blind to in-FOV agents
     if (timing.firstDetectedByLeft === null) {
-      const matched = leftDetections.find(d => {
-        const dx = d.box.center.x - gt.boundingBox.center.x;
-        const dy = d.box.center.y - gt.boundingBox.center.y;
-        return Math.sqrt(dx*dx + dy*dy) < 2;
-      });
+      const matched = leftDetections.find(d => d.entityId === gt.id);
       if (matched) {
-        timing.firstDetectedByLeft = currentTime;
+        if (!visionFirstSeen.has(gt.id)) visionFirstSeen.set(gt.id, currentTime);
+        if (currentTime - (visionFirstSeen.get(gt.id) ?? currentTime) >= 0.16) {
+          timing.firstDetectedByLeft = currentTime;
+        }
       }
     }
     
@@ -1942,7 +2073,14 @@ function updateCompareMode() {
   updateCompareTimingDisplay(currentTime);
   
   // Update visual overlays
-  updateTeslaVoxelVisualization(leftDetections, state.ego);
+  updateTeslaVoxelVisualization(
+    leftDetections.map(d => ({
+      box: { center: d.center, size: d.size, yaw: 0 },
+      confidence: d.confidence,
+      worldFrame: true,
+    })),
+    state.ego
+  );
   updateWaymoPointCloudVisualization(rightDetections, state.ego);
   
   // Render both compare views
@@ -1974,61 +2112,39 @@ function updateCompareMode() {
 }
 
 // Tesla-style voxel visualization with depth jitter
-function updateTeslaVoxelVisualization(detections: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number }; confidence: number }[], egoState: { transform: { position: { x: number; y: number; z: number } } }) {
+function updateTeslaVoxelVisualization(detections: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number }; confidence: number; worldFrame?: boolean }[], egoState: { transform: { position: { x: number; y: number; z: number }; rotation: number } }) {
   if (!teslaVoxelGroup) {
     teslaVoxelGroup = new THREE.Group();
     scene.add(teslaVoxelGroup);
   }
   
   const voxelGroup = teslaVoxelGroup;
-  
-  // Clear previous voxels
   while (voxelGroup.children.length > 0) {
     voxelGroup.remove(voxelGroup.children[0]!);
   }
   
-  // Create voxel representation for each detection
+  const geom = new THREE.BoxGeometry(0.55, 0.55, 0.55);
   detections.forEach(det => {
-    const voxelSize = 0.5;
-    const boxSize = det.box.size;
-    
-    const voxelsX = Math.ceil(boxSize.x / voxelSize);
-    const voxelsY = Math.ceil(boxSize.y / voxelSize);
-    const voxelsZ = Math.ceil(boxSize.z / voxelSize);
-    
-    const geometry = new THREE.BoxGeometry(voxelSize * 0.9, voxelSize * 0.9, voxelSize * 0.9);
+    const world = det.worldFrame
+      ? det.box.center
+      : egoToWorld(det.box.center, egoState.transform.position, egoState.transform.rotation);
     const material = new THREE.MeshBasicMaterial({
       color: 0x00ffff,
       transparent: true,
-      opacity: 0.6 * det.confidence,
+      opacity: 0.55 * det.confidence,
     });
-    
-    // Add depth jitter (Tesla vision-based depth estimation has noise)
-    const depthJitter = (1 - det.confidence) * 2; // More jitter for lower confidence
-    
-    for (let vx = 0; vx < voxelsX; vx++) {
-      for (let vy = 0; vy < voxelsY; vy++) {
-        for (let vz = 0; vz < Math.min(voxelsZ, 3); vz++) { // Limit vertical voxels for performance
-          const voxel = new THREE.Mesh(geometry, material);
-          
-          const localX = (vx - voxelsX / 2 + 0.5) * voxelSize;
-          const localY = (vy - voxelsY / 2 + 0.5) * voxelSize;
-          const localZ = (vz + 0.5) * voxelSize;
-          
-          // Add depth jitter based on distance from ego
-          const dx = det.box.center.x - egoState.transform.position.x;
-          const dy = det.box.center.y - egoState.transform.position.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const jitter = (Math.random() - 0.5) * depthJitter * (dist / 30);
-          
-          voxel.position.set(
-            det.box.center.x + localX + jitter,
-            localZ,
-            -det.box.center.y + localY + jitter
-          );
-          
-          voxelGroup.add(voxel);
-        }
+    const nx = Math.min(4, Math.max(2, Math.ceil(det.box.size.x / 0.8)));
+    const ny = Math.min(3, Math.max(2, Math.ceil(det.box.size.y / 0.8)));
+    for (let ix = 0; ix < nx; ix++) {
+      for (let iy = 0; iy < ny; iy++) {
+        const voxel = new THREE.Mesh(geom, material);
+        const jitter = (Math.random() - 0.5) * (1 - det.confidence) * 1.2;
+        voxel.position.set(
+          world.x + (ix - nx / 2) * 0.6 + jitter,
+          0.4 + (iy % 2) * 0.55,
+          -world.y + (iy - ny / 2) * 0.6 + jitter
+        );
+        voxelGroup.add(voxel);
       }
     }
   });
@@ -2361,6 +2477,9 @@ function setupInput() {
         // Toggle AI view
         showAIView = !showAIView;
         document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
+        document.getElementById('decision-banner')!.classList.toggle('visible', showAIView);
+        try { localStorage.setItem('autonomy-ai-view', showAIView ? '1' : '0'); } catch { /* ignore */ }
+        perceptionViz?.setEnabled(showAIView);
         break;
         
       case 'g':
@@ -2378,16 +2497,18 @@ function setupInput() {
         break;
         
       case 'm':
-        // Toggle compare mode
+        // Toggle compare mode — always Tesla vs Waymo in the city
         compareMode = !compareMode;
         document.getElementById('compare-container')!.classList.toggle('visible', compareMode);
         document.getElementById('canvas-container')!.style.display = compareMode ? 'none' : 'block';
         
         if (compareMode) {
-          // Set compare stack to next different stack
-          const stacks: StackProfile[] = ['tesla', 'waymo', 'waabi', 'aurora', 'rail', 'maritime'];
-          const currentIdx = stacks.indexOf(currentStack);
-          compareStack = stacks[(currentIdx + 1) % stacks.length]!;
+          if (currentZone !== 'city') {
+            switchStack('tesla');
+          }
+          currentStack = 'tesla';
+          compareStack = 'waymo';
+          simulation.injectScenario({ type: 'occluded_pedestrian', params: {} });
           initCompareMode();
         }
         console.log(`Compare mode: ${compareMode ? 'ON' : 'OFF'}`);
@@ -2498,8 +2619,18 @@ function setupInput() {
 
 // Animation loop
 let lastTime = 0;
+let displayFps = 0;
+let fpsFrames = 0;
+let fpsLast = 0;
 function animate(time: number) {
   requestAnimationFrame(animate);
+  
+  fpsFrames++;
+  if (time - fpsLast >= 500) {
+    displayFps = Math.round((fpsFrames * 1000) / Math.max(1, time - fpsLast));
+    fpsFrames = 0;
+    fpsLast = time;
+  }
   
   const dt = Math.min((time - lastTime) / 1000, 0.1);
   lastTime = time;
@@ -2521,9 +2652,10 @@ function animate(time: number) {
     simulation.step(dt, humanInput);
     
     // Update ego mesh
+    // Add Math.PI to flip the car so we see its rear (not headlights) from chase camera
     const egoPos = state.ego.transform.position;
     egoMesh.position.set(egoPos.x, 0.75, -egoPos.y);
-    egoMesh.rotation.y = -state.ego.transform.rotation;
+    egoMesh.rotation.y = -state.ego.transform.rotation + Math.PI;
     
     // Update other meshes
     updateEntityMeshes();
@@ -2546,12 +2678,90 @@ function animate(time: number) {
   if (compareMode) {
     updateCompareMode();
   }
+
+  updateAIView();
   
   // Render (only if not in compare mode, which has its own rendering)
   if (!compareMode) {
     renderer.render(scene, camera);
   }
   // Compare mode rendering is handled by updateCompareMode()
+}
+
+function updateAIView() {
+  const banner = document.getElementById('decision-banner');
+  const state = simulation.getState();
+  const agents = [...state.trafficVehicles, ...state.pedestrians];
+  if (latestVisionDetections.length === 0 || currentStack === 'tesla') {
+    latestVisionDetections = detectVisibleAgents(state.ego, agents);
+  }
+
+  const input = {
+    stack: currentStack,
+    ego: state.ego,
+    tracks: state.perceptionTracks,
+    lidarPoints: simulation.getLidarPoints(),
+    agents,
+    groundTruth: agents,
+    showGroundTruth,
+    plannerOutput: state.lastPlannerOutput,
+    aisTargets: state.maritimeTargets,
+    encounters: state.maritimeEncounters,
+    maritimeAction: state.maritimeAction,
+    visionDetections: latestVisionDetections,
+    occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
+  };
+
+  if (perceptionViz) {
+    perceptionViz.setEnabled(showAIView);
+    lastDecision = perceptionViz.update(input);
+  } else {
+    lastDecision = { text: 'Cruising: lane clear', severity: 'go' };
+  }
+
+  if (banner) {
+    banner.textContent = lastDecision.text;
+    banner.classList.toggle('visible', showAIView);
+    banner.classList.toggle('slow', lastDecision.severity === 'slow');
+    banner.classList.toggle('brake', lastDecision.severity === 'brake');
+  }
+
+  if (!showAIView) return;
+
+  const header = document.getElementById('ai-view-header');
+  if (header) {
+    const names: Record<StackProfile, string> = {
+      tesla: 'AI View — Tesla-style cameras + occupancy voxels',
+      waymo: 'AI View — Waymo-style lidar / radar / fused boxes',
+      waabi: 'AI View — Waabi-style BEV occupancy-flow',
+      aurora: 'AI View — Aurora FMCW velocity-colored points',
+      rail: 'AI View — rail corridor obstacle detection',
+      maritime: 'AI View — marine radar / AIS + CPA vectors',
+    };
+    header.textContent = names[currentStack] + '  (V hide · G ground truth)';
+  }
+
+  const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
+  if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
+
+  if (rawCameraRenderer && rawCamera && !compareMode) {
+    const ego = state.ego;
+    const yaw = ego.transform.rotation;
+    rawCamera.position.set(
+      ego.transform.position.x + Math.cos(yaw) * 1.6,
+      1.35,
+      -(ego.transform.position.y + Math.sin(yaw) * 1.6)
+    );
+    rawCamera.lookAt(
+      ego.transform.position.x + Math.cos(yaw) * 20,
+      1.1,
+      -(ego.transform.position.y + Math.sin(yaw) * 20)
+    );
+    const vizWas = perceptionViz?.group.visible ?? false;
+    if (perceptionViz) perceptionViz.group.visible = false;
+    rawCameraRenderer.render(scene, rawCamera);
+    if (perceptionViz) perceptionViz.group.visible = vizWas;
+  }
 }
 
 // Create a more detailed ego vehicle mesh
@@ -2610,6 +2820,7 @@ function createEgoVehicle(): THREE.Group {
 // Initialize and start
 async function init() {
   console.log('Initializing AUTONOMY CITY...');
+  await loadWasmKernels();
   
   // Initialize Three.js
   initThreeJS();
@@ -2629,10 +2840,24 @@ async function init() {
   scene.add(egoGroup);
   egoMesh = egoGroup as unknown as THREE.Mesh;
   
-  // Add road network
-  const state = simulation.getState();
-  const roads = createRoads(state.worldMap);
-  scene.add(roads);
+  // City roads already built in initThreeJS via buildCityRoads().
+  // Do not also add createRoads() — that leftover group survived harbour switches.
+  perceptionViz = new PerceptionVisualizer(scene);
+  try {
+    const stored = localStorage.getItem('autonomy-ai-view');
+    if (stored === '0') showAIView = false;
+  } catch { /* ignore */ }
+  document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
+  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView);
+  perceptionViz.setEnabled(showAIView);
+
+  const rawCanvas = document.getElementById('raw-camera-canvas') as HTMLCanvasElement | null;
+  if (rawCanvas) {
+    rawCameraRenderer = new THREE.WebGLRenderer({ canvas: rawCanvas, antialias: false, alpha: false });
+    rawCameraRenderer.setSize(320, 180, false);
+    rawCameraRenderer.setPixelRatio(1);
+    rawCamera = new THREE.PerspectiveCamera(70, 320 / 180, 0.2, 200);
+  }
   
   // Setup input handlers
   setupInput();

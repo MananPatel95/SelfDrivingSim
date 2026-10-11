@@ -9,7 +9,8 @@ import type {
 import { 
   SpatialGrid, generateLidarRays, castRay, applyLidarNoise 
 } from './raycaster';
-import { vec3Add, rotateVec3, vec3Dot, vec3Sub, SeededRandom } from '../sim/math';
+import { vec3Add, rotateVec3, vec3Dot, vec3Sub, vec3, vec3Scale, SeededRandom } from '../sim/math';
+import { getWasmKernels } from '../sim/wasm';
 
 export interface LidarScanResult {
   timestamp: number;
@@ -51,9 +52,69 @@ export function simulateLidarScan(
     config.horizontalResolution
   );
   
+  const kernels = getWasmKernels();
+  const useBatch = typeof window !== 'undefined';
+  let batchHits: Float32Array | null = null;
+  if (useBatch && entities.length > 0) {
+    const dirs = new Float32Array(rays.length * 3);
+    rays.forEach((r, i) => {
+      dirs[i * 3] = r.ray.direction.x;
+      dirs[i * 3 + 1] = r.ray.direction.y;
+      dirs[i * 3 + 2] = r.ray.direction.z;
+    });
+    const boxes = new Float32Array(entities.length * 7);
+    entities.forEach((e, j) => {
+      boxes[j * 7] = e.boundingBox.center.x;
+      boxes[j * 7 + 1] = e.boundingBox.center.y;
+      boxes[j * 7 + 2] = e.boundingBox.center.z;
+      boxes[j * 7 + 3] = e.boundingBox.size.x;
+      boxes[j * 7 + 4] = e.boundingBox.size.y;
+      boxes[j * 7 + 5] = e.boundingBox.size.z;
+      boxes[j * 7 + 6] = e.boundingBox.yaw;
+    });
+    batchHits = kernels.castRays(
+      sensorWorldPos.x, sensorWorldPos.y, sensorWorldPos.z,
+      dirs, boxes, config.maxRange
+    );
+  }
+
   // Cast rays and collect points
-  for (const { ray, ring } of rays) {
-    const hit = castRay(ray, entities, config.maxRange, grid);
+  for (let ri = 0; ri < rays.length; ri++) {
+    const { ray, ring } = rays[ri]!;
+    let hit = null as ReturnType<typeof castRay>;
+    if (batchHits) {
+      const t = batchHits[ri * 2] ?? -1;
+      const idx = batchHits[ri * 2 + 1] ?? -1;
+      const groundT = (() => {
+        const denom = ray.direction.z;
+        if (Math.abs(denom) < 1e-8) return null;
+        const gt = -ray.origin.z / denom;
+        return gt > 0 ? gt : null;
+      })();
+      if (t > 0 && (groundT === null || t < groundT)) {
+        const entity = entities[idx]!;
+        const point = vec3Add(ray.origin, vec3Scale(ray.direction, t));
+        hit = {
+          distance: t,
+          point,
+          normal: vec3(0, 0, 1),
+          entityId: entity?.id ?? -1,
+          entityClass: entity?.classType ?? 'unknown',
+          intensity: 0.5,
+        };
+      } else if (groundT !== null && groundT < config.maxRange) {
+        hit = {
+          distance: groundT,
+          point: vec3Add(ray.origin, vec3Scale(ray.direction, groundT)),
+          normal: vec3(0, 0, 1),
+          entityId: -1,
+          entityClass: 'ground',
+          intensity: 0.4,
+        };
+      }
+    } else {
+      hit = castRay(ray, entities, config.maxRange, grid);
+    }
     
     if (hit) {
       // Apply noise
@@ -131,6 +192,18 @@ export const LIDAR_CONFIGS: Record<string, LidarConfig> = {
     beams: 32,
     horizontalResolution: 0.5,
     maxRange: 100,
+    isFMCW: false,
+  },
+  // Browser-interactive scan: ~8x fewer rays than the full 32-beam / 0.5° cloud
+  browserLite: {
+    id: 'browser_lite',
+    position: { x: 0, y: 0, z: 2.0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    verticalFov: [-20, 10],
+    horizontalFov: [-180, 180],
+    beams: 16,
+    horizontalResolution: 2,
+    maxRange: 80,
     isFMCW: false,
   },
   frontLidarLeft: {

@@ -1,7 +1,7 @@
 # AUTONOMY CITY Makefile
 # Top-level build targets for the simulation and data pipeline
 
-.PHONY: all dev build test sample-data loop clean install help
+.PHONY: all dev build test sample-data loop clean install help wasm
 
 # Default target
 all: install test build
@@ -12,14 +12,28 @@ install:
 	cd game && npm install
 	@echo "Installing pipeline dependencies..."
 	cd pipeline && pip install -e ".[dev]"
+	@$(MAKE) wasm || echo "WASM build skipped (Rust/wasm-pack not required; TS fallback will be used)"
+
+# Rust / WebAssembly hot-path crate
+wasm:
+	@echo "Building autonomy-sim WASM crate..."
+	@if command -v rustup >/dev/null 2>&1; then rustup target add wasm32-unknown-unknown; fi
+	@if ! command -v wasm-pack >/dev/null 2>&1; then \
+		echo "Installing wasm-pack..."; \
+		curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh || cargo install wasm-pack --locked; \
+	fi
+	cd game/crates/autonomy-sim && wasm-pack build --target web --out-dir pkg
+	@echo "WASM crate ready at game/crates/autonomy-sim/pkg"
 
 # Development server
-dev:
+dev: 
+	@$(MAKE) wasm || echo "WASM not built; using TypeScript fallback"
 	cd game && npm run dev
 
 # Build game for production
 build:
 	@echo "Building game..."
+	@$(MAKE) wasm || echo "WASM not built; using TypeScript fallback"
 	cd game && npm run build
 	@echo "Build complete!"
 
