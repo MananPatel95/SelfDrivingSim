@@ -16,6 +16,7 @@ import {
   VISUAL_WHEEL_RADIUS,
   WHEEL_PLAN_OFFSETS,
   clampCosmeticAttitude,
+  meshYawForHeading,
 } from './sim/vehicleVisual';
 import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
@@ -726,7 +727,7 @@ function updateEntityMeshes() {
     const isVehicle = entity.classType === 'car' || entity.classType === 'truck'
       || entity.classType === 'bus' || entity.classType === 'motorcycle';
     const face = entity.transform.rotation;
-    if (isVehicle) mesh.rotation.y = -face + Math.PI;
+    if (isVehicle) mesh.rotation.y = meshYawForHeading(face);
     else if (entity.classType === 'pedestrian') {
       // Legs step along local -Z. Point that axis down the sidewalk, not across it.
       mesh.rotation.y = Math.atan2(-Math.cos(face), Math.sin(face));
@@ -2283,7 +2284,7 @@ function animate(time: number) {
   const alpha = isPaused ? 1 : simAccumulator / SIM_DT;
   const ego = interpolatedEgo(alpha);
   egoMesh.position.set(ego.x, 0, -ego.y);
-  egoMesh.rotation.set(0, -ego.yaw + Math.PI, 0);
+  egoMesh.rotation.set(0, meshYawForHeading(ego.yaw), 0);
   if (egoBodyPivot) {
     const att = clampCosmeticAttitude(ego.roll, ego.pitch);
     egoBodyPivot.rotation.order = 'YXZ';

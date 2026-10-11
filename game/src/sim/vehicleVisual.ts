@@ -124,3 +124,17 @@ export function plantedVehiclePose(roll: number, pitch: number): {
 export function lowestWheelPointY(roll: number, pitch: number): number {
   return plantedVehiclePose(roll, pitch).lowestWheelY;
 }
+
+/**
+ * Yaw for a mesh whose nose is local +X.
+ * Sim heading θ moves in (cos θ, sin θ), drawn as Three.js (cos θ, 0, -sin θ).
+ * rotation.y = θ points that nose along the heading. rotation.y = -θ + π points it sideways or backward.
+ */
+export function meshYawForHeading(simYaw: number): number {
+  return simYaw;
+}
+
+export function noseInSimPlane(simYaw: number): { x: number; y: number } {
+  const phi = meshYawForHeading(simYaw);
+  return { x: Math.cos(phi), y: Math.sin(phi) };
+}
