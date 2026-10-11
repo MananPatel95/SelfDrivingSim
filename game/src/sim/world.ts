@@ -35,6 +35,35 @@ const LAST_NAMES = [
   'Davis', 'Wilson', 'Anderson', 'Thomas', 'Jackson', 'White', 'Harris', 'Martin'
 ];
 
+/** Asphalt half-width matches the rendered 14 m roads (laneWidth * 2). */
+export function roadHalfWidth(config: { laneWidth: number }): number {
+  return config.laneWidth * 2;
+}
+
+export function distToNearestRoadAxis(v: number, halfSize: number, blockSize: number): number {
+  const rel = v + halfSize;
+  const mod = ((rel % blockSize) + blockSize) % blockSize;
+  return Math.min(mod, blockSize - mod);
+}
+
+export function nearestRoadLine(v: number, halfSize: number, blockSize: number, gridSize: number): number {
+  const i = Math.max(0, Math.min(gridSize, Math.round((v + halfSize) / blockSize)));
+  return -halfSize + i * blockSize;
+}
+
+/** True when a point sits on asphalt (or within `margin` metres of it). */
+export function pointOnRoad(
+  x: number,
+  y: number,
+  config: { laneWidth: number; gridSize: number; blockSize: number },
+  margin = 0
+): boolean {
+  const half = (config.gridSize * config.blockSize) / 2;
+  const limit = roadHalfWidth(config) + margin;
+  return distToNearestRoadAxis(x, half, config.blockSize) < limit
+    || distToNearestRoadAxis(y, half, config.blockSize) < limit;
+}
+
 export function generatePassengerName(rng: SeededRandom): string {
   const firstName = FIRST_NAMES[rng.nextInt(0, FIRST_NAMES.length - 1)]!;
   const lastName = LAST_NAMES[rng.nextInt(0, LAST_NAMES.length - 1)]!;
@@ -209,29 +238,43 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
     }
   }
   
-  // Generate trees and poles
+  // Trees sit on the sidewalk, clear of the asphalt. Trunk box is what cars hit.
+  const sidewalkInset = config.laneWidth * 2 + config.sidewalkWidth + 0.4;
+  for (let i = 0; i < config.gridSize; i++) {
+    for (let j = 0; j < config.gridSize; j++) {
+      const x0 = -halfSize + i * config.blockSize;
+      const y0 = -halfSize + j * config.blockSize;
+      for (let t = 18; t < config.blockSize - 16; t += 22) {
+        const spots: Array<[number, number]> = [
+          [x0 + t, y0 + sidewalkInset],
+          [x0 + t, y0 + config.blockSize - sidewalkInset],
+          [x0 + sidewalkInset, y0 + t],
+          [x0 + config.blockSize - sidewalkInset, y0 + t],
+        ];
+        for (const [x, y] of spots) {
+          if (rng.next() > 0.42) continue;
+          if (pointOnRoad(x, y, config, 1.2)) continue;
+          staticEntities.push({
+            id: entityId++,
+            classType: 'tree',
+            transform: { position: vec3(x, y, 3), rotation: 0 },
+            boundingBox: {
+              center: vec3(x, y, 1.2),
+              size: vec3(0.75, 0.75, 2.4),
+              yaw: 0,
+            },
+            velocity: vec3(0, 0, 0),
+            isStatic: true,
+            occlusionLevel: 0,
+          });
+        }
+      }
+    }
+  }
+
+  // Poles at intersections
   for (let i = 0; i <= config.gridSize; i++) {
     for (let j = 0; j <= config.gridSize; j++) {
-      if (rng.next() < 0.4) {
-        const x = -halfSize + i * config.blockSize + rng.nextFloat(-5, 5);
-        const y = -halfSize + j * config.blockSize + config.laneWidth * 2.5 + config.sidewalkWidth;
-        
-        staticEntities.push({
-          id: entityId++,
-          classType: 'tree',
-          transform: { position: vec3(x, y, 3), rotation: 0 },
-          boundingBox: {
-            center: vec3(x, y, 3),
-            size: vec3(4, 4, 6),
-            yaw: 0,
-          },
-          velocity: vec3(0, 0, 0),
-          isStatic: true,
-          occlusionLevel: 0,
-        });
-      }
-      
-      // Poles at intersections
       if (i < config.gridSize && j < config.gridSize) {
         const px = -halfSize + i * config.blockSize + config.laneWidth * 2.5;
         const py = -halfSize + j * config.blockSize + config.laneWidth * 2.5;
@@ -317,7 +360,8 @@ export function updateTrafficVehicle(
   lanes: Lane[],
   trafficLights: TrafficLight[],
   allVehicles: TrafficVehicle[],
-  dt: number
+  dt: number,
+  pedestrians: Pedestrian[] = []
 ): TrafficVehicle {
   const lane = lanes.find(l => l.id === vehicle.laneId);
   if (!lane || lane.points.length < 2) return vehicle;
@@ -362,7 +406,15 @@ export function updateTrafficVehicle(
   const dv = speed - leadSpeed;
   const sStar = s0 + Math.max(0, speed * T + (speed * dv) / (2 * Math.sqrt(aMax * bDecel)));
   let accel = aMax * (1 - (speed / Math.max(0.5, v0)) ** 4 - (sStar / Math.max(1, leadGap - 4.5)) ** 2);
-  if (shouldStop) accel = Math.min(accel, -3.5);
+  const yieldPed = shouldYieldToPedestrian(
+    vehicle.transform.position.x,
+    vehicle.transform.position.y,
+    yaw,
+    pedestrians,
+    speed
+  );
+  if (yieldPed) shouldStop = true;
+  if (shouldStop) accel = Math.min(accel, yieldPed ? -6.5 : -3.5);
   speed = Math.max(0, Math.min(v0, speed + accel * dt));
   
   // Move along lane
@@ -404,87 +456,230 @@ export function updateTrafficVehicle(
   };
 }
 
-// Pedestrian AI
+// Pedestrian AI — sidewalk walking, crosswalk crossings, yield to cars.
+const PED_CITY = { laneWidth: 3.5, gridSize: 6, blockSize: 100 };
+const PED_HALF = (PED_CITY.gridSize * PED_CITY.blockSize) / 2;
+const SIDEWALK = 8.8;
+const WALK_SPEED = 1.35;
+
 export interface Pedestrian extends Entity {
   targetPosition: Vec3;
   state: 'walking' | 'waiting' | 'crossing';
   waitTime: number;
+  roadAxis?: 'x' | 'y';
+  roadLine?: number;
+  sideSign?: number;
+  crossCooldown?: number;
+  walkDir?: number;
+}
+
+export interface RoadActor {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+}
+
+export function approachingCrosswalk(cx: number, cy: number, actors: RoadActor[]): boolean {
+  for (const actor of actors) {
+    const dx = cx - actor.x;
+    const dy = cy - actor.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 24 || dist < 2.5) continue;
+    const speed = Math.hypot(actor.vx, actor.vy);
+    if (speed < 0.7) continue;
+    const closing = (actor.vx * dx + actor.vy * dy) / dist;
+    if (closing > 1.1) return true;
+  }
+  return false;
+}
+
+export function shouldYieldToPedestrian(
+  x: number,
+  y: number,
+  yaw: number,
+  peds: Array<Pick<Pedestrian, 'transform' | 'state'>>,
+  speed = 0
+): boolean {
+  const fx = Math.cos(yaw);
+  const fy = Math.sin(yaw);
+  const range = Math.min(36, 11 + Math.max(0, speed) * 1.7);
+  for (const ped of peds) {
+    const px = ped.transform.position.x;
+    const py = ped.transform.position.y;
+    const dx = px - x;
+    const dy = py - y;
+    const ahead = dx * fx + dy * fy;
+    const lat = Math.abs(-dx * fy + dy * fx);
+    if (ahead < 0.5 || ahead > range || lat > 4.0) continue;
+    const onAsphalt = pointOnRoad(px, py, PED_CITY, 0.15);
+    if (ped.state === 'crossing' || ped.state === 'waiting' || onAsphalt) return true;
+  }
+  return false;
+}
+
+function movedPed(
+  ped: Pedestrian,
+  x: number,
+  y: number,
+  rotation: number,
+  vx: number,
+  vy: number,
+  state: Pedestrian['state'],
+  extra: Partial<Pedestrian> = {}
+): Pedestrian {
+  return {
+    ...ped,
+    ...extra,
+    state,
+    transform: { position: vec3(x, y, 0.9), rotation },
+    boundingBox: { ...ped.boundingBox, center: vec3(x, y, 0.9), yaw: rotation },
+    velocity: vec3(vx, vy, 0),
+  };
+}
+
+function bindSidewalk(ped: Pedestrian): { axis: 'x' | 'y'; roadLine: number; sideSign: number } {
+  if (ped.roadAxis && ped.roadLine !== undefined && ped.sideSign) {
+    return { axis: ped.roadAxis, roadLine: ped.roadLine, sideSign: ped.sideSign };
+  }
+  const x = ped.transform.position.x;
+  const y = ped.transform.position.y;
+  const dx = distToNearestRoadAxis(x, PED_HALF, PED_CITY.blockSize);
+  const dy = distToNearestRoadAxis(y, PED_HALF, PED_CITY.blockSize);
+  if (dx <= dy) {
+    const roadLine = nearestRoadLine(x, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize);
+    return { axis: 'y', roadLine, sideSign: Math.sign(x - roadLine) || 1 };
+  }
+  const roadLine = nearestRoadLine(y, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize);
+  return { axis: 'x', roadLine, sideSign: Math.sign(y - roadLine) || 1 };
 }
 
 export function updatePedestrian(
   ped: Pedestrian,
-  trafficLights: TrafficLight[],
+  _trafficLights: TrafficLight[],
   dt: number,
-  rng: SeededRandom
+  rng: SeededRandom,
+  actors: RoadActor[] = []
 ): Pedestrian {
-  const dx = ped.targetPosition.x - ped.transform.position.x;
-  const dy = ped.targetPosition.y - ped.transform.position.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  
-  if (dist < 1) {
-    // Reached target, pick new one
-    return {
-      ...ped,
-      targetPosition: vec3(
-        ped.transform.position.x + rng.nextFloat(-30, 30),
-        ped.transform.position.y + rng.nextFloat(-30, 30),
-        0
-      ),
-      state: 'walking',
-    };
-  }
-  
-  // Check if near a crosswalk and need to wait
-  let shouldWait = false;
-  for (const light of trafficLights) {
-    const distToLight = Math.sqrt(
-      (light.position.x - ped.transform.position.x) ** 2 +
-      (light.position.y - ped.transform.position.y) ** 2
-    );
-    if (distToLight < 10 && light.state !== 'red') {
-      // Pedestrians cross when cars have red
-      shouldWait = true;
-      break;
+  const x = ped.transform.position.x;
+  const y = ped.transform.position.y;
+
+  if (ped.state === 'crossing') {
+    const dx = ped.targetPosition.x - x;
+    const dy = ped.targetPosition.y - y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.4) {
+      const dir = ped.walkDir ?? Math.PI / 2;
+      return movedPed(ped, ped.targetPosition.x, ped.targetPosition.y, dir,
+        Math.cos(dir) * WALK_SPEED, Math.sin(dir) * WALK_SPEED, 'walking', {
+          waitTime: 0,
+          crossCooldown: 5,
+          state: 'walking',
+        });
     }
+    const vx = (dx / dist) * 1.55;
+    const vy = (dy / dist) * 1.55;
+    return movedPed(ped, x + vx * dt, y + vy * dt, Math.atan2(vy, vx), vx, vy, 'crossing');
   }
-  
-  if (shouldWait && ped.state !== 'crossing') {
-    return {
-      ...ped,
-      state: 'waiting',
-      velocity: vec3(0, 0, 0),
-      waitTime: ped.waitTime + dt,
-    };
+
+  if (ped.state === 'waiting') {
+    const mx = (x + ped.targetPosition.x) / 2;
+    const my = (y + ped.targetPosition.y) / 2;
+    const threatened = approachingCrosswalk(mx, my, actors);
+    if (!threatened || ped.waitTime > 5) {
+      const dx = ped.targetPosition.x - x;
+      const dy = ped.targetPosition.y - y;
+      return movedPed(ped, x, y, Math.atan2(dy, dx), 0, 0, 'crossing', { waitTime: 0 });
+    }
+    return movedPed(ped, x, y, ped.transform.rotation, 0, 0, 'waiting', { waitTime: ped.waitTime + dt });
   }
-  
-  // Walk towards target
-  const speed = 1.2; // m/s walking speed
-  const direction = Math.atan2(dy, dx);
-  const vx = speed * Math.cos(direction);
-  const vy = speed * Math.sin(direction);
-  
-  return {
-    ...ped,
-    transform: {
-      position: vec3(
-        ped.transform.position.x + vx * dt,
-        ped.transform.position.y + vy * dt,
-        0.9
-      ),
-      rotation: direction,
-    },
-    boundingBox: {
-      ...ped.boundingBox,
-      center: vec3(
-        ped.transform.position.x + vx * dt,
-        ped.transform.position.y + vy * dt,
-        0.9
-      ),
-    },
-    velocity: vec3(vx, vy, 0),
-    state: 'walking',
+
+  const bind = bindSidewalk(ped);
+  const heading = ped.transform.rotation;
+  let sx = x;
+  let sy = y;
+  let dir: number;
+  if (bind.axis === 'y') {
+    sx = bind.roadLine + bind.sideSign * SIDEWALK;
+    const sense = Math.sin(heading) >= 0 ? 1 : -1;
+    dir = sense > 0 ? Math.PI / 2 : -Math.PI / 2;
+    sy = y + sense * WALK_SPEED * dt;
+  } else {
+    sy = bind.roadLine + bind.sideSign * SIDEWALK;
+    const sense = Math.cos(heading) >= 0 ? 1 : -1;
+    dir = sense > 0 ? 0 : Math.PI;
+    sx = x + sense * WALK_SPEED * dt;
+  }
+
+  const cooldown = (ped.crossCooldown ?? 0) - dt;
+  const along = bind.axis === 'y' ? sy : sx;
+  const nearJunction = distToNearestRoadAxis(along, PED_HALF, PED_CITY.blockSize) < roadHalfWidth(PED_CITY) + 1.2;
+  if (nearJunction && (cooldown > 0 || rng.next() >= 0.7)) {
+    const ix = bind.axis === 'y'
+      ? bind.roadLine
+      : nearestRoadLine(sx, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize);
+    const iy = bind.axis === 'y'
+      ? nearestRoadLine(sy, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize)
+      : bind.roadLine;
+    const approach = bind.axis === 'y' ? Math.sign(sy - iy || 1) : Math.sign(sx - ix || 1);
+    const cornerX = bind.axis === 'y' ? bind.roadLine + bind.sideSign * SIDEWALK : ix + approach * (roadHalfWidth(PED_CITY) + 1.8);
+    const cornerY = bind.axis === 'y' ? iy + approach * (roadHalfWidth(PED_CITY) + 1.8) : bind.roadLine + bind.sideSign * SIDEWALK;
+    const newAxis: 'x' | 'y' = bind.axis === 'y' ? 'x' : 'y';
+    const newDir = newAxis === 'x'
+      ? (bind.sideSign > 0 ? 0 : Math.PI)
+      : (bind.sideSign > 0 ? Math.PI / 2 : -Math.PI / 2);
+    return movedPed(ped, cornerX, cornerY, newDir, Math.cos(newDir) * WALK_SPEED, Math.sin(newDir) * WALK_SPEED, 'walking', {
+      roadAxis: newAxis,
+      roadLine: newAxis === 'x' ? iy : ix,
+      sideSign: approach,
+      crossCooldown: 2.5,
+      waitTime: 0,
+      walkDir: newDir,
+    });
+  }
+  if (nearJunction && cooldown <= 0) {
+    const ix = bind.axis === 'y'
+      ? bind.roadLine
+      : nearestRoadLine(sx, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize);
+    const iy = bind.axis === 'y'
+      ? nearestRoadLine(sy, PED_HALF, PED_CITY.blockSize, PED_CITY.gridSize)
+      : bind.roadLine;
+    const far = -bind.sideSign;
+    const tx = bind.axis === 'y' ? bind.roadLine + far * SIDEWALK : sx;
+    const ty = bind.axis === 'y' ? sy : bind.roadLine + far * SIDEWALK;
+    const standX = bind.axis === 'y' ? sx : ix + Math.sign(sx - ix || 1) * (roadHalfWidth(PED_CITY) + 1.4);
+    const standY = bind.axis === 'y' ? iy + Math.sign(sy - iy || 1) * (roadHalfWidth(PED_CITY) + 1.4) : sy;
+    const threatened = approachingCrosswalk(ix, iy, actors);
+    if (threatened) {
+      return movedPed(ped, standX, standY, dir, 0, 0, 'waiting', {
+        targetPosition: vec3(tx, ty, 0),
+        waitTime: dt,
+        roadAxis: bind.axis,
+        roadLine: bind.roadLine,
+        sideSign: bind.sideSign,
+        walkDir: dir,
+        crossCooldown: 0,
+      });
+    }
+    return movedPed(ped, standX, standY, Math.atan2(ty - standY, tx - standX), 0, 0, 'crossing', {
+      targetPosition: vec3(tx, ty, 0),
+      waitTime: 0,
+      roadAxis: bind.axis,
+      roadLine: bind.roadLine,
+      sideSign: far,
+      walkDir: dir,
+      crossCooldown: 0,
+    });
+  }
+
+  return movedPed(ped, sx, sy, dir, Math.cos(dir) * WALK_SPEED, Math.sin(dir) * WALK_SPEED, 'walking', {
+    roadAxis: bind.axis,
+    roadLine: bind.roadLine,
+    sideSign: bind.sideSign,
+    crossCooldown: Math.max(0, cooldown),
     waitTime: 0,
-  };
+    walkDir: dir,
+  });
 }
 
 // Generate a ride request

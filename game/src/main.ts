@@ -451,17 +451,47 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     
     case 'pedestrian': {
       const group = new THREE.Group();
-      const colors = [0xff6600, 0x00cc66, 0x6600cc, 0xcc0066, 0xffcc00, 0x3399ff];
-      const bodyMat = new THREE.MeshLambertMaterial({ color: colors[Math.floor(Math.random() * colors.length)] });
-      const pedRadius = 0.28;
-      const pedHalf = 0.5 + pedRadius;
-      const body = new THREE.Mesh(new THREE.CapsuleGeometry(pedRadius, 1.0, 4, 6), bodyMat);
-      body.position.y = ROAD_SURFACE_Y + pedHalf;
-      body.castShadow = false;
-      group.add(body);
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), new THREE.MeshLambertMaterial({ color: 0xffcc99 }));
-      head.position.y = ROAD_SURFACE_Y + pedHalf + 0.72;
+      const shirts = [0xff6600, 0x00cc66, 0x3366cc, 0xcc3366, 0xffcc00, 0x663399];
+      const pantsCol = [0x1e2a44, 0x333333, 0x4a3728, 0x223322][Math.floor(Math.random() * 4)]!;
+      const shirt = new THREE.MeshLambertMaterial({ color: shirts[Math.floor(Math.random() * shirts.length)] });
+      const pants = new THREE.MeshLambertMaterial({ color: pantsCol });
+      const skin = new THREE.MeshLambertMaterial({ color: 0xffccaa });
+      const shoe = new THREE.MeshLambertMaterial({ color: 0x222222 });
+
+      const limb = (mat: THREE.Material, radius: number, length: number) => {
+        const pivot = new THREE.Group();
+        const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, Math.max(0.05, length - radius * 2), 3, 6), mat);
+        mesh.position.y = -length / 2;
+        pivot.add(mesh);
+        return pivot;
+      };
+
+      const hipY = ROAD_SURFACE_Y + 0.92;
+      const leftLeg = limb(pants, 0.07, 0.78);
+      const rightLeg = limb(pants, 0.07, 0.78);
+      leftLeg.position.set(-0.11, hipY, 0);
+      rightLeg.position.set(0.11, hipY, 0);
+      const leftShoe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.06, 0.22), shoe);
+      leftShoe.position.set(0, -0.78, 0.04);
+      rightLeg.add(leftShoe.clone());
+      leftLeg.add(leftShoe);
+      group.add(leftLeg, rightLeg);
+
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.48, 0.2), shirt);
+      torso.position.y = hipY + 0.28;
+      group.add(torso);
+
+      const leftArm = limb(shirt, 0.05, 0.55);
+      const rightArm = limb(shirt, 0.05, 0.55);
+      leftArm.position.set(-0.24, hipY + 0.46, 0);
+      rightArm.position.set(0.24, hipY + 0.46, 0);
+      group.add(leftArm, rightArm);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), skin);
+      head.position.y = hipY + 0.66;
       group.add(head);
+
+      group.userData.walk = { leftLeg, rightLeg, leftArm, rightArm };
       return group as unknown as THREE.Mesh;
     }
     
@@ -627,7 +657,7 @@ function rebuildStaticCity() {
       trees.length
     );
     const foliage = new THREE.InstancedMesh(
-      new THREE.ConeGeometry(2, 5, 7),
+      new THREE.ConeGeometry(1.05, 4.2, 7),
       new THREE.MeshLambertMaterial({ color: 0x228b22 }),
       trees.length
     );
@@ -637,7 +667,7 @@ function rebuildStaticCity() {
       dummy.scale.set(1, 1, 1);
       dummy.updateMatrix();
       trunks.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(t.transform.position.x, 4.5, -t.transform.position.y);
+      dummy.position.set(t.transform.position.x, 3.6, -t.transform.position.y);
       dummy.updateMatrix();
       foliage.setMatrixAt(i, dummy.matrix);
     });
@@ -695,6 +725,18 @@ function updateEntityMeshes() {
     const isVehicle = entity.classType === 'car' || entity.classType === 'truck'
       || entity.classType === 'bus' || entity.classType === 'motorcycle';
     mesh.rotation.y = -entity.transform.rotation + (isVehicle ? Math.PI : 0);
+    const walk = mesh.userData.walk as {
+      leftLeg: THREE.Group; rightLeg: THREE.Group; leftArm: THREE.Group; rightArm: THREE.Group;
+    } | undefined;
+    if (walk) {
+      const spd = Math.hypot(entity.velocity.x, entity.velocity.y);
+      const phase = spd > 0.15 ? (entity.transform.position.x + entity.transform.position.y) * 2.4 : 0;
+      const swing = Math.sin(phase) * Math.min(0.65, 0.25 + spd * 0.28);
+      walk.leftLeg.rotation.x = swing;
+      walk.rightLeg.rotation.x = -swing;
+      walk.leftArm.rotation.x = -swing * 0.85;
+      walk.rightArm.rotation.x = swing * 0.85;
+    }
   }
 }
 
@@ -1828,69 +1870,104 @@ function updateCompareTimingDisplay(currentTime: number) {
   fillCompareExplainer('right', compareStack);
 }
 
-// Update minimap
+// GTA-style radar: roads drawn, map rotated so the car's forward is up.
 function updateMinimap() {
   const canvas = document.getElementById('minimap') as HTMLCanvasElement;
   const ctx = canvas.getContext('2d')!;
   const state = simulation.getState();
-  
-  // Clear
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0, 0, 180, 180);
-  
-  const scale = 0.5; // meters to pixels
-  const centerX = 90;
-  const centerY = 90;
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#1a2a22';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(3, 3, w - 6, h - 6, 14);
+  ctx.clip();
+
+  const scale = 1.35;
   const egoX = state.ego.transform.position.x;
   const egoY = state.ego.transform.position.y;
-  
-  // Draw entities
-  ctx.fillStyle = '#666';
-  for (const entity of [...state.trafficVehicles, ...state.pedestrians]) {
-    const dx = (entity.transform.position.x - egoX) * scale;
-    const dy = -(entity.transform.position.y - egoY) * scale;
-    if (Math.abs(dx) < 90 && Math.abs(dy) < 90) {
-      ctx.fillRect(centerX + dx - 2, centerY + dy - 2, 4, 4);
-    }
-  }
-  
-  // Draw ego
-  ctx.fillStyle = '#0066cc';
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
-  ctx.fill();
-  
-  // Draw ego direction
-  ctx.strokeStyle = '#0066cc';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(centerX, centerY);
-  ctx.lineTo(
-    centerX + Math.cos(-state.ego.transform.rotation + Math.PI/2) * 15,
-    centerY + Math.sin(-state.ego.transform.rotation + Math.PI/2) * 15
-  );
-  ctx.stroke();
-  
-  // Draw route
-  if (state.route.length > 0) {
-    ctx.strokeStyle = '#0088ff';
-    ctx.lineWidth = 1;
+  const yaw = state.ego.transform.rotation;
+  const fwdX = Math.cos(yaw);
+  const fwdY = Math.sin(yaw);
+  const rightX = Math.sin(yaw);
+  const rightY = -Math.cos(yaw);
+
+  const toMap = (wx: number, wy: number) => {
+    const dx = wx - egoX;
+    const dy = wy - egoY;
+    const forward = dx * fwdX + dy * fwdY;
+    const right = dx * rightX + dy * rightY;
+    return { x: cx + right * scale, y: cy - forward * scale };
+  };
+
+  const grid = 6;
+  const block = 100;
+  const half = (grid * block) / 2;
+  const roadW = 14;
+
+  const fillWorldRect = (x0: number, y0: number, x1: number, y1: number) => {
+    const a = toMap(x0, y0);
+    const b = toMap(x1, y0);
+    const c = toMap(x1, y1);
+    const d = toMap(x0, y1);
     ctx.beginPath();
-    let first = true;
-    for (const point of state.route) {
-      const dx = (point.x - egoX) * scale;
-      const dy = -(point.y - egoY) * scale;
-      if (Math.abs(dx) < 90 && Math.abs(dy) < 90) {
-        if (first) {
-          ctx.moveTo(centerX + dx, centerY + dy);
-          first = false;
-        } else {
-          ctx.lineTo(centerX + dx, centerY + dy);
-        }
-      }
-    }
-    ctx.stroke();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  ctx.fillStyle = '#d5d8dc';
+  for (let i = 0; i <= grid; i++) {
+    const pos = -half + i * block;
+    fillWorldRect(pos - roadW / 2, -half, pos + roadW / 2, half);
+    fillWorldRect(-half, pos - roadW / 2, half, pos + roadW / 2);
   }
+
+  ctx.fillStyle = '#2c332c';
+  for (const bld of state.worldMap.staticEntities) {
+    if (bld.classType !== 'building') continue;
+    const hw = bld.boundingBox.size.x / 2;
+    const hd = bld.boundingBox.size.y / 2;
+    fillWorldRect(bld.transform.position.x - hw, bld.transform.position.y - hd,
+      bld.transform.position.x + hw, bld.transform.position.y + hd);
+  }
+
+  ctx.fillStyle = '#f2c14e';
+  for (const car of state.trafficVehicles) {
+    const p = toMap(car.transform.position.x, car.transform.position.y);
+    if (p.x < -8 || p.y < -8 || p.x > w + 8 || p.y > h + 8) continue;
+    ctx.fillRect(p.x - 2.5, p.y - 2.5, 5, 5);
+  }
+  ctx.fillStyle = '#ff66cc';
+  for (const ped of state.pedestrians) {
+    const p = toMap(ped.transform.position.x, ped.transform.position.y);
+    if (p.x < -8 || p.y < -8 || p.x > w + 8 || p.y > h + 8) continue;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 9);
+  ctx.lineTo(cx - 6, cy + 7);
+  ctx.lineTo(cx + 6, cy + 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 1;
+  ctx.stroke();
 }
 
 function bindDriveKey(e: KeyboardEvent, down: boolean) {

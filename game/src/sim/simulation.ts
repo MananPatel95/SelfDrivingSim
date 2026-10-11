@@ -10,6 +10,7 @@ import type {
 import { 
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
   TrafficVehicle, updateTrafficVehicle, Pedestrian, updatePedestrian,
+  shouldYieldToPedestrian, type RoadActor,
   generateRideRequest
 } from './world';
 
@@ -190,14 +191,14 @@ export class Simulation {
     const sidewalkOffset = roadWidth / 2 + 1.5; // Place on sidewalk
     
     const nearSpawn: Array<[number, number, number]> = [
-      [8.5, 18, Math.PI / 2],
-      [-8.5, 22, -Math.PI / 2],
-      [8.5, -12, Math.PI / 2],
-      [-8.5, 6, Math.PI],
-      [10, 30, 0],
-      [-10, 14, Math.PI],
-      [7, 40, Math.PI / 2],
-      [-7, -8, -Math.PI / 2],
+      [8.8, -8, Math.PI / 2],
+      [-8.8, 8, -Math.PI / 2],
+      [8.8, 18, Math.PI / 2],
+      [-8.8, -16, -Math.PI / 2],
+      [18, 8.8, 0],
+      [-14, -8.8, Math.PI],
+      [8.8, 92, -Math.PI / 2],
+      [-8.8, 108, Math.PI / 2],
     ];
     for (const [px, py, dir] of nearSpawn) {
       pedestrians.push({
@@ -264,6 +265,32 @@ export class Simulation {
     );
     this.state.worldMap.trafficLights = trafficLights;
     
+    const roadActors: RoadActor[] = [
+      ...this.state.trafficVehicles.map(v => ({
+        x: v.transform.position.x,
+        y: v.transform.position.y,
+        vx: v.velocity.x,
+        vy: v.velocity.y,
+      })),
+      {
+        x: this.state.ego.transform.position.x,
+        y: this.state.ego.transform.position.y,
+        vx: this.state.ego.velocity.x,
+        vy: this.state.ego.velocity.y,
+      },
+    ];
+
+    // Update pedestrians first so cars can yield to a crossing in progress
+    for (let i = 0; i < this.state.pedestrians.length; i++) {
+      this.state.pedestrians[i] = updatePedestrian(
+        this.state.pedestrians[i]!,
+        trafficLights,
+        dt,
+        this.rng,
+        roadActors
+      );
+    }
+
     // Update traffic vehicles
     for (let i = 0; i < this.state.trafficVehicles.length; i++) {
       this.state.trafficVehicles[i] = updateTrafficVehicle(
@@ -271,17 +298,8 @@ export class Simulation {
         this.state.worldMap.lanes,
         trafficLights,
         this.state.trafficVehicles,
-        dt
-      );
-    }
-    
-    // Update pedestrians
-    for (let i = 0; i < this.state.pedestrians.length; i++) {
-      this.state.pedestrians[i] = updatePedestrian(
-        this.state.pedestrians[i]!,
-        trafficLights,
         dt,
-        this.rng
+        this.state.pedestrians
       );
     }
     
@@ -342,7 +360,7 @@ export class Simulation {
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
     };
     
-    const hazard = obstacleAhead(this.state.ego, allEntities.filter(e => e.classType !== 'tree'), 45, 2.4);
+    const hazard = obstacleAhead(this.state.ego, allEntities, 45, 2.4);
     if (hazard && this.state.controlSource !== 'human') {
       plannerInput.detections = [
         ...plannerInput.detections,
@@ -429,6 +447,17 @@ export class Simulation {
       }
     }
 
+    const yieldToPed = shouldYieldToPedestrian(
+      this.state.ego.transform.position.x,
+      this.state.ego.transform.position.y,
+      this.state.ego.transform.rotation,
+      this.state.pedestrians,
+      vec3Length(this.state.ego.velocity)
+    );
+    if (yieldToPed) {
+      vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
+    }
+
     // Update ego vehicle (bicycle model)
     this.state.ego = updateVehicle(this.state.ego, vehicleInput, dt);
 
@@ -441,7 +470,7 @@ export class Simulation {
       ...this.state.pedestrians,
       ...this.state.worldMap.staticEntities.filter(e =>
         e.classType === 'building' || e.classType === 'pole' || e.classType === 'barrier'
-        || e.classType === 'car' || e.classType === 'truck'
+        || e.classType === 'car' || e.classType === 'truck' || e.classType === 'tree'
       ),
     ];
     const egoBox = {
