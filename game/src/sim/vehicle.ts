@@ -103,9 +103,9 @@ const CAR_DYN: CarDynamics = {
   a: 1.12,
   b: 1.58,
   cgHeight: 0.52,
-  caFront: 72000,
-  caRear: 82000,
-  mu: 1.05,
+  caFront: 78000,
+  caRear: 98000,
+  mu: 1.12,
   cd: 0.31,
   area: 2.22,
   crr: 0.013,
@@ -163,8 +163,8 @@ function approachSteer(current: number, target: number, dt: number): number {
 }
 
 function maxSteerForSpeed(speed: number, peak: number): number {
-  const t = clamp(Math.abs(speed) / 48, 0, 1);
-  return peak * (1 - 0.72 * t * t);
+  const t = clamp(Math.abs(speed) / 42, 0, 1);
+  return peak * (0.26 + 0.74 * (1 - t) * (1 - t));
 }
 
 function finite(n: number | undefined, fallback = 0): number {
@@ -426,8 +426,8 @@ export function updateVehicle(
   const worldSpeed = Math.hypot(vx, vy);
   const stoppingDistance = (worldSpeed * worldSpeed) / (2 * params.maxDecel);
 
-  const targetRoll = clamp(-ay * 0.02 - r * 0.04, -0.14, 0.14);
-  const targetPitch = clamp(-ax * 0.014, -0.09, 0.08);
+  const targetRoll = clamp(-ay * 0.04 - r * 0.09, -0.24, 0.24);
+  const targetPitch = clamp(-ax * 0.02, -0.12, 0.10);
   const bodyRoll = approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5);
   const bodyPitch = approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2);
   const wheelSpin = p.wheelSpin + (u / dyn.wheelRadius) * dt;

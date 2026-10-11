@@ -1825,6 +1825,9 @@ function bindDriveKey(e: KeyboardEvent, down: boolean) {
   return used;
 }
 
+let lastOrbitClientX = 0;
+let lastOrbitClientY = 0;
+
 function applyOrbitDrag(dx: number, dy: number) {
   orbitYaw -= dx * 0.0048;
   orbitPitch = clamp(orbitPitch + dy * 0.0032, -0.05, 1.15);
@@ -1847,14 +1850,22 @@ function setupInput() {
     if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
     e.preventDefault();
     rmbOrbiting = true;
+    lastOrbitClientX = e.clientX;
+    lastOrbitClientY = e.clientY;
     lastMouseCamMs = performance.now();
     try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
-    canvas.requestPointerLock?.().catch(() => { /* movementX still works */ });
+    canvas.requestPointerLock?.().catch(() => { /* movementX / client delta still work */ });
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!rmbOrbiting) return;
-    const dx = e.movementX;
-    const dy = e.movementY;
+    let dx = e.movementX;
+    let dy = e.movementY;
+    if (dx === 0 && dy === 0) {
+      dx = e.clientX - lastOrbitClientX;
+      dy = e.clientY - lastOrbitClientY;
+    }
+    lastOrbitClientX = e.clientX;
+    lastOrbitClientY = e.clientY;
     if (dx === 0 && dy === 0) return;
     applyOrbitDrag(dx, dy);
   });
@@ -1862,9 +1873,6 @@ function setupInput() {
     if (e.button === 2) endOrbitDrag();
   });
   canvas.addEventListener('pointercancel', () => endOrbitDrag());
-  document.addEventListener('pointerlockchange', () => {
-    if (!document.pointerLockElement) rmbOrbiting = false;
-  });
   canvas.addEventListener('wheel', (e) => {
     if (cameraMode !== 'chase' && cameraMode !== 'orbit') return;
     e.preventDefault();
@@ -2188,20 +2196,25 @@ function createEgoVehicle(): THREE.Group {
   
   // Wheels (pivots so fronts can steer; mesh spins about the axle)
   egoWheels = [];
-  const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+  const tireGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 18);
+  const rimGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.3, 12);
+  const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const rimMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
   const egoWheelPositions: Array<[number, number, number, boolean]> = [
-    [1.3, 0.35, 0.9, true], [1.3, 0.35, -0.9, true],
-    [-1.3, 0.35, 0.9, false], [-1.3, 0.35, -0.9, false],
+    [1.3, 0.38, 0.92, true], [1.3, 0.38, -0.92, true],
+    [-1.3, 0.38, 0.92, false], [-1.3, 0.38, -0.92, false],
   ];
   for (const [wx, wy, wz, front] of egoWheelPositions) {
     const pivot = new THREE.Group();
     pivot.position.set(wx, wy, wz);
-    const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-    wheel.rotation.x = Math.PI / 2;
-    pivot.add(wheel);
+    const tire = new THREE.Mesh(tireGeo, tireMat);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    tire.rotation.x = Math.PI / 2;
+    rim.rotation.x = Math.PI / 2;
+    pivot.add(tire);
+    pivot.add(rim);
     group.add(pivot);
-    egoWheels.push({ pivot, mesh: wheel, front });
+    egoWheels.push({ pivot, mesh: tire, front });
   }
   
   // Headlights
