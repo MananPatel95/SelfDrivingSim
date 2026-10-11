@@ -130,6 +130,7 @@ let lastMouseCamMs = -1e9;
 let showPhysDebug = false;
 /** Ground-level side camera for wheel/sill verification. */
 let debugSideCam: { height: number; side: number; lookY: number } | null = null;
+let photoMode = false;
 const CHASE_RETURN_DELAY = 1.5;
 const CHASE_DIST_DEFAULT = 9.2;
 const ORBIT_DIST_DEFAULT = 22;
@@ -759,7 +760,8 @@ function updateDetectionMeshes() {
     recycleBox(mesh as unknown as THREE.LineSegments);
   }
   detectionMeshes.length = 0;
-  
+  if (photoMode) return;
+
   const state = simulation.getState();
   const detections = state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4);
   const groundTruth = [...state.trafficVehicles, ...state.pedestrians];
@@ -2378,9 +2380,16 @@ async function init() {
       updateViewExplainer();
     },
     setLowSideCam() {
-      debugSideCam = { height: 0.32, side: 6.4, lookY: 0.38 };
+      debugSideCam = { height: 0.28, side: 5.8, lookY: 0.36 };
+    },
+    freezeSim() {
+      isPaused = true;
+    },
+    unfreezeSim() {
+      isPaused = false;
     },
     setPhotoHud() {
+      photoMode = true;
       showPhysDebug = true;
       showAIView = false;
       showGroundTruth = false;
