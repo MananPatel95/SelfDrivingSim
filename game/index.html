@@ -168,7 +168,7 @@
     #gear-btn:hover { background: #222; }
 
     #ai-view-panel {
-      width: min(380px, 32vw);
+      width: min(440px, 36vw);
       background: rgba(0,0,0,0.92);
       border-radius: 8px;
       overflow: hidden;
@@ -177,12 +177,28 @@
     }
     #ai-view-panel.visible { display: block; }
     #ai-view-header {
-      padding: 8px 10px;
+      padding: 8px 10px 4px;
       background: #111;
-      border-bottom: 1px solid #333;
       font-weight: bold;
       font-size: 12px;
     }
+    #ai-view-explainer {
+      padding: 0 10px 8px;
+      background: #111;
+      border-bottom: 1px solid #333;
+      font-size: 11px;
+      line-height: 1.45;
+      color: #c5d4e0;
+    }
+    #ai-view-explainer .ai-k {
+      color: #7fd7ff;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.06em;
+      margin-right: 4px;
+    }
+    #ai-view-explainer p { margin: 3px 0 0; }
     #ai-view-insets { display: flex; gap: 4px; padding: 4px; }
     #ai-view-insets .inset { flex: 1; }
     #ai-view-insets .inset-label { font-size: 10px; color: #8ab; padding: 2px 4px; }
@@ -546,14 +562,18 @@
     <div id="top-right-stack" class="hud hud-interactive">
       <button id="gear-btn" title="Pause / settings (Esc)">⚙</button>
       <div id="ai-view-panel" class="visible">
-        <div id="ai-view-header">AI View — what this stack consumes (V to hide, G = GT)</div>
+        <div id="ai-view-header">AI View — Tesla-style (F1)</div>
+        <div id="ai-view-explainer">
+          <p><span class="ai-k">Uses</span><span id="ai-view-uses"></span></p>
+          <p><span class="ai-k">Unlike others</span><span id="ai-view-diff"></span></p>
+        </div>
         <div id="ai-view-insets">
           <div class="inset">
-            <div class="inset-label">Raw ego camera</div>
+            <div class="inset-label" id="ai-view-raw-label">Front camera (vision)</div>
             <canvas id="raw-camera-canvas" width="320" height="180"></canvas>
           </div>
           <div class="inset">
-            <div class="inset-label">Perception output</div>
+            <div class="inset-label" id="ai-view-perc-label">Vision boxes + voxels</div>
             <canvas id="ai-view-canvas" width="320" height="180"></canvas>
           </div>
         </div>

@@ -456,9 +456,9 @@ export function renderAIViewCanvas(
   ctx.fillStyle = '#7fd7ff';
   ctx.font = 'bold 12px sans-serif';
   const titles: Record<VizStack, string> = {
-    tesla: 'Tesla-style · cameras + occupancy voxels',
-    waymo: 'Waymo-style · lidar + radar + fused boxes',
-    waabi: 'Waabi-style · BEV occupancy-flow',
+    tesla: 'Tesla · cameras only → voxels (no lidar/map)',
+    waymo: 'Waymo · lidar+radar+map fused boxes',
+    waabi: 'Waabi · BEV occupancy now + 1–3s future',
   };
   ctx.fillText(titles[input.stack], 8, 16);
 

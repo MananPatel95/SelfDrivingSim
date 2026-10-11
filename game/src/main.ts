@@ -1140,10 +1140,55 @@ function switchStack(profile: StackProfile) {
   console.log(`Switched to stack: ${profile}`);
 }
 
+const AI_VIEW_COPY: Record<StackProfile, {
+  title: string;
+  uses: string;
+  diff: string;
+  rawLabel: string;
+  percLabel: string;
+}> = {
+  tesla: {
+    title: 'AI View — Tesla-style (F1)',
+    uses: 'Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. It reads lights and signs from the image.',
+    diff: 'Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range/night depth.',
+    rawLabel: 'Front camera (vision)',
+    percLabel: 'Vision boxes + voxels',
+  },
+  waymo: {
+    title: 'AI View — Waymo-style (F2)',
+    uses: 'Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
+    diff: 'Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes. This stack is multi-sensor + geofenced map: more redundant, only works where the map exists.',
+    rawLabel: 'Ego camera (context)',
+    percLabel: 'Fused lidar / radar boxes',
+  },
+  waabi: {
+    title: 'AI View — Waabi-style (F3)',
+    uses: 'Lidar, cameras, and radar fused into a bird’s-eye occupancy grid, plus 1 s / 2 s / 3 s future occupancy and a fan of scored trajectories. Mid-level reps stay readable.',
+    diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Sim World), not just “what is that object now?”',
+    rawLabel: 'Ego camera (context)',
+    percLabel: 'BEV occupancy-flow',
+  },
+};
+
+function updateAIViewExplainer(profile: StackProfile = currentStack) {
+  const copy = AI_VIEW_COPY[profile];
+  const header = document.getElementById('ai-view-header');
+  const uses = document.getElementById('ai-view-uses');
+  const diff = document.getElementById('ai-view-diff');
+  const raw = document.getElementById('ai-view-raw-label');
+  const perc = document.getElementById('ai-view-perc-label');
+  if (header) header.textContent = `${copy.title}  ·  V hide · G ground truth`;
+  if (uses) uses.textContent = copy.uses;
+  if (diff) diff.textContent = copy.diff;
+  if (raw) raw.textContent = copy.rawLabel;
+  if (perc) perc.textContent = copy.percLabel;
+}
+
 function updateOverlaysForStack(profile: StackProfile) {
   bevOverlayEnabled = profile === 'waabi';
   const bevHud = document.getElementById('bev-overlay');
   if (bevHud) bevHud.classList.toggle('visible', bevOverlayEnabled);
+  updateAIViewExplainer(profile);
 }
 
 // Render BEV occupancy heatmaps for Waabi
@@ -2151,15 +2196,7 @@ function updateAIView(drawRawScene: boolean) {
 
   if (!showAIView) return;
 
-  const header = document.getElementById('ai-view-header');
-  if (header) {
-    const names: Record<StackProfile, string> = {
-      tesla: 'AI View — Tesla-style cameras + occupancy voxels',
-      waymo: 'AI View — Waymo-style lidar / radar / fused boxes',
-      waabi: 'AI View — Waabi-style BEV occupancy-flow',
-    };
-    header.textContent = names[currentStack] + '  (V hide · G ground truth)';
-  }
+  updateAIViewExplainer(currentStack);
 
   const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
   if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
@@ -2273,6 +2310,7 @@ async function init() {
   document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
   document.getElementById('decision-banner')?.classList.toggle('visible', showAIView);
   perceptionViz.setEnabled(showAIView);
+  updateAIViewExplainer(currentStack);
 
   const rawCanvas = document.getElementById('raw-camera-canvas') as HTMLCanvasElement | null;
   if (rawCanvas) {
