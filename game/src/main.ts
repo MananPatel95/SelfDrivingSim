@@ -1156,6 +1156,17 @@ function setText(id: string, text: string) {
   if (el) el.textContent = text;
 }
 
+function syncCompareChrome() {
+  document.getElementById('view-explainer')?.classList.toggle('hidden', compareMode);
+  document.getElementById('ai-view-panel')?.classList.toggle('visible', showAIView && !compareMode);
+  document.getElementById('bev-overlay')?.classList.toggle('visible', bevOverlayEnabled && !compareMode);
+  document.getElementById('left-hud-stack')?.classList.toggle('hidden', compareMode);
+  document.getElementById('drive-badge')?.classList.toggle('hidden', compareMode);
+  document.getElementById('drive-hint')?.classList.toggle('visible', false);
+  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView && !compareMode);
+  document.getElementById('minimap')?.classList.toggle('hidden', compareMode);
+}
+
 function updateViewExplainer(profile: StackProfile = currentStack) {
   const stack = STACK_VIEW_COPY[profile];
   const cam = CAMERA_VIEW_COPY[cameraMode];
@@ -1166,12 +1177,9 @@ function updateViewExplainer(profile: StackProfile = currentStack) {
   setText('camera-explainer-uses', cam.uses);
   setText('camera-explainer-diff', cam.diff);
   setText('ai-view-header', `${aiViewTitle(profile)}  ·  V hide · G ground truth`);
-  setText('ai-view-uses', stack.uses);
-  setText('ai-view-diff', stack.diff);
   setText('ai-view-raw-label', stack.rawLabel);
   setText('ai-view-perc-label', stack.percLabel);
-  const card = document.getElementById('view-explainer');
-  if (card) card.classList.toggle('hidden', compareMode);
+  syncCompareChrome();
 }
 
 function fillCompareExplainer(side: 'left' | 'right', profile: StackProfile) {
@@ -2346,6 +2354,21 @@ async function init() {
   document.getElementById('loading')!.classList.add('hidden');
   lastTime = performance.now();
   requestAnimationFrame(animate);
+  (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
+    setOrbit(yaw: number, pitch: number, dist: number) {
+      cameraMode = 'orbit';
+      orbitYaw = yaw;
+      orbitPitch = pitch;
+      orbitDist = dist;
+      camFollowReady = true;
+      updateViewExplainer();
+    },
+    enablePhysDebug() {
+      showPhysDebug = true;
+      const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
+      if (box) box.checked = true;
+    },
+  };
   console.log('AUTONOMY CITY started!');
 }
 

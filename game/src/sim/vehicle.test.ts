@@ -68,6 +68,12 @@ describe('dynamic bicycle sedan', () => {
     expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(gripRear);
   });
 
+  it('reports ~0 slip when parked', () => {
+    const ego = drive(1.0, { throttle: 0, steering: 0, brake: 1, handbrake: 0 });
+    expect(Math.abs(ego.bodyVx ?? 0)).toBeLessThan(0.3);
+    expect(Math.abs(ego.slipAngle ?? 0)).toBeLessThan(0.02);
+  });
+
   it('does not spin in place at zero speed with full steer', () => {
     const ego = drive(1.2, { throttle: 0, steering: 1, brake: 0, handbrake: 0 });
     expect(Math.abs(ego.transform.rotation)).toBeLessThan(0.05);

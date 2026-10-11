@@ -426,6 +426,11 @@ export function updateVehicle(
   u = clamp(finite(u), inReverse ? -12 : -16, params.maxSpeed);
   v = clamp(finite(v), -18, 18);
   r = clamp(finite(r), -2.8, 2.8);
+  if (Math.abs(u) < 1.6 && hbFilt < 0.2) {
+    af = 0;
+    ar = 0;
+    v = 0;
+  }
 
   const c = Math.cos(yaw);
   const s = Math.sin(yaw);
