@@ -8,10 +8,9 @@ import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { snapToRoad, roadRoute } from './sim/world';
+import { COCKPIT, handWheelRotation } from './sim/cabinView';
 import {
   AXLE_HEIGHT,
-  BODY_CENTER_LOCAL_Y,
-  BODY_HALF_HEIGHT,
   BODY_PARTS,
   ROAD_SURFACE_Y,
   VISUAL_WHEEL_RADIUS,
@@ -998,8 +997,8 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     targetLookX = egoX;
     targetLookY = egoY;
   } else if (cameraMode === 'hood') {
-    const eye = carLocalToWorld(0.02, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.62, 0.34, egoX, egoY, egoYaw);
-    const look = carLocalToWorld(14, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.28, 0.34, egoX, egoY, egoYaw);
+    const eye = carLocalToWorld(COCKPIT.eye.x, COCKPIT.eye.y, COCKPIT.eye.z, egoX, egoY, egoYaw);
+    const look = carLocalToWorld(COCKPIT.look.x, COCKPIT.look.y, COCKPIT.look.z, egoX, egoY, egoYaw);
     targetPosX = eye.x;
     targetPosY = eye.y;
     targetPosZ = eye.z;
@@ -1044,11 +1043,11 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
 
   camera.position.set(camPosX, camPosY, camPosZ);
   const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? hoodLookWorldY : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
-  if (cameraMode === 'hood' && camera.near !== 0.03) {
-    camera.near = 0.03;
-    camera.updateProjectionMatrix();
-  } else if (cameraMode !== 'hood' && camera.near !== 0.1) {
-    camera.near = 0.1;
+  const wantFov = cameraMode === 'hood' ? COCKPIT.fovDeg : 60;
+  const wantNear = cameraMode === 'hood' ? 0.04 : 0.1;
+  if (Math.abs(camera.fov - wantFov) > 0.1 || camera.near !== wantNear) {
+    camera.fov = wantFov;
+    camera.near = wantNear;
     camera.updateProjectionMatrix();
   }
   camera.lookAt(camLookX, lookZ, -camLookY);
@@ -2442,8 +2441,8 @@ function animate(time: number) {
     wheel.mesh.rotation.y = currWheelSpin;
   }
   if (egoSteerWheel) {
-    // A is +steer (left). Positive rotation about the nose axis turns the wheel left.
-    egoSteerWheel.rotation.x = currSteer * 2.6;
+    // A is +steer (left). The hand wheel turns farther than the road wheels.
+    egoSteerWheel.rotation.x = handWheelRotation(currSteer);
   }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
 
@@ -2540,65 +2539,89 @@ function createEgoVehicle(): THREE.Group {
   egoBodyPivot.position.y = AXLE_HEIGHT;
   group.add(egoBodyPivot);
 
-  const paint = new THREE.MeshLambertMaterial({ color: 0x163a66 });
-  const paintDark = new THREE.MeshLambertMaterial({ color: 0x0e243f });
-  const glass = new THREE.MeshLambertMaterial({ color: 0x0c121c, transparent: true, opacity: 0.55 });
-  const lamp = new THREE.MeshLambertMaterial({ color: 0xdfefff, emissive: 0x9ecbff, emissiveIntensity: 0.7 });
-  const tail = new THREE.MeshLambertMaterial({ color: 0xff3344, emissive: 0xff2233, emissiveIntensity: 0.45 });
-  const leather = new THREE.MeshLambertMaterial({ color: 0x1c1c1c });
-  const metal = new THREE.MeshLambertMaterial({ color: 0xb8c0cc });
+  const pearl = new THREE.MeshLambertMaterial({ color: 0xe7eef6 });
+  const cladding = new THREE.MeshLambertMaterial({ color: 0x1b212a });
+  const black = new THREE.MeshLambertMaterial({ color: 0x12151b });
+  const glass = new THREE.MeshLambertMaterial({
+    color: 0xb7d4ea, transparent: true, opacity: 0.28, side: THREE.DoubleSide,
+  });
+  const glassSide = new THREE.MeshLambertMaterial({
+    color: 0x8eb4cc, transparent: true, opacity: 0.32, side: THREE.DoubleSide,
+  });
+  const lamp = new THREE.MeshLambertMaterial({ color: 0xf7fbff, emissive: 0xd0f2ff, emissiveIntensity: 1 });
+  const tail = new THREE.MeshLambertMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 0.75 });
+  const leather = new THREE.MeshLambertMaterial({ color: 0x23272e, side: THREE.DoubleSide });
+  const metal = new THREE.MeshLambertMaterial({ color: 0xd5dbe3, side: THREE.DoubleSide });
+  const screen = new THREE.MeshLambertMaterial({ color: 0x0e3038, emissive: 0x1c7a88, emissiveIntensity: 0.45 });
+  const notchMat = new THREE.MeshLambertMaterial({ color: 0xfff4dc, emissive: 0xffd98a, emissiveIntensity: 0.8 });
 
   const addBox = (
     w: number, h: number, d: number,
     x: number, y: number, z: number,
-    mat: THREE.Material
+    mat: THREE.Material,
+    rotZ = 0,
   ) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.set(x, y, z);
+    if (rotZ) mesh.rotation.z = rotZ;
     mesh.castShadow = true;
     egoBodyPivot!.add(mesh);
     return mesh;
   };
 
   for (const part of BODY_PARTS) {
-    addBox(part.halfX * 2, part.halfY * 2, part.halfZ * 2, part.cx, part.cy, part.cz, paint);
+    addBox(part.halfX * 2, part.halfY * 2, part.halfZ * 2, part.cx, part.cy, part.cz, pearl);
   }
-  addBox(0.7, 0.28, 1.5, 1.85, BODY_CENTER_LOCAL_Y + 0.16, 0, paint);
-  addBox(0.55, 0.26, 1.48, -1.72, BODY_CENTER_LOCAL_Y + 0.14, 0, paintDark);
-  const hood = addBox(1.35, 0.12, 1.42, 0.95, BODY_CENTER_LOCAL_Y + 0.42, 0, paint);
-  hood.material = new THREE.MeshLambertMaterial({ color: 0x163a66, side: THREE.DoubleSide });
-  hood.rotation.z = -0.08;
-  addBox(2.3, 0.08, 1.62, 0.05, BODY_CENTER_LOCAL_Y + 0.48, 0, paintDark);
-  addBox(1.35, 0.48, 1.28, -0.15, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.28, 0, glass);
-  addBox(1.15, 0.06, 1.2, -0.12, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.54, 0, paintDark);
-  addBox(0.06, 0.08, 0.42, 2.2, BODY_CENTER_LOCAL_Y + 0.22, 0.48, lamp);
-  addBox(0.06, 0.08, 0.42, 2.2, BODY_CENTER_LOCAL_Y + 0.22, -0.48, lamp);
-  addBox(0.05, 0.06, 0.5, -1.95, BODY_CENTER_LOCAL_Y + 0.22, 0.42, tail);
-  addBox(0.05, 0.06, 0.5, -1.95, BODY_CENTER_LOCAL_Y + 0.22, -0.42, tail);
+  // Dark rocker line, full-width lamps, black roof over a raked greenhouse.
+  addBox(2.2, 0.08, 0.04, 0.05, 0.08, 0.78, cladding);
+  addBox(2.2, 0.08, 0.04, 0.05, 0.08, -0.78, cladding);
+  const hood = addBox(1.35, 0.04, 1.28, 1.28, 0.56, 0, pearl, -0.08);
+  hood.material = new THREE.MeshLambertMaterial({ color: 0xe7eef6, side: THREE.DoubleSide });
+  addBox(0.03, 0.05, 1.15, 2.38, 0.48, 0, lamp);
+  addBox(0.03, 0.07, 0.55, 2.38, 0.28, 0, black);
+  addBox(0.03, 0.045, 1.15, -2.28, 0.46, 0, tail);
+  addBox(0.9, 0.04, 1.05, -0.18, 1.08, 0, black);
+  const windshield = addBox(0.02, 0.62, 1.08, 0.5, 0.82, 0, glass, 0.5);
+  windshield.castShadow = false;
+  addBox(0.03, 0.6, 0.035, 0.48, 0.82, 0.52, black, 0.5);
+  addBox(0.03, 0.6, 0.035, 0.48, 0.82, -0.52, black, 0.5);
+  addBox(0.85, 0.36, 0.02, -0.12, 0.82, 0.6, glassSide).castShadow = false;
+  addBox(0.85, 0.36, 0.02, -0.12, 0.82, -0.6, glassSide).castShadow = false;
+  addBox(0.02, 0.4, 0.95, -0.72, 0.84, 0, glass, -0.45).castShadow = false;
+  addBox(0.1, 0.04, 0.14, 0.32, 0.7, 0.8, black);
+  addBox(0.1, 0.04, 0.14, 0.32, 0.7, -0.8, black);
 
-  const sensor = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.06, 0.16),
-    new THREE.MeshLambertMaterial({ color: 0x22262e })
-  );
-  sensor.position.set(-0.05, BODY_CENTER_LOCAL_Y + BODY_HALF_HEIGHT + 0.6, 0);
-  egoBodyPivot.add(sensor);
-
-  const dash = addBox(0.35, 0.16, 0.7, 0.42, BODY_CENTER_LOCAL_Y + 0.52, 0.34, new THREE.MeshLambertMaterial({ color: 0x1a1e26 }));
+  const dash = addBox(0.55, 0.12, 1.16, 0.78, 0.5, 0, black);
   dash.castShadow = false;
+  addBox(0.22, 0.05, 0.42, 0.55, 0.56, 0.28, black).castShadow = false;
+  addBox(0.015, 0.09, 0.26, 1.02, 0.58, 0, screen).castShadow = false;
+  addBox(0.7, 0.16, 0.035, -0.05, 0.52, 0.58, black).castShadow = false;
+  addBox(0.7, 0.16, 0.035, -0.05, 0.52, -0.58, black).castShadow = false;
+
+  const { wheel } = COCKPIT;
   egoSteerWheel = new THREE.Group();
-  egoSteerWheel.position.set(0.55, BODY_CENTER_LOCAL_Y + 0.58, 0.34);
-  const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.016, 8, 22), leather);
+  egoSteerWheel.position.set(wheel.x, wheel.y, wheel.z);
+  const wheelRim = new THREE.Mesh(
+    new THREE.TorusGeometry(COCKPIT.wheelRadius, 0.015, 12, 32),
+    leather,
+  );
   wheelRim.rotation.y = Math.PI / 2;
   egoSteerWheel.add(wheelRim);
-  for (const ang of [0, 2.2, 4.1]) {
-    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.13, 0.012), metal);
-    spoke.position.set(0, Math.cos(ang) * 0.06, Math.sin(ang) * 0.06);
+  for (const ang of [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]) {
+    const spoke = new THREE.Mesh(
+      new THREE.BoxGeometry(0.012, COCKPIT.wheelRadius * 0.9, 0.016),
+      metal,
+    );
+    spoke.position.set(0, Math.cos(ang) * COCKPIT.wheelRadius * 0.4, Math.sin(ang) * COCKPIT.wheelRadius * 0.4);
     spoke.rotation.x = ang;
     egoSteerWheel.add(spoke);
   }
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.04, 12), metal);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.045, 16), metal);
   hub.rotation.z = Math.PI / 2;
   egoSteerWheel.add(hub);
+  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.032, 0.026), notchMat);
+  notch.position.set(-0.02, COCKPIT.wheelRadius * 0.82, 0);
+  egoSteerWheel.add(notch);
   egoBodyPivot.add(egoSteerWheel);
 
   egoWheels = [];
