@@ -130,6 +130,8 @@ let orbitDist = 9.2;
 let rmbOrbiting = false;
 let lastMouseCamMs = -1e9;
 let showPhysDebug = false;
+/** Pixels per metre on the minimap. Scroll over the map to change it. */
+let minimapScale = 1.35;
 /** Ground-level side camera for wheel/sill verification. */
 let debugSideCam: { height: number; side: number; lookY: number } | null = null;
 let photoMode = false;
@@ -1898,7 +1900,7 @@ function updateMinimap() {
   ctx.roundRect(3, 3, w - 6, h - 6, 14);
   ctx.clip();
 
-  const scale = 1.35;
+  const scale = minimapScale;
   const egoX = state.ego.transform.position.x;
   const egoY = state.ego.transform.position.y;
   const yaw = state.ego.transform.rotation;
@@ -2051,6 +2053,15 @@ function setupInput() {
     const min = cameraMode === 'chase' ? 5.5 : 6;
     const max = cameraMode === 'chase' ? 20 : 70;
     orbitDist = clamp(orbitDist + e.deltaY * 0.02, min, max);
+  }, { passive: false });
+
+  const minimap = document.getElementById('minimap');
+  minimap?.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Scroll down zooms out (more of the city). Scroll up zooms in.
+    minimapScale = clamp(minimapScale * (e.deltaY > 0 ? 0.88 : 1.14), 0.4, 4.5);
+    updateMinimap();
   }, { passive: false });
 
   document.addEventListener('keydown', (e) => {
