@@ -702,6 +702,27 @@ export class Simulation {
   releaseControl(): void {
     this.state.controlSource = 'policy';
   }
+
+  /** Park the car and aim it. Used by the start menu before anyone drives. */
+  faceAndPark(yaw: number): void {
+    const ego = this.state.ego;
+    this.state.ego = {
+      ...ego,
+      transform: { ...ego.transform, rotation: yaw },
+      velocity: { x: 0, y: 0, z: 0 },
+      acceleration: { x: 0, y: 0, z: 0 },
+      steering: 0,
+      throttle: 0,
+      brake: 0,
+      bodyVx: 0,
+      bodyVy: 0,
+      yawRate: 0,
+      inReverse: false,
+      steerFiltered: 0,
+      throttleFiltered: 0,
+      brakeFiltered: 0,
+    };
+  }
   
   acceptRide(rideId: number): void {
     const ride = this.state.rideRequests.find(r => r.id === rideId);

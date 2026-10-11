@@ -113,6 +113,7 @@ let showGroundTruth = false;
 let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
+let gameStarted = false;
 let currentStack: StackProfile = 'tesla';
 let compareMode = false;
 let driveHintShown = false;
@@ -2054,10 +2055,12 @@ function setupInput() {
   document.addEventListener('keydown', (e) => {
     if (e.repeat && (e.key === 'Escape' || e.key === 't' || e.key === 'T')) return;
     if (e.key === 'Escape') {
+      if (!gameStarted) return;
       e.preventDefault();
       togglePause();
       return;
     }
+    if (!gameStarted) return;
     if (isPaused) {
       if (e.key === 'Backspace') { e.preventDefault(); restartSim(); }
       return;
@@ -2177,7 +2180,10 @@ function setupInput() {
   });
   document.getElementById('pause-resume')?.addEventListener('click', () => setPaused(false));
   document.getElementById('pause-restart')?.addEventListener('click', () => restartSim());
-  document.getElementById('gear-btn')?.addEventListener('click', () => togglePause());
+  document.getElementById('gear-btn')?.addEventListener('click', () => {
+    if (!gameStarted) return;
+    togglePause();
+  });
   document.querySelectorAll('#quality-seg button').forEach(btn => {
     btn.addEventListener('click', () => applyQuality((btn as HTMLElement).dataset['quality'] as QualityLevel));
   });
@@ -2196,6 +2202,45 @@ function setupInput() {
     showPhysDebug = (ev.target as HTMLInputElement).checked;
     updatePhysDebug();
   });
+
+  document.querySelectorAll('#start-dir button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#start-dir button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const yaw = Number((btn as HTMLElement).dataset['yaw'] ?? Math.PI / 2);
+      simulation.faceAndPark(yaw);
+      captureEgoPose();
+      prevEgoX = currEgoX;
+      prevEgoY = currEgoY;
+      prevEgoYaw = currEgoYaw;
+    });
+  });
+  document.getElementById('start-manual')?.addEventListener('click', () => beginGame('manual'));
+  document.getElementById('start-auto')?.addEventListener('click', () => beginGame('autopilot'));
+}
+
+function beginGame(mode: 'manual' | 'autopilot') {
+  if (gameStarted) return;
+  const active = document.querySelector('#start-dir button.active') as HTMLElement | null;
+  const yaw = Number(active?.dataset['yaw'] ?? Math.PI / 2);
+  simulation.faceAndPark(yaw);
+  if (mode === 'manual') simulation.takeover('other');
+  else simulation.releaseControl();
+  gameStarted = true;
+  document.getElementById('start-menu')?.classList.add('hidden');
+  inputState.forward = false;
+  inputState.backward = false;
+  inputState.left = false;
+  inputState.right = false;
+  inputState.brake = false;
+  captureEgoPose();
+  prevEgoX = currEgoX;
+  prevEgoY = currEgoY;
+  prevEgoYaw = currEgoYaw;
+  prevEgoRoll = currEgoRoll;
+  prevEgoPitch = currEgoPitch;
+  syncDriveBadge();
+  if (mode === 'manual') showDriveHintOnce();
 }
 
 let lastTime = 0;
@@ -2215,7 +2260,7 @@ function animate(time: number) {
   const frameDt = Math.min((time - lastTime) / 1000, 0.25);
   lastTime = time;
 
-  if (!isPaused) {
+  if (gameStarted && !isPaused) {
     const driving = anyDriveHeld();
     if (driving && !isManual()) takeManual(true);
     const humanInput = isManual() ? humanInputFromKeys() : undefined;
@@ -2447,7 +2492,6 @@ async function init() {
   prevEgoRoll = currEgoRoll;
   prevEgoPitch = currEgoPitch;
   setupInput();
-  showDriveHintOnce();
   syncDriveBadge();
 
   document.getElementById('loading')!.classList.add('hidden');
