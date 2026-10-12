@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   COCKPIT,
   HAND_LOCK_DEG,
+  LOOK_DOWN_DEG,
   ROAD_STEER_LOCK,
   driverEyeHeight,
   handWheelLockDeg,
   handWheelRotation,
+  lookDownDeg,
   wheelViewOffset,
   windshieldFraction,
 } from './cabinView';
@@ -22,19 +24,25 @@ describe('first-person cabin framing', () => {
     expect(COCKPIT.fovDeg).toBeCloseTo(70, 5);
   });
 
-  it('puts a ~36 cm wheel lower-left, about 40% of frame width', () => {
+  it('puts a ~36 cm wheel 0.55–0.65 m ahead, full rim, ~35% from the left', () => {
     const view = wheelViewOffset();
     expect(COCKPIT.wheelRadius).toBeGreaterThan(0.16);
     expect(COCKPIT.wheelRadius).toBeLessThan(0.22);
-    expect(view.depth).toBeGreaterThan(0.28);
-    expect(view.depth).toBeLessThan(0.7);
-    expect(view.ndcY).toBeLessThan(-0.15);
-    expect(view.ndcY).toBeGreaterThan(-0.85);
-    expect(view.ndcX).toBeLessThan(-0.12);
-    expect(view.ndcX).toBeGreaterThan(-0.65);
-    expect(view.widthFrac).toBeGreaterThan(0.32);
-    expect(view.widthFrac).toBeLessThan(0.52);
-    expect(view.ndcY + view.radiusNdc).toBeLessThan(COCKPIT.dashTopNdc + 0.18);
+    expect(view.depth).toBeGreaterThan(0.54);
+    expect(view.depth).toBeLessThan(0.66);
+    expect(view.ndcY).toBeLessThan(-0.40);
+    expect(view.ndcY).toBeGreaterThan(-0.70);
+    // 35% from the left is ndcX ≈ -0.30.
+    expect(view.ndcX).toBeLessThan(-0.18);
+    expect(view.ndcX).toBeGreaterThan(-0.42);
+    expect(view.widthFrac).toBeGreaterThan(0.20);
+    expect(view.widthFrac).toBeLessThan(0.36);
+    const rimTop = view.ndcY + view.radiusNdc;
+    const rimBot = view.ndcY - view.radiusNdc;
+    expect(rimTop).toBeLessThan(COCKPIT.dashTopNdc + 0.04);
+    expect(rimTop).toBeGreaterThan(COCKPIT.dashTopNdc - 0.08);
+    expect(rimBot).toBeGreaterThan(-1.08);
+    expect(rimBot).toBeLessThan(-0.88);
   });
 
   it('keeps the driver’s eyes inside the greenhouse, under the roof', () => {
@@ -46,11 +54,14 @@ describe('first-person cabin framing', () => {
     expect(COCKPIT.look.y).toBeLessThan(COCKPIT.eye.y);
   });
 
-  it('leaves the road in the upper half of the windshield', () => {
-    expect(windshieldFraction()).toBeGreaterThan(0.44);
-    expect(windshieldFraction()).toBeLessThan(0.58);
-    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.2);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(0.12);
+  it('pitches down so the road fills the windshield and the dash is a low shelf', () => {
+    expect(lookDownDeg()).toBeGreaterThan(5.5);
+    expect(lookDownDeg()).toBeLessThan(8.5);
+    expect(lookDownDeg()).toBeCloseTo(LOOK_DOWN_DEG, 0);
+    expect(windshieldFraction()).toBeGreaterThan(0.52);
+    expect(windshieldFraction()).toBeLessThan(0.62);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.20);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.02);
     expect(COCKPIT.wideFovDeg).toBeGreaterThanOrEqual(90);
   });
 

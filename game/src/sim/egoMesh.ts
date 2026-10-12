@@ -411,7 +411,7 @@ function makeLogoTexture(): THREE.Texture | null {
     ctx.fillStyle = '#1a1c20';
     ctx.fillRect(0, 0, 256, 128);
     ctx.fillStyle = '#d8dde4';
-    ctx.font = 'bold 52px sans-serif';
+    ctx.font = 'bold 36px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('TESLA', 128, 64);
@@ -493,7 +493,7 @@ function makeLiveScreen(): {
   update: (info: CockpitScreenInfo) => void;
 } | null {
   const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.33, 0.186),
+    new THREE.PlaneGeometry(0.40, 0.225),
     new THREE.MeshBasicMaterial({ color: 0x1a6f7a }),
   );
   face.name = 'screen-face';
@@ -532,41 +532,41 @@ function buildHandWheel(): THREE.Group {
   const R = COCKPIT.wheelRadius;
   const tube = COCKPIT.wheelTube;
   const leather = matte(0x16181c);
-  const hubMat = matte(0x22262c, { roughness: 0.55, metalness: 0.18 });
-  const spokeMat = matte(0x1c1f24, { roughness: 0.7 });
+  const hubMat = matte(0x2a2e33, { roughness: 0.5, metalness: 0.22 });
+  const spokeMat = matte(0x1a1d22, { roughness: 0.65 });
+  const vMat = matte(0x9aa2aa, { roughness: 0.35, metalness: 0.45 });
 
   addMerged(group, [xform(new THREE.TorusGeometry(R, tube, 10, 48), 0, 0, 0, new THREE.Euler(0, Math.PI / 2, 0))], leather, false);
 
-  // Two downward spokes (~4 o'clock and 8 o'clock), Tesla-style round wheel.
-  const spokeParts: THREE.BufferGeometry[] = [];
-  for (const ang of [Math.PI * 0.72, Math.PI * 1.28]) {
-    spokeParts.push(
-      xform(
-        new THREE.BoxGeometry(0.018, R * 0.72, 0.034),
-        0,
-        Math.cos(ang) * R * 0.34,
-        Math.sin(ang) * R * 0.34,
-        new THREE.Euler(ang, 0, 0),
-      ),
+  // Thin 9 o'clock / 3 o'clock spokes plus a lower V, as in the Model 3/Y photo.
+  const spoke = (ang: number, len = R * 0.62, thick = 0.009) =>
+    xform(
+      new THREE.BoxGeometry(0.011, len, thick),
+      0,
+      Math.cos(ang) * len * 0.48,
+      Math.sin(ang) * len * 0.48,
+      new THREE.Euler(ang, 0, 0),
     );
-  }
-  addMerged(group, spokeParts, spokeMat, false);
+  addMerged(group, [spoke(Math.PI / 2), spoke(-Math.PI / 2)], spokeMat, false);
+  addMerged(group, [spoke(Math.PI * 0.78, R * 0.58, 0.012), spoke(Math.PI * 1.22, R * 0.58, 0.012)], vMat, false);
 
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.036, 20), hubMat);
+  // Flat oval hub ~30% of rim diameter, not a deep cylinder.
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.30, R * 0.30, 0.010, 28), hubMat);
   hub.name = 'wheel-hub';
   hub.rotation.z = Math.PI / 2;
+  hub.scale.set(0.62, 1, 1);
   group.add(hub);
 
   const logoMap = makeLogoTexture();
   const plate = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.09, 0.045),
+    new THREE.PlaneGeometry(0.048, 0.015),
     logoMap
       ? new THREE.MeshStandardMaterial({ map: logoMap, roughness: 0.45, metalness: 0.15 })
       : matte(0xd8dde4, { roughness: 0.4 }),
   );
   plate.name = 'wheel-logo';
   plate.rotation.y = -Math.PI / 2;
-  plate.position.set(-0.02, 0, 0);
+  plate.position.set(-0.007, 0.004, 0);
   group.add(plate);
   return group;
 }
@@ -580,17 +580,14 @@ function buildCockpit(): {
   group.name = 'cockpit';
   const dashTop = COCKPIT.dashTopNdc;
   const cam = cabinCamera(COCKPIT.fovDeg);
-  // Camera-aligned dash, but the near face sits behind the rim so the wheel
-  // stays in open air (a slab that starts in front of the wheel swallows it).
-  const dashNear = wheelViewOffset().depth + 0.10;
-  const dashFar = dashNear + 0.58;
+  const wheelDepth = wheelViewOffset().depth;
+  const dashNear = wheelDepth + 0.16;
 
   const dashMat = matte(0x1a1d21);
   const cowlMat = matte(0x2c3036, { roughness: 0.72 });
-  const pillarMat = matte(0x101214);
+  const pillarMat = matte(0x14161a);
   const columnMat = matte(0x2a2e33, { roughness: 0.6 });
   const bezelMat = matte(0x0e1013);
-  const skinMat = matte(0x1a1512, { roughness: 0.95, transparent: true, opacity: 0.5 });
   const stripMat = new THREE.MeshStandardMaterial({
     color: 0xff7a33,
     emissive: 0xff6a22,
@@ -599,57 +596,61 @@ function buildCockpit(): {
     metalness: 0.0,
   });
 
-  const dash = new THREE.Mesh(frustumSlab(cam, -1.85, 1.85, -1.42, dashTop, dashNear, dashFar), dashMat);
+  // Thin horizontal shelf behind the rim — not a camera-filling wall.
+  const front = rayPoint(cam, 0, dashTop, dashNear);
+  const dashLen = 0.50;
+  const dashThick = 0.064;
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(dashLen, dashThick, 1.68), dashMat);
   dash.name = 'dash';
+  dash.position.set(front.x + dashLen * 0.5, front.y - dashThick * 0.45, 0);
   group.add(dash);
 
-  const footwell = new THREE.Mesh(frustumSlab(cam, -0.85, 0.35, -1.48, -0.95, 0.28, dashNear + 0.04), dashMat);
-  footwell.name = 'footwell';
-  group.add(footwell);
+  const drop = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.09, 1.68), dashMat);
+  drop.name = 'dash-drop';
+  drop.position.set(front.x + 0.02, front.y - 0.068, 0);
+  group.add(drop);
 
-  const cowl = new THREE.Mesh(
-    frustumSlab(cam, -1.6, 1.6, dashTop - 0.012, dashTop + 0.06, dashFar - 0.1, dashFar + 0.5),
-    cowlMat,
-  );
+  const cowl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.028, 1.50), cowlMat);
   cowl.name = 'hood';
+  cowl.position.set(front.x + dashLen * 0.78, front.y + 0.008, 0);
   group.add(cowl);
 
-  const strip = new THREE.Mesh(
-    frustumSlab(cam, -1.12, 1.12, dashTop - 0.01, dashTop + 0.008, dashNear + 0.02, dashNear + 0.14),
-    stripMat,
-  );
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.005, 1.42), stripMat);
   strip.name = 'ambient-strip';
+  strip.position.set(front.x + 0.01, front.y + 0.006, 0);
   group.add(strip);
 
-  const header = new THREE.Mesh(frustumSlab(cam, -1.12, 1.12, 0.82, 1.18, 0.42, 0.62), pillarMat);
+  // Roof header ≤6% of frame height (NDC 0.88–1.00).
+  const header = new THREE.Mesh(frustumSlab(cam, -1.02, 1.02, 0.88, 1.05, 0.50, 0.64), pillarMat);
   header.name = 'header';
   group.add(header);
 
-  const pillarL0 = rayPoint(cam, -0.88, dashTop, dashNear + 0.06);
-  const pillarL1 = rayPoint(cam, -0.82, 0.92, 0.44);
-  const pillarR0 = rayPoint(cam, 0.88, dashTop, dashNear + 0.06);
-  const pillarR1 = rayPoint(cam, 0.82, 0.92, 0.44);
-  addStrut(group, pillarL0, pillarL1, 0.048, 0.028, pillarMat, 'pillar-left');
-  addStrut(group, pillarR0, pillarR1, 0.048, 0.028, pillarMat, 'pillar-right');
+  const pillarL0 = rayPoint(cam, -0.94, dashTop, dashNear + 0.02);
+  const pillarL1 = rayPoint(cam, -0.91, 0.90, 0.52);
+  const pillarR0 = rayPoint(cam, 0.94, dashTop, dashNear + 0.02);
+  const pillarR1 = rayPoint(cam, 0.91, 0.90, 0.52);
+  addStrut(group, pillarL0, pillarL1, 0.020, 0.014, pillarMat, 'pillar-left');
+  addStrut(group, pillarR0, pillarR1, 0.020, 0.014, pillarMat, 'pillar-right');
 
   const live = makeLiveScreen();
   const screen = new THREE.Group();
   screen.name = 'centre-screen';
-  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.208, 0.36), bezelMat);
-  const face = live?.mesh ?? new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.186), new THREE.MeshBasicMaterial({ color: 0x1a6f7a }));
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.236, 0.42), bezelMat);
+  const face = live?.mesh ?? new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.225), new THREE.MeshBasicMaterial({ color: 0x1a6f7a }));
   face.rotation.y = -Math.PI / 2;
-  face.position.x = -0.007;
+  face.position.x = -0.006;
   screen.add(bezel, face);
-  const sit = rayPoint(cam, 0.34, dashTop + 0.02, dashNear + 0.04);
-  screen.position.set(sit.x, sit.y + 0.11, sit.z);
-  screen.rotation.y = 0.14;
-  const under = rayPoint(cam, 0.34, dashTop - 0.02, dashNear + 0.06);
+  // Sit ON the dash: top a little above the shelf, bottom in the dash body.
+  const sit = rayPoint(cam, 0.40, dashTop - 0.08, dashNear + 0.05);
+  screen.position.set(sit.x, sit.y, sit.z);
+  screen.rotation.y = 0.10;
+  const under = new THREE.Vector3(screen.position.x + 0.02, front.y - 0.02, screen.position.z);
   addStrut(
     group,
     under,
-    new THREE.Vector3(screen.position.x + 0.01, screen.position.y - 0.06, screen.position.z),
-    0.008,
-    0.012,
+    new THREE.Vector3(screen.position.x + 0.005, screen.position.y - 0.05, screen.position.z),
+    0.006,
+    0.010,
     bezelMat,
     'screen-mount',
   );
@@ -659,32 +660,16 @@ function buildCockpit(): {
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
   group.add(steerWheel);
 
-  const columnEnd = rayPoint(cam, -0.24, dashTop - 0.22, dashNear + 0.18);
+  const columnEnd = new THREE.Vector3(dash.position.x - 0.08, COCKPIT.wheel.y - 0.06, COCKPIT.wheel.z);
   addStrut(
     group,
     new THREE.Vector3(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z),
     columnEnd,
-    0.026,
-    0.036,
+    0.018,
+    0.028,
     columnMat,
     'steer-column',
   );
-
-  const kneeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.11, 0.13), skinMat);
-  kneeL.name = 'knee-left';
-  kneeL.position.set(COCKPIT.eye.x + 0.28, COCKPIT.wheel.y - 0.34, COCKPIT.wheel.z + 0.08);
-  const kneeR = kneeL.clone();
-  kneeR.name = 'knee-right';
-  kneeR.position.set(COCKPIT.eye.x + 0.3, COCKPIT.wheel.y - 0.34, COCKPIT.wheel.z - 0.16);
-  group.add(kneeL, kneeR);
-
-  const handL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.028, 0.07), skinMat);
-  handL.name = 'hand-left';
-  handL.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.03, COCKPIT.wheel.z + COCKPIT.wheelRadius * 0.62);
-  const handR = handL.clone();
-  handR.name = 'hand-right';
-  handR.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.03, COCKPIT.wheel.z - COCKPIT.wheelRadius * 0.18);
-  group.add(handL, handR);
 
   setLayerDeep(group, LAYER_COCKPIT);
   return { group, steerWheel, updateScreen: live?.update ?? (() => undefined) };

@@ -1,7 +1,7 @@
 /**
  * Driver’s-eye framing for first person.
  * Coordinates are body-pivot local: +X nose, +Y up, +Z left.
- * Left-hand seat at ~1.2 m; the rim fills ~40% of a 16:9 frame, lower-left.
+ * Left-hand seat at ~1.2 m; the rim is ~0.6 m ahead, ~35% from the left of a 16:9 frame.
  */
 
 import { VEHICLE_PARAMS } from './vehicle';
@@ -18,24 +18,34 @@ export const HAND_LOCK_DEG = 450;
 
 export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
 
+/** Pitch below the horizon so the road fills the windshield. */
+export const LOOK_DOWN_DEG = 7;
+
 export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
   eye: { x: -0.06, y: 1.2 - AXLE_HEIGHT, z: -0.34 } satisfies CabinVec,
-  /** Look slightly down and toward the road centre so the wheel sits lower-left. */
-  look: { x: 14, y: 1.2 - AXLE_HEIGHT - 0.10, z: 0.06 } satisfies CabinVec,
-  /** ~36 cm rim, close enough that it fills ~40% of frame width. */
-  wheel: { x: 0.30, y: 1.2 - AXLE_HEIGHT - 0.20, z: -0.50 } satisfies CabinVec,
+  /**
+   * 7° down, 12 m ahead, slightly toward the road centre. Horizon lands
+   * ~40% from the top of a 70° frame.
+   */
+  look: { x: 11.851, y: -0.617, z: 0.08 } satisfies CabinVec,
+  /**
+   * 36 cm rim 0.60 m in front of the eye, screen-left (~35% from the left),
+   * vertical centre such that the full rim sits between the dash and the
+   * bottom edge.
+   */
+  wheel: { x: 0.515, y: 0.543, z: -0.544 } satisfies CabinVec,
   wheelRadius: 0.185,
   /** Slim modern rim tube. */
-  wheelTube: 0.013,
+  wheelTube: 0.012,
   fovDeg: 70,
   /** Extra cockpit still: same layout, wider windshield view. */
   wideFovDeg: 95,
   /**
-   * Dash top as NDC Y (bottom of frame = -1). Road / windshield occupy the
-   * upper ~45–55% of the frame (fraction = (1 - dashTopNdc) / 2).
+   * Dash top as NDC Y (bottom of frame = -1). 55% from the top of the frame
+   * so the windshield (road + sky) is the upper ~55%.
    */
-  dashTopNdc: -0.06,
+  dashTopNdc: -0.10,
   /**
    * Road steer (radians) → hand-wheel rotation.
    * Positive rotation.x swings the top of the rim toward screen-right,
@@ -46,6 +56,16 @@ export const COCKPIT = {
 
 export function driverEyeHeight(): number {
   return AXLE_HEIGHT + COCKPIT.eye.y;
+}
+
+export function lookDownDeg(
+  layout: { eye: CabinVec; look: CabinVec } = COCKPIT,
+): number {
+  const dx = layout.look.x - layout.eye.x;
+  const dy = layout.look.y - layout.eye.y;
+  const dz = layout.look.z - layout.eye.z;
+  const horiz = Math.hypot(dx, dz);
+  return (Math.atan2(-dy, horiz) * 180) / Math.PI;
 }
 
 export function handWheelRotation(steerRad: number): number {

@@ -68,6 +68,12 @@ describe('Kenney sedan-sports mesh', () => {
     expect(visual.steerWheel.position.x).toBeGreaterThan(COCKPIT.eye.x);
     expect(visual.steerWheel.position.y).toBeLessThan(COCKPIT.eye.y);
     expect(COCKPIT.wheelRadius).toBeCloseTo(0.185, 5);
+    const hub = named(visual.group, 'wheel-hub');
+    const hubBox = new THREE.Box3().setFromObject(hub);
+    const hubSize = hubBox.getSize(new THREE.Vector3());
+    const hubMajor = Math.max(hubSize.y, hubSize.z);
+    expect(hubMajor).toBeLessThan(COCKPIT.wheelRadius * 0.72);
+    expect(hubSize.x).toBeLessThan(0.025);
   });
 
   it('fits the Kenney stand-in to about 4.7 × 1.85 × 1.45 m', () => {
@@ -150,7 +156,9 @@ describe('Kenney sedan-sports mesh', () => {
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
     expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
     expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.2);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(0.12);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.02);
+    const dashSize = dashBox.getSize(new THREE.Vector3());
+    expect(dashSize.y).toBeLessThan(0.14);
     named(visual.group, 'wheel-hub');
     named(visual.group, 'wheel-logo');
     named(visual.group, 'ambient-strip');

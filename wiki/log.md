@@ -57,3 +57,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
 
 ## [2026-10-12] ingest | PR #25 Tesla FP cockpit, HUD panels, autopilot re-engage
+
+## [2026-10-12] ingest | PR #25 retune live cockpit to Tesla photo (0.6 m wheel, 7° pitch, thin dash)
