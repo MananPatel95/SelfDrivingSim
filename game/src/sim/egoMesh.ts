@@ -165,10 +165,89 @@ function silverizePaintCells(tex: THREE.Texture): THREE.Texture {
   }
 }
 
+function isGlassTriangle(
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+  nax: number, nay: number, naz: number,
+  nbx: number, nby: number, nbz: number,
+  ncx: number, ncy: number, ncz: number,
+): boolean {
+  const y = (ay + by + cy) / 3;
+  // Kenney-local: +Z forward, +X left, +Y up. Keep the painted roof.
+  if (y < 0.52) return false;
+  const nx = (nax + nbx + ncx) / 3;
+  const ny = (nay + nby + ncy) / 3;
+  const nz = (naz + nbz + ncz) / 3;
+  if (nz > 0.38 && y < 0.98) return true;
+  if (nz < -0.38 && y < 0.98) return true;
+  if (Math.abs(nx) > 0.58 && y < 0.8 && ny < 0.35) return true;
+  return false;
+}
+
+function splitBodyGlass(root: THREE.Object3D): void {
+  const glassMat = new THREE.MeshLambertMaterial({ color: 0x1a1f26 });
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh || !/^body$/i.test(mesh.name) || !mesh.parent) return;
+    const geo = mesh.geometry;
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    const uv = geo.getAttribute('uv');
+    if (!pos || !nrm) return;
+    const glassPos: number[] = [];
+    const bodyPos: number[] = [];
+    const bodyNrm: number[] = [];
+    const bodyUv: number[] = [];
+    const glassNrm: number[] = [];
+    const push = (dst: number[], attr: THREE.BufferAttribute, i: number, n: number) => {
+      for (let k = 0; k < n; k += 1) dst.push(attr.getComponent(i, k));
+    };
+    const visit = (a: number, b: number, c: number) => {
+      const glass = isGlassTriangle(
+        pos.getX(a), pos.getY(a), pos.getZ(a),
+        pos.getX(b), pos.getY(b), pos.getZ(b),
+        pos.getX(c), pos.getY(c), pos.getZ(c),
+        nrm.getX(a), nrm.getY(a), nrm.getZ(a),
+        nrm.getX(b), nrm.getY(b), nrm.getZ(b),
+        nrm.getX(c), nrm.getY(c), nrm.getZ(c),
+      );
+      const pDst = glass ? glassPos : bodyPos;
+      const nDst = glass ? glassNrm : bodyNrm;
+      for (const i of [a, b, c]) {
+        push(pDst, pos, i, 3);
+        push(nDst, nrm, i, 3);
+        if (!glass && uv) push(bodyUv, uv, i, 2);
+      }
+    };
+    if (geo.index) {
+      const idx = geo.index;
+      for (let i = 0; i < idx.count; i += 3) visit(idx.getX(i), idx.getX(i + 1), idx.getX(i + 2));
+    } else {
+      for (let i = 0; i < pos.count; i += 3) visit(i, i + 1, i + 2);
+    }
+    if (glassPos.length === 0 || bodyPos.length === 0) return;
+    const bodyGeo = new THREE.BufferGeometry();
+    bodyGeo.setAttribute('position', new THREE.Float32BufferAttribute(bodyPos, 3));
+    bodyGeo.setAttribute('normal', new THREE.Float32BufferAttribute(bodyNrm, 3));
+    if (bodyUv.length) bodyGeo.setAttribute('uv', new THREE.Float32BufferAttribute(bodyUv, 2));
+    mesh.geometry = bodyGeo;
+    const glassGeo = new THREE.BufferGeometry();
+    glassGeo.setAttribute('position', new THREE.Float32BufferAttribute(glassPos, 3));
+    glassGeo.setAttribute('normal', new THREE.Float32BufferAttribute(glassNrm, 3));
+    const glass = new THREE.Mesh(glassGeo, glassMat);
+    glass.name = 'glass';
+    glass.position.copy(mesh.position);
+    glass.quaternion.copy(mesh.quaternion);
+    glass.scale.copy(mesh.scale);
+    mesh.parent.add(glass);
+  });
+}
+
 function paintSilver(root: THREE.Object3D): void {
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
-    if (!mesh.isMesh) return;
+    if (!mesh.isMesh || /^glass$/i.test(mesh.name)) return;
     const src = mesh.material;
     const list = Array.isArray(src) ? src : [src];
     const next = list.map((mat) => {
@@ -302,9 +381,9 @@ function makeScreenFaceTexture(): THREE.Texture | null {
     canvas.height = 320;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.fillStyle = '#0c1418';
+    ctx.fillStyle = '#1a3d4a';
     ctx.fillRect(0, 0, 512, 320);
-    ctx.fillStyle = '#152028';
+    ctx.fillStyle = '#2a5a68';
     ctx.fillRect(0, 0, 512, 36);
     ctx.fillStyle = '#8fd4e2';
     ctx.beginPath();
@@ -390,18 +469,15 @@ function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
   const dashTop = COCKPIT.dashTopNdc;
   const cam = cabinCamera(COCKPIT.fovDeg);
 
-  const dashMat = new THREE.MeshLambertMaterial({ color: 0x3a414a, side: THREE.DoubleSide });
+  const dashMat = new THREE.MeshLambertMaterial({ color: 0x5c646e, side: THREE.DoubleSide });
   const hoodMat = new THREE.MeshLambertMaterial({ color: 0xc5cad1, side: THREE.DoubleSide });
-  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x23282e, side: THREE.DoubleSide });
-  const columnMat = new THREE.MeshLambertMaterial({ color: 0x2f353c });
-  const bezelMat = new THREE.MeshLambertMaterial({ color: 0x111318 });
+  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x2a3038, side: THREE.DoubleSide });
+  const columnMat = new THREE.MeshLambertMaterial({ color: 0x4a515a });
+  const bezelMat = new THREE.MeshLambertMaterial({ color: 0x1b1f24 });
   const screenMap = makeScreenFaceTexture();
-  const screenMat = new THREE.MeshLambertMaterial({
-    color: screenMap ? 0xffffff : 0x0c1418,
-    map: screenMap,
-    emissive: 0x1a4a58,
-    emissiveIntensity: 0.45,
-  });
+  const screenMat = screenMap
+    ? new THREE.MeshBasicMaterial({ color: 0xffffff, map: screenMap })
+    : new THREE.MeshBasicMaterial({ color: 0x1a6f7a });
 
   // Height is framed for the 70° hood view (bottom ~28%). Extra-wide X also fills the 95° still.
   const dash = new THREE.Mesh(frustumSlab(cam, -1.7, 1.7, -1.35, dashTop, 0.24, 0.98), dashMat);
@@ -425,14 +501,16 @@ function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
 
   const screen = new THREE.Group();
   screen.name = 'centre-screen';
-  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.332, 0.208, 0.012), bezelMat);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.304, 0.184), screenMat);
-  face.position.z = -0.0068;
+  // Thin in X so the lit face points back at the driver (camera looks +X).
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.176, 0.28), bezelMat);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.256, 0.156), screenMat);
+  face.rotation.y = -Math.PI / 2;
+  face.position.x = -0.006;
   screen.add(bezel, face);
   const sit = rayPoint(cam, 0.22, dashTop, 0.72);
   const sitInDash = rayPoint(cam, 0.22, dashTop - 0.08, 0.72);
   screen.position.set(sit.x, sit.y + 0.108, sit.z);
-  screen.lookAt(COCKPIT.eye.x, COCKPIT.eye.y - 0.05, COCKPIT.eye.z);
+  screen.rotation.y = 0.22;
   addStrut(group, sitInDash, screen.position.clone(), 0.014, 0.02, bezelMat, 'screen-mount');
   group.add(screen);
 
@@ -548,6 +626,7 @@ export function assembleEgoVisual(source: THREE.Object3D): EgoVisual {
     wheels.push({ pivot, mesh: tire, front: spec.front, spinAxis: 'x' });
   }
 
+  splitBodyGlass(sedan);
   paintSilver(sedan);
   sedan.position.y = ROAD_SURFACE_Y - AXLE_HEIGHT;
   setLayerDeep(sedan, LAYER_EXTERIOR);
