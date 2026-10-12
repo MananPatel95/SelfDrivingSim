@@ -312,3 +312,5 @@ MIT
 ## Acknowledgments
 
 Educational project demonstrating autonomous vehicle concepts. All company names are used descriptively based on publicly available information. No logos, brand colors, or copyrighted assets are used.
+
+The ego sedan mesh is **Kenney’s Car Kit sedan** (`sedan.glb`) by [Kenney](https://kenney.nl/assets/car-kit) (www.kenney.nl), [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Files live in `game/public/models/` with the pack license.

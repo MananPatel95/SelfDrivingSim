@@ -17,21 +17,22 @@ describe('first-person cabin framing', () => {
     expect(Math.abs(COCKPIT.wheel.z - COCKPIT.eye.z)).toBeLessThan(0.12);
     expect(driverEyeHeight()).toBeGreaterThan(1.12);
     expect(driverEyeHeight()).toBeLessThan(1.28);
+    expect(driverEyeHeight()).toBeCloseTo(1.2, 2);
     expect(AXLE_HEIGHT + COCKPIT.eye.y).toBeCloseTo(driverEyeHeight(), 5);
   });
 
-  it('puts a slim wheel in the lower-left, covering at most ~20% of the frame', () => {
+  it('puts a 36 cm wheel left of centre in the lower third', () => {
     const view = wheelViewOffset();
-    expect(view.depth).toBeGreaterThan(0.3);
-    expect(view.depth).toBeLessThan(0.75);
-    expect(view.ndcY).toBeLessThan(-0.18);
-    expect(view.ndcY).toBeGreaterThan(-0.82);
-    expect(view.ndcX).toBeLessThan(0.05);
+    expect(COCKPIT.wheelRadius).toBeCloseTo(0.18, 5);
+    expect(view.depth).toBeGreaterThan(0.35);
+    expect(view.depth).toBeLessThan(0.95);
+    expect(view.ndcY).toBeLessThan(-1 / 3);
+    expect(view.ndcY).toBeGreaterThan(-0.88);
+    expect(view.ndcX).toBeLessThan(0);
     expect(view.ndcX).toBeGreaterThan(-0.55);
-    expect(view.radiusNdc).toBeGreaterThan(0.10);
-    expect(view.radiusNdc).toBeLessThan(0.24);
-    expect(view.areaFrac).toBeLessThan(0.20);
-    expect(Math.abs(view.ndcY) + view.radiusNdc * 0.45).toBeLessThan(1);
+    expect(view.radiusNdc).toBeGreaterThan(0.12);
+    expect(view.radiusNdc).toBeLessThan(0.46);
+    expect(Math.abs(view.ndcY) + view.radiusNdc * 0.45).toBeLessThan(1.05);
   });
 
   it('keeps the driver’s eyes inside the greenhouse, under the roof', () => {

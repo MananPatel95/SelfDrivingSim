@@ -59,6 +59,7 @@ describe('planted wheels stay on the road', () => {
   it('keeps every tire inside the body / wheel-arch half-width', () => {
     expect(tireOuterHalfWidth()).toBeLessThan(BODY_HALF_WIDTH - 0.02);
     expect(BODY_HALF_WIDTH).toBeGreaterThan(0.9);
+    expect(BODY_HALF_WIDTH).toBeCloseTo(1.85 / 2, 5);
   });
 
   it('points the nose along the heading, not sideways or backward', () => {

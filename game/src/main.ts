@@ -9,7 +9,7 @@ import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
 import { COCKPIT, handWheelRotation } from './sim/cabinView';
-import { buildEgoVisual } from './sim/egoMesh';
+import { applyCameraLayers, loadEgoVisual } from './sim/egoMesh';
 import {
   AXLE_HEIGHT,
   ROAD_SURFACE_Y,
@@ -205,7 +205,7 @@ const inputState = {
 let egoMesh: THREE.Object3D;
 let egoBodyPivot: THREE.Group | null = null;
 let egoSteerWheel: THREE.Group | null = null;
-let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean }> = [];
+let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean; spinAxis?: 'x' | 'y' }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
@@ -235,6 +235,7 @@ function initThreeJS() {
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, QUALITY[qualityLevel].far);
   camera.position.set(0, -10, 8);
   camera.lookAt(0, 0, 0);
+  applyCameraLayers(camera, false);
   
   const ambientLight = new THREE.AmbientLight(0x6a6a6a, 0.7);
   scene.add(ambientLight);
@@ -1105,6 +1106,7 @@ function togglePause() {
 function setCameraMode(mode: CameraMode) {
   cameraMode = mode;
   resetCameraRig();
+  applyCameraLayers(camera, mode === 'hood');
   document.querySelectorAll('#camera-seg button').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === mode);
   });
@@ -1563,6 +1565,7 @@ function initCompareMode() {
   
   // Create compare camera (shares position with main camera)
   compareCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+  applyCameraLayers(compareCamera, false);
   
   // Reset timing tracking
   detectionTimings.clear();
@@ -2437,7 +2440,7 @@ function hideChrome() {
   perceptionViz?.setEnabled(false);
 }
 
-/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|exterior|side */
+/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|exterior|side|wheel */
 function applyShot(kind: string) {
   beginGame('manual');
   hideChrome();
@@ -2451,17 +2454,20 @@ function applyShot(kind: string) {
     setCameraMode('hood');
     if (kind === 'cabin-a') {
       inputState.left = true;
-      shotHandDeg = 110;
+      shotHandDeg = 200;
     }
     if (kind === 'cabin-d') {
       inputState.right = true;
-      shotHandDeg = -110;
+      shotHandDeg = -200;
     }
   } else if (kind === 'exterior') {
     setCameraMode('orbit');
-    debugHeroCam = { x: 4.6, y: 0.58, z: 3.1, lookX: 0.3, lookY: 0.16, lookZ: 0.0 };
+    debugHeroCam = { x: 5.2, y: 1.15, z: 3.4, lookX: 0.2, lookY: 0.55, lookZ: 0.0 };
   } else if (kind === 'side') {
-    debugSideCam = { height: 0.62, side: 5.6, lookY: 0.58 };
+    debugSideCam = { height: 0.55, side: 6.2, lookY: 0.62 };
+  } else if (kind === 'wheel') {
+    setCameraMode('orbit');
+    debugHeroCam = { x: 1.35, y: 0.28, z: 1.55, lookX: 1.22, lookY: 0.22, lookZ: 0.52 };
   }
 }
 
@@ -2514,7 +2520,8 @@ function animate(time: number) {
   }
   for (const wheel of egoWheels) {
     wheel.pivot.rotation.y = wheel.front ? currSteer : 0;
-    wheel.mesh.rotation.y = currWheelSpin;
+    if (wheel.spinAxis === 'x') wheel.mesh.rotation.x = currWheelSpin;
+    else wheel.mesh.rotation.y = currWheelSpin;
   }
   if (egoSteerWheel) {
     // A is +steer (left). The hand wheel turns farther than the road wheels.
@@ -2608,8 +2615,8 @@ function updateAIView(drawRawScene: boolean) {
   }
 }
 
-function createEgoVehicle(): THREE.Group {
-  const visual = buildEgoVisual();
+async function createEgoVehicle(): Promise<THREE.Group> {
+  const visual = await loadEgoVisual();
   egoBodyPivot = visual.bodyPivot;
   egoSteerWheel = visual.steerWheel;
   egoWheels = visual.wheels;
@@ -2632,7 +2639,7 @@ async function init() {
   });
 
   scene.remove(egoMesh);
-  const egoGroup = createEgoVehicle();
+  const egoGroup = await createEgoVehicle();
   scene.add(egoGroup);
   egoMesh = egoGroup as unknown as THREE.Mesh;
 
@@ -2652,6 +2659,7 @@ async function init() {
     rawCameraRenderer.setSize(320, 180, false);
     rawCameraRenderer.setPixelRatio(1);
     rawCamera = new THREE.PerspectiveCamera(70, 320 / 180, 0.2, 200);
+    applyCameraLayers(rawCamera, false);
   }
 
   applyQuality('med');

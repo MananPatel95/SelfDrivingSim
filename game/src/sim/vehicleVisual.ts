@@ -5,32 +5,49 @@
  */
 
 export const ROAD_SURFACE_Y = 0.02;
-export const VISUAL_WHEEL_RADIUS = 0.38;
+/** Kenney sedan native AABB before our +X-forward fit (meters). */
+export const KENNEY_NATIVE_LENGTH = 2.55;
+export const KENNEY_NATIVE_WIDTH = 1.5;
+export const KENNEY_NATIVE_HEIGHT = 1.3;
+export const KENNEY_NATIVE_WHEEL_RADIUS = 0.3;
+/** Visual wheel center |x| (left/right) and |z| (fore/aft) in Kenney space. */
+export const KENNEY_NATIVE_WHEEL_LATERAL = 0.425;
+export const KENNEY_NATIVE_WHEEL_LONG = 0.66;
+
+/** Fitted sedan: ~4.7 × 1.85 × 1.45 m. */
+export const SEDAN_LENGTH = 4.7;
+export const SEDAN_WIDTH = 1.85;
+export const SEDAN_HEIGHT = 1.45;
+export const SEDAN_SCALE_LENGTH = SEDAN_LENGTH / KENNEY_NATIVE_LENGTH;
+export const SEDAN_SCALE_WIDTH = SEDAN_WIDTH / KENNEY_NATIVE_WIDTH;
+export const SEDAN_SCALE_HEIGHT = SEDAN_HEIGHT / KENNEY_NATIVE_HEIGHT;
+
+export const VISUAL_WHEEL_RADIUS = KENNEY_NATIVE_WHEEL_RADIUS * SEDAN_SCALE_HEIGHT;
 export const AXLE_HEIGHT = ROAD_SURFACE_Y + VISUAL_WHEEL_RADIUS;
 export const MAX_COSMETIC_ROLL = (5 * Math.PI) / 180;
 export const MAX_COSMETIC_PITCH = (3 * Math.PI) / 180;
 /** Target ground clearance of the body sill at max roll + pitch. */
 export const BODY_CLEARANCE = 0.135;
 
-/** Half the tire width. Wheel centers sit inside the body by more than this. */
-export const VISUAL_WHEEL_HALF_WIDTH = 0.12;
+/** Half the tire width after a uniform wheel scale (circular tires). */
+export const VISUAL_WHEEL_HALF_WIDTH = 0.175 * SEDAN_SCALE_HEIGHT;
 
 export const WHEEL_PLAN_OFFSETS: ReadonlyArray<{ x: number; z: number; front: boolean }> = [
-  { x: 1.35, z: 0.78, front: true },
-  { x: 1.35, z: -0.78, front: true },
-  { x: -1.35, z: 0.78, front: false },
-  { x: -1.35, z: -0.78, front: false },
+  { x: KENNEY_NATIVE_WHEEL_LONG * SEDAN_SCALE_LENGTH, z: KENNEY_NATIVE_WHEEL_LATERAL * SEDAN_SCALE_WIDTH, front: true },
+  { x: KENNEY_NATIVE_WHEEL_LONG * SEDAN_SCALE_LENGTH, z: -KENNEY_NATIVE_WHEEL_LATERAL * SEDAN_SCALE_WIDTH, front: true },
+  { x: -KENNEY_NATIVE_WHEEL_LONG * SEDAN_SCALE_LENGTH, z: KENNEY_NATIVE_WHEEL_LATERAL * SEDAN_SCALE_WIDTH, front: false },
+  { x: -KENNEY_NATIVE_WHEEL_LONG * SEDAN_SCALE_LENGTH, z: -KENNEY_NATIVE_WHEEL_LATERAL * SEDAN_SCALE_WIDTH, front: false },
 ];
 
 /** Lower body / rocker (meters, local to the axle-height pivot). */
 export const BODY_HALF_LENGTH = 1.35;
-export const BODY_HALF_WIDTH = 0.96;
-export const BODY_HALF_HEIGHT = 0.30;
+export const BODY_HALF_WIDTH = SEDAN_WIDTH / 2;
+export const BODY_HALF_HEIGHT = 0.28;
 /**
  * Pivot-local Y of the body-box center. Raised so max roll+pitch still
  * leaves BODY_CLEARANCE above the road (see lowestBodyPointY).
  */
-export const BODY_CENTER_LOCAL_Y = 0.222;
+export const BODY_CENTER_LOCAL_Y = 0.248;
 
 export interface BodyPart {
   halfX: number;

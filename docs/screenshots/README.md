@@ -41,19 +41,22 @@ Night mode with fog showing degraded visibility.
 ### 08-dashboard.png
 Status HUD with speed, control, detections, collisions, and FPS.
 
-## Modern cabin and EV body
+## Modern cabin and Kenney sedan
 
-### 21-cockpit-straight.png
-First person, left-hand seat, slim flat-bottom wheel centred.
+### cabin3_cockpit_straight.png
+First person, left-hand seat, 36 cm wheel, thin dash and centre screen.
 
-### 22-cockpit-steer-left.png
-A held: hand wheel turned counter-clockwise.
+### cabin3_cockpit_steer_left.png
+A held: hand wheel turned counter-clockwise (~450° lock).
 
-### 23-cockpit-steer-right.png
+### cabin3_cockpit_steer_right.png
 D held: hand wheel turned clockwise.
 
-### 24-exterior-three-quarter.png
-Front 3/4 of the rounded EV shell.
+### cabin3_exterior_three_quarter.png
+Front 3/4 of the CC0 Kenney sedan (silver).
 
-### 25-exterior-low-side.png
+### cabin3_exterior_low_side.png
 Low side view: tires inside the arches and on the road.
+
+### cabin3_wheel_closeup.png
+Close-up of a road wheel sitting in its arch.

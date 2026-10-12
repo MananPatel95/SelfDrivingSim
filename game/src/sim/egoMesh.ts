@@ -1,23 +1,37 @@
 /**
- * Modern EV sedan: constant-width tub, fender blisters, flush glass, light bars.
- * Same-material parts are merged so the car is a handful of draw calls.
- * Wheels sit inside the arches; the cabin is hollow so the driver camera is free.
+ * Kenney CC0 sedan (GLB) plus a minimal Tesla-style cockpit overlay.
+ * Wheels are detached so they stay planted while the body rolls about the axle.
  */
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { COCKPIT } from './cabinView';
 import {
   AXLE_HEIGHT,
-  VISUAL_WHEEL_HALF_WIDTH,
+  KENNEY_NATIVE_HEIGHT,
+  KENNEY_NATIVE_LENGTH,
+  KENNEY_NATIVE_WHEEL_RADIUS,
+  KENNEY_NATIVE_WIDTH,
+  ROAD_SURFACE_Y,
+  SEDAN_HEIGHT,
+  SEDAN_LENGTH,
+  SEDAN_WIDTH,
   VISUAL_WHEEL_RADIUS,
   WHEEL_PLAN_OFFSETS,
 } from './vehicleVisual';
+
+export const SEDAN_MODEL_URL = '/models/sedan.glb';
+export const SILVER_PAINT = 0xc5cad1;
+export const LAYER_WORLD = 0;
+export const LAYER_COCKPIT = 1;
+export const LAYER_EXTERIOR = 2;
 
 export interface EgoWheelRef {
   pivot: THREE.Group;
   mesh: THREE.Mesh;
   front: boolean;
+  spinAxis: 'x' | 'y';
 }
 
 export interface EgoVisual {
@@ -27,6 +41,8 @@ export interface EgoVisual {
   wheels: EgoWheelRef[];
   drawCalls: number;
 }
+
+export const EGO_DRAW_CALL_BUDGET = 24;
 
 function xform(
   geo: THREE.BufferGeometry,
@@ -39,23 +55,6 @@ function xform(
   const g = geo.clone();
   if (rot) g.rotateX(rot.x), g.rotateY(rot.y), g.rotateZ(rot.z);
   if (scale) g.scale(scale.x, scale.y, scale.z);
-  g.translate(x, y, z);
-  return g;
-}
-
-/** Cylinder along +X, then flatten Y and set half-width in Z. */
-function hullTube(length: number, halfH: number, halfW: number, x: number, y: number): THREE.BufferGeometry {
-  const g = new THREE.CylinderGeometry(1, 1, length, 28);
-  g.rotateZ(Math.PI / 2);
-  g.scale(1, halfH, halfW);
-  g.translate(x, y, 0);
-  return g;
-}
-
-function glassPane(w: number, h: number, x: number, y: number, z: number, yaw = 0, rake = 0): THREE.BufferGeometry {
-  const g = new THREE.PlaneGeometry(w, h);
-  if (yaw) g.rotateY(yaw);
-  if (rake) g.rotateZ(rake);
   g.translate(x, y, z);
   return g;
 }
@@ -89,180 +88,268 @@ function countMeshes(root: THREE.Object3D): number {
   return n;
 }
 
-function buildFlatBottomWheel(): THREE.Group {
+function setLayerDeep(root: THREE.Object3D, layer: number): void {
+  root.traverse((obj) => {
+    obj.layers.set(layer);
+  });
+}
+
+export function applyCameraLayers(camera: THREE.Camera, hood: boolean): void {
+  camera.layers.enable(LAYER_WORLD);
+  if (hood) {
+    camera.layers.enable(LAYER_COCKPIT);
+    camera.layers.disable(LAYER_EXTERIOR);
+  } else {
+    camera.layers.enable(LAYER_EXTERIOR);
+    camera.layers.disable(LAYER_COCKPIT);
+  }
+}
+
+function paintSilver(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const src = mesh.material;
+    const list = Array.isArray(src) ? src : [src];
+    const next = list.map((mat) => {
+      const mapped = (mat as THREE.MeshStandardMaterial).map ?? null;
+      return new THREE.MeshLambertMaterial({
+        color: SILVER_PAINT,
+        map: mapped,
+        transparent: false,
+      });
+    });
+    mesh.material = next.length === 1 ? next[0]! : next;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+  });
+}
+
+/** Kenney-shaped stand-in so tests can assemble without fetching a GLB. */
+export function makePlaceholderSedan(): THREE.Group {
+  const root = new THREE.Group();
+  root.name = 'sedan';
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(KENNEY_NATIVE_WIDTH, 1.15, KENNEY_NATIVE_LENGTH),
+    new THREE.MeshLambertMaterial({ color: 0xffffff }),
+  );
+  body.name = 'body';
+  body.position.set(0, 0.15 + 1.15 / 2, -0.025);
+  root.add(body);
+
+  const specs: Array<{ name: string; x: number; z: number }> = [
+    { name: 'wheel-front-left', x: 0.3, z: 0.66 },
+    { name: 'wheel-front-right', x: -0.3, z: 0.66 },
+    { name: 'wheel-back-left', x: 0.3, z: -0.66 },
+    { name: 'wheel-back-right', x: -0.3, z: -0.66 },
+  ];
+  for (const spec of specs) {
+    const wheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(KENNEY_NATIVE_WHEEL_RADIUS, KENNEY_NATIVE_WHEEL_RADIUS, 0.35, 16),
+      new THREE.MeshLambertMaterial({ color: 0x222222 }),
+    );
+    wheel.name = spec.name;
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(spec.x, KENNEY_NATIVE_WHEEL_RADIUS, spec.z);
+    root.add(wheel);
+  }
+  return root;
+}
+
+function buildHandWheel(): THREE.Group {
   const group = new THREE.Group();
   const R = COCKPIT.wheelRadius;
   const tube = COCKPIT.wheelTube;
-  const leather = new THREE.MeshLambertMaterial({ color: 0x1c1f24, side: THREE.DoubleSide });
+  const leather = new THREE.MeshLambertMaterial({ color: 0x1b1e23, side: THREE.DoubleSide });
   const metal = new THREE.MeshLambertMaterial({ color: 0xc9d0d8, side: THREE.DoubleSide });
-  const mark = new THREE.MeshLambertMaterial({ color: 0xf4ead2, emissive: 0xffd27a, emissiveIntensity: 0.7 });
+  const mark = new THREE.MeshLambertMaterial({ color: 0xf4ead2, emissive: 0xffd27a, emissiveIntensity: 0.55 });
 
-  const arc = Math.PI * 1.42;
-  const gap = Math.PI * 2 - arc;
-  const leatherParts: THREE.BufferGeometry[] = [
-    xform(new THREE.TorusGeometry(R, tube, 8, 36, arc), 0, 0, 0, new THREE.Euler(Math.PI + gap / 2, Math.PI / 2, 0)),
-  ];
-  const chord = 2 * R * Math.sin(gap / 2);
-  const barY = -R * Math.cos(gap / 2);
-  leatherParts.push(xform(new THREE.CylinderGeometry(tube, tube, chord, 10), 0, barY, 0, new THREE.Euler(Math.PI / 2, 0, 0)));
+  addMerged(group, [xform(new THREE.TorusGeometry(R, tube, 8, 40), 0, 0, 0, new THREE.Euler(0, Math.PI / 2, 0))], leather, false);
 
-  const metalParts: THREE.BufferGeometry[] = [
-    xform(new THREE.CylinderGeometry(0.026, 0.03, 0.03, 16), 0, 0, 0, new THREE.Euler(0, 0, Math.PI / 2)),
+  const spokeParts: THREE.BufferGeometry[] = [
+    xform(new THREE.CylinderGeometry(0.018, 0.022, 0.028, 14), 0, 0, 0, new THREE.Euler(0, 0, Math.PI / 2)),
   ];
-  for (const ang of [-0.55, 0.55]) {
-    metalParts.push(
+  for (const ang of [-0.52, 0.52, Math.PI]) {
+    spokeParts.push(
       xform(
-        new THREE.BoxGeometry(0.01, R * 0.72, 0.014),
+        new THREE.BoxGeometry(0.008, R * 0.78, 0.012),
         0,
-        Math.cos(ang) * R * 0.34,
-        Math.sin(ang) * R * 0.34,
+        Math.cos(ang) * R * 0.36,
+        Math.sin(ang) * R * 0.36,
         new THREE.Euler(ang, 0, 0),
       ),
     );
   }
-  metalParts.push(xform(new THREE.BoxGeometry(0.01, R * 0.42, 0.012), 0, barY * 0.45, 0));
-
-  addMerged(group, leatherParts, leather, false);
-  addMerged(group, metalParts, metal, false);
-  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.028, 0.022), mark);
-  notch.position.set(-0.016, R * 0.88, 0);
+  addMerged(group, spokeParts, metal, false);
+  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.024, 0.02), mark);
+  notch.position.set(-0.014, R * 0.9, 0);
   group.add(notch);
   return group;
 }
 
-export function buildEgoVisual(): EgoVisual {
+function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
+  const group = new THREE.Group();
+  const dashMat = new THREE.MeshLambertMaterial({ color: 0x16191e });
+  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x2c3036 });
+  const screenMat = new THREE.MeshLambertMaterial({
+    color: 0x07181c,
+    emissive: 0x1a7a84,
+    emissiveIntensity: 0.55,
+  });
+
+  // Thin dash strip only — no hood slab, no roof plane.
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 1.18), dashMat);
+  dash.position.set(0.55, COCKPIT.wheel.y - 0.08, 0.02);
+  group.add(dash);
+
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.2, 0.14), screenMat);
+  screen.position.set(0.48, COCKPIT.wheel.y + 0.02, -0.06);
+  group.add(screen);
+
+  const pillarGeo = new THREE.CylinderGeometry(0.01, 0.009, 0.62, 8);
+  const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  leftPillar.position.set(0.88, 0.86, 0.86);
+  leftPillar.rotation.z = 0.28;
+  const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  rightPillar.position.set(0.88, 0.86, -0.86);
+  rightPillar.rotation.z = 0.28;
+  group.add(leftPillar, rightPillar);
+
+  const steerWheel = buildHandWheel();
+  steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
+  group.add(steerWheel);
+
+  setLayerDeep(group, LAYER_COCKPIT);
+  return { group, steerWheel };
+}
+
+/** Center a Kenney/placeholder wheel and put its axle along +Z (left/right). */
+function orientWheelOnAxle(mesh: THREE.Mesh): void {
+  const geo = mesh.geometry.clone();
+  geo.computeBoundingBox();
+  const size = geo.boundingBox?.getSize(new THREE.Vector3()) ?? new THREE.Vector3(0.35, 0.6, 0.6);
+  geo.center();
+  mesh.geometry = geo;
+  mesh.position.set(0, 0, 0);
+  const axle = size.x <= size.y && size.x <= size.z ? 'x' : size.y <= size.z ? 'y' : 'z';
+  if (axle === 'x') mesh.rotation.set(0, Math.PI / 2, 0);
+  else if (axle === 'y') mesh.rotation.set(Math.PI / 2, 0, 0);
+  else mesh.rotation.set(0, 0, 0);
+  const nativeRadius = Math.max(size.x, size.y, size.z) / 2 || KENNEY_NATIVE_WHEEL_RADIUS;
+  mesh.scale.setScalar(VISUAL_WHEEL_RADIUS / nativeRadius);
+}
+
+function collectWheels(root: THREE.Object3D): THREE.Mesh[] {
+  const wheels: THREE.Mesh[] = [];
+  root.traverse((obj) => {
+    if ((obj as THREE.Mesh).isMesh && /wheel/i.test(obj.name)) {
+      wheels.push(obj as THREE.Mesh);
+    }
+  });
+  return wheels;
+}
+
+function fitKenneyBody(sedan: THREE.Object3D): void {
+  // Kenney: +Z forward, +X left. Ours: +X forward, +Z left.
+  sedan.rotation.y = Math.PI / 2;
+  sedan.scale.set(
+    SEDAN_WIDTH / KENNEY_NATIVE_WIDTH,
+    SEDAN_HEIGHT / KENNEY_NATIVE_HEIGHT,
+    SEDAN_LENGTH / KENNEY_NATIVE_LENGTH,
+  );
+  sedan.updateMatrixWorld(true);
+}
+
+/**
+ * Turn a Kenney-style sedan scene (named `body` + `wheel-*` children) into the
+ * runtime ego visual: silver body on a roll pivot, planted wheels, cockpit.
+ */
+export function assembleEgoVisual(source: THREE.Object3D): EgoVisual {
+  const sedan = source.clone(true);
+  fitKenneyBody(sedan);
+
   const group = new THREE.Group();
   const bodyPivot = new THREE.Group();
   bodyPivot.position.y = AXLE_HEIGHT;
   group.add(bodyPivot);
 
-  const pearl = new THREE.MeshLambertMaterial({ color: 0xd5dbe3 });
-  const cladding = new THREE.MeshLambertMaterial({ color: 0x14181e });
-  const glass = new THREE.MeshLambertMaterial({
-    color: 0x6f96aa,
-    transparent: true,
-    opacity: 0.38,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const lamp = new THREE.MeshLambertMaterial({ color: 0xf4fbff, emissive: 0xc8e8ff, emissiveIntensity: 1.1 });
-  const tail = new THREE.MeshLambertMaterial({ color: 0xff2a44, emissive: 0xff1433, emissiveIntensity: 0.95 });
-  const dark = new THREE.MeshLambertMaterial({ color: 0x12151a, side: THREE.DoubleSide });
-  const screen = new THREE.MeshLambertMaterial({ color: 0x0b2a30, emissive: 0x1a8a96, emissiveIntensity: 0.6 });
+  const wheelMeshes = collectWheels(sedan);
+  const placed = new Set<string>();
+  const wheels: EgoWheelRef[] = [];
 
-  const pearlParts: THREE.BufferGeometry[] = [];
-  const glassParts: THREE.BufferGeometry[] = [];
-  const darkParts: THREE.BufferGeometry[] = [];
-  const lampParts: THREE.BufferGeometry[] = [];
-  const tailParts: THREE.BufferGeometry[] = [];
-  const dashParts: THREE.BufferGeometry[] = [];
+  for (const mesh of wheelMeshes) {
+    mesh.updateWorldMatrix(true, false);
+    const world = new THREE.Vector3();
+    mesh.getWorldPosition(world);
+    const front = /front/i.test(mesh.name);
+    const left = world.z >= 0;
+    const key = `${front ? 'f' : 'r'}-${left ? 'l' : 'r'}`;
+    placed.add(key);
 
-  // Hood and rear deck only — the cabin stays hollow so the driver can see out.
-  pearlParts.push(
-    hullTube(1.55, 0.26, 0.74, 1.42, 0.20),
-    hullTube(1.35, 0.26, 0.74, -1.32, 0.20),
-    xform(new THREE.SphereGeometry(1, 18, 12), 2.12, 0.20, 0, undefined, new THREE.Vector3(0.55, 0.24, 0.76)),
-    xform(new THREE.SphereGeometry(1, 18, 12), -2.00, 0.20, 0, undefined, new THREE.Vector3(0.52, 0.24, 0.76)),
-    xform(new THREE.BoxGeometry(2.1, 0.18, 0.16), 0.0, 0.10, 0.64),
-    xform(new THREE.BoxGeometry(2.1, 0.18, 0.16), 0.0, 0.10, -0.64),
-  );
+    mesh.removeFromParent();
+    orientWheelOnAxle(mesh);
+    mesh.castShadow = true;
 
-  // Fender blisters sit outboard of the tub and over the tires.
-  for (const w of WHEEL_PLAN_OFFSETS) {
-    const side = Math.sign(w.z) || 1;
-    pearlParts.push(
-      xform(
-        new THREE.SphereGeometry(1, 16, 12),
-        w.x,
-        0.10,
-        side * (Math.abs(w.z) - 0.04),
-        undefined,
-        new THREE.Vector3(0.48, 0.34, 0.28),
-      ),
-    );
-    darkParts.push(
-      xform(
-        new THREE.TorusGeometry(VISUAL_WHEEL_RADIUS + 0.05, 0.055, 8, 18, Math.PI),
-        w.x,
-        0.02,
-        side * (Math.abs(w.z) + 0.04),
-        new THREE.Euler(0, side > 0 ? 0 : Math.PI, 0),
-      ),
-    );
+    const pivot = new THREE.Group();
+    const plan = WHEEL_PLAN_OFFSETS.find((w) => w.front === front && Math.sign(w.z) === (left ? 1 : -1));
+    pivot.position.set(plan?.x ?? world.x, AXLE_HEIGHT, plan?.z ?? world.z);
+    pivot.add(mesh);
+    group.add(pivot);
+    setLayerDeep(pivot, LAYER_EXTERIOR);
+    wheels.push({ pivot, mesh, front, spinAxis: 'x' });
   }
 
-  // Flush glass roof (thin slab) + windshield / side / rear panes. Cabin stays hollow.
-  glassParts.push(
-    xform(new THREE.BoxGeometry(1.65, 0.035, 1.28), -0.20, 1.06, 0),
-    glassPane(1.42, 0.62, 0.52, 0.76, 0, Math.PI / 2, 0.48),
-    glassPane(1.35, 0.50, -0.15, 0.80, 0.70),
-    glassPane(1.35, 0.50, -0.15, 0.80, -0.70, Math.PI),
-    glassPane(1.28, 0.48, -0.95, 0.82, 0, -Math.PI / 2, -0.32),
-  );
-
-  darkParts.push(
-    xform(new THREE.CylinderGeometry(0.015, 0.013, 0.70, 8), 0.42, 0.78, 0.60, new THREE.Euler(0, 0, 0.52)),
-    xform(new THREE.CylinderGeometry(0.015, 0.013, 0.70, 8), 0.42, 0.78, -0.60, new THREE.Euler(0, 0, 0.52)),
-    xform(new THREE.CylinderGeometry(0.013, 0.012, 0.52, 8), -0.78, 0.84, 0.60, new THREE.Euler(0, 0, -0.36)),
-    xform(new THREE.CylinderGeometry(0.013, 0.012, 0.52, 8), -0.78, 0.84, -0.60, new THREE.Euler(0, 0, -0.36)),
-  );
-
-  // Full-width bars flush with the nose and tail, not sticks.
-  lampParts.push(xform(new THREE.BoxGeometry(0.06, 0.04, 1.52), 2.22, 0.36, 0));
-  tailParts.push(xform(new THREE.BoxGeometry(0.06, 0.035, 1.52), -2.16, 0.36, 0));
-
-  // Interior: low dash, centre stack to the right of the left-seat wheel, seat behind the eye.
-  dashParts.push(
-    xform(new THREE.BoxGeometry(0.34, 0.06, 1.20), 0.58, 0.46, 0),
-    xform(new THREE.BoxGeometry(0.16, 0.03, 0.32), 0.46, 0.50, 0.34),
-    xform(new THREE.BoxGeometry(0.18, 0.14, 0.22), 0.50, 0.50, -0.02),
-    xform(new THREE.BoxGeometry(0.32, 0.38, 0.40), -0.48, 0.40, 0.36),
-    xform(new THREE.BoxGeometry(0.34, 0.06, 0.40), -0.16, 0.26, 0.36),
-  );
-  const screenMesh = new THREE.Mesh(xform(new THREE.BoxGeometry(0.018, 0.11, 0.20), 0.42, 0.56, -0.02), screen);
-  screenMesh.castShadow = false;
-  bodyPivot.add(screenMesh);
-
-  addMerged(bodyPivot, pearlParts, pearl, true);
-  addMerged(bodyPivot, glassParts, glass, false);
-  addMerged(bodyPivot, darkParts, cladding, true);
-  addMerged(bodyPivot, lampParts, lamp, false);
-  addMerged(bodyPivot, tailParts, tail, false);
-  addMerged(bodyPivot, dashParts, dark, false);
-
-  const steerWheel = buildFlatBottomWheel();
-  steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
-  bodyPivot.add(steerWheel);
-
-  const wheels: EgoWheelRef[] = [];
-  const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const wheelGeo = mergeOrNull([
-    xform(
-      new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_HALF_WIDTH * 2, 20),
-      0, 0, 0,
-      new THREE.Euler(Math.PI / 2, 0, 0),
-    ),
-    new THREE.TorusGeometry(VISUAL_WHEEL_RADIUS * 0.55, 0.03, 8, 18),
-  ]);
+  // Guarantee four planted wheels even if a source mesh was missing.
   for (const spec of WHEEL_PLAN_OFFSETS) {
+    const key = `${spec.front ? 'f' : 'r'}-${spec.z >= 0 ? 'l' : 'r'}`;
+    if (placed.has(key)) continue;
     const pivot = new THREE.Group();
     pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
     const tire = new THREE.Mesh(
-      wheelGeo ?? new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_HALF_WIDTH * 2, 20),
-      tireMat,
+      new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS * 0.7, 18),
+      new THREE.MeshLambertMaterial({ color: 0x1a1a1a }),
     );
+    tire.rotation.x = Math.PI / 2;
     pivot.add(tire);
     group.add(pivot);
-    wheels.push({ pivot, mesh: tire, front: spec.front });
+    setLayerDeep(pivot, LAYER_EXTERIOR);
+    wheels.push({ pivot, mesh: tire, front: spec.front, spinAxis: 'x' });
   }
+
+  paintSilver(sedan);
+  sedan.position.y = ROAD_SURFACE_Y - AXLE_HEIGHT;
+  setLayerDeep(sedan, LAYER_EXTERIOR);
+  bodyPivot.add(sedan);
+
+  const cockpit = buildCockpit();
+  bodyPivot.add(cockpit.group);
 
   return {
     group,
     bodyPivot,
-    steerWheel,
+    steerWheel: cockpit.steerWheel,
     wheels,
     drawCalls: countMeshes(group),
   };
 }
 
-export const EGO_DRAW_CALL_BUDGET = 18;
+export function buildEgoVisual(source?: THREE.Object3D): EgoVisual {
+  return assembleEgoVisual(source ?? makePlaceholderSedan());
+}
+
+export function loadEgoVisual(url = SEDAN_MODEL_URL): Promise<EgoVisual> {
+  const loader = new GLTFLoader();
+  return new Promise((resolve, reject) => {
+    loader.load(
+      url,
+      (gltf) => resolve(assembleEgoVisual(gltf.scene)),
+      undefined,
+      reject,
+    );
+  });
+}
+
+export function sedanFittedSize(root: THREE.Object3D): THREE.Vector3 {
+  const box = new THREE.Box3().setFromObject(root);
+  return box.getSize(new THREE.Vector3());
+}
