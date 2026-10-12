@@ -38,7 +38,7 @@ Ego stopped against an NPC with COLLISION flash (no interpenetration).
 Live hood-camera stills (not `?shot=cabin` rigs). Compare with a real Model 3/Y interior.
 
 ### fp_straight.png
-First person while driving straight: locked eye point, Kenney body hidden, windshield frame, dark dash, two-spoke wheel, centre tablet.
+First person while driving straight: locked eye point, Kenney body hidden, open windshield (no A-pillars or header), low dash, two-spoke wheel, tablet in the dash to the right of the wheel.
 
 ### fp_steer_left.png
 Full left lock (~450°) while driving.

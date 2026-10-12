@@ -2,6 +2,7 @@
  * Driver’s-eye framing for first person.
  * Coordinates are body-pivot local: +X nose, +Y up, +Z left.
  * Left-hand seat at ~1.2 m; the rim is ~0.6 m ahead, ~35% from the left of a 16:9 frame.
+ * Dash sits ~72% down the frame so the road fills the windshield; no A-pillars or header.
  */
 
 import { VEHICLE_PARAMS } from './vehicle';
@@ -19,33 +20,33 @@ export const HAND_LOCK_DEG = 450;
 export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
 
 /** Pitch below the horizon so the road fills the windshield. */
-export const LOOK_DOWN_DEG = 7;
+export const LOOK_DOWN_DEG = 11;
 
 export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
-  eye: { x: -0.06, y: 1.2 - AXLE_HEIGHT, z: -0.34 } satisfies CabinVec,
+  eye: { x: -0.12, y: 1.2 - AXLE_HEIGHT, z: -0.34 } satisfies CabinVec,
   /**
-   * 7° down, 12 m ahead, slightly toward the road centre. Horizon lands
-   * ~40% from the top of a 70° frame.
+   * 11° down, 12 m ahead, slightly toward the road centre. Horizon lands
+   * ~40% from the top of an 88° frame.
    */
-  look: { x: 11.851, y: -0.617, z: 0.08 } satisfies CabinVec,
+  look: { x: 11.66, y: -1.444, z: 0.08 } satisfies CabinVec,
   /**
-   * 36 cm rim 0.60 m in front of the eye, screen-left (~35% from the left),
-   * vertical centre such that the full rim sits between the dash and the
-   * bottom edge.
+   * 36 cm rim 0.60 m in front of the eye, screen-left (~35% from the left).
+   * Rim top sits just above the dash line; the rest of the wheel is in the
+   * lower dash band.
    */
-  wheel: { x: 0.515, y: 0.543, z: -0.544 } satisfies CabinVec,
+  wheel: { x: 0.398, y: 0.310, z: -0.631 } satisfies CabinVec,
   wheelRadius: 0.185,
   /** Slim modern rim tube. */
   wheelTube: 0.012,
-  fovDeg: 70,
+  fovDeg: 88,
   /** Extra cockpit still: same layout, wider windshield view. */
-  wideFovDeg: 95,
+  wideFovDeg: 110,
   /**
-   * Dash top as NDC Y (bottom of frame = -1). 55% from the top of the frame
-   * so the windshield (road + sky) is the upper ~55%.
+   * Dash top as NDC Y (bottom of frame = -1). ~72.5% from the top of the
+   * frame so the windshield (road + sky) is the upper ~72%.
    */
-  dashTopNdc: -0.10,
+  dashTopNdc: -0.45,
   /**
    * Road steer (radians) → hand-wheel rotation.
    * Positive rotation.x swings the top of the rim toward screen-right,

@@ -122,41 +122,36 @@ describe('Kenney sedan-sports mesh', () => {
     expect(visual.bodyPivot.children.some((c) => c.layers.isEnabled(LAYER_EXTERIOR) || c.layers.isEnabled(LAYER_COCKPIT))).toBe(true);
   });
 
-  it('builds a connected cockpit: dash, hood, pillars, header, screen, column', () => {
+  it('builds an open cockpit: dash, screen, column — no header or A-pillars', () => {
     const visual = buildEgoVisual();
     visual.group.updateWorldMatrix(true, true);
     const dash = named(visual.group, 'dash');
     const hood = named(visual.group, 'hood');
-    const left = named(visual.group, 'pillar-left');
-    const right = named(visual.group, 'pillar-right');
-    const header = named(visual.group, 'header');
     const screen = named(visual.group, 'centre-screen');
     const mount = named(visual.group, 'screen-mount');
     const column = named(visual.group, 'steer-column');
+    expect(visual.group.getObjectByName('header')).toBeFalsy();
+    expect(visual.group.getObjectByName('pillar-left')).toBeFalsy();
+    expect(visual.group.getObjectByName('pillar-right')).toBeFalsy();
     expect(boxesTouch(dash, hood)).toBe(true);
-    expect(boxesTouch(dash, left)).toBe(true);
-    expect(boxesTouch(dash, right)).toBe(true);
     expect(boxesTouch(dash, column, 0.12)).toBe(true);
     expect(boxesTouch(dash, mount, 0.12)).toBe(true);
     expect(boxesTouch(mount, screen, 0.16)).toBe(true);
-    const mountBox = new THREE.Box3().setFromObject(mount);
-    const faceBox = new THREE.Box3().setFromObject(screen);
-    // Mount stays under/behind the tablet — it must not cover the screen face.
-    expect(mountBox.max.y).toBeLessThan(faceBox.max.y - 0.02);
-    expect(boxesTouch(left, header)).toBe(true);
-    expect(boxesTouch(right, header)).toBe(true);
     expect(boxesTouch(column, visual.steerWheel, 0.1)).toBe(true);
     const dashBox = new THREE.Box3().setFromObject(dash);
     const wheelBox = new THREE.Box3().setFromObject(visual.steerWheel);
+    const screenBox = new THREE.Box3().setFromObject(screen);
     // Rim sits in open air in front of the dash (smaller +X is toward the driver).
     expect(wheelBox.max.x).toBeLessThan(dashBox.min.x + 0.08);
     expect(wheelBox.max.x).toBeGreaterThan(dashBox.min.x - 0.35);
-    const screenBox = new THREE.Box3().setFromObject(screen);
+    // Screen stays in the dash height band, to the right of the wheel.
+    expect(screenBox.max.y).toBeLessThan(dashBox.max.y + 0.01);
+    expect(screenBox.min.z).toBeGreaterThan(wheelBox.max.z);
     const screenSize = screenBox.getSize(new THREE.Vector3());
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
     expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
-    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.2);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.02);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.52);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.38);
     const dashSize = dashBox.getSize(new THREE.Vector3());
     expect(dashSize.y).toBeLessThan(0.14);
     named(visual.group, 'wheel-hub');

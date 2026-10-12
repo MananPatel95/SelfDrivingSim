@@ -330,47 +330,6 @@ function rayPoint(cam: THREE.PerspectiveCamera, ndcX: number, ndcY: number, dept
   return new THREE.Vector3(ndcX * depth * tanH, ndcY * depth * tanV, -depth).applyMatrix4(cam.matrixWorld);
 }
 
-function frustumSlab(
-  cam: THREE.PerspectiveCamera,
-  ndcX0: number,
-  ndcX1: number,
-  ndcY0: number,
-  ndcY1: number,
-  d0: number,
-  d1: number,
-): THREE.BufferGeometry {
-  const p = (x: number, y: number, d: number) => rayPoint(cam, x, y, d);
-  const v = [
-    p(ndcX0, ndcY0, d0),
-    p(ndcX1, ndcY0, d0),
-    p(ndcX0, ndcY1, d0),
-    p(ndcX1, ndcY1, d0),
-    p(ndcX0, ndcY0, d1),
-    p(ndcX1, ndcY0, d1),
-    p(ndcX0, ndcY1, d1),
-    p(ndcX1, ndcY1, d1),
-  ];
-  const idx = [
-    0, 2, 3, 0, 3, 1,
-    5, 7, 6, 5, 6, 4,
-    0, 1, 5, 0, 5, 4,
-    2, 6, 7, 2, 7, 3,
-    0, 4, 6, 0, 6, 2,
-    1, 3, 7, 1, 7, 5,
-  ];
-  const pos = new Float32Array(idx.length * 3);
-  for (let i = 0; i < idx.length; i += 1) {
-    const q = v[idx[i]!]!;
-    pos[i * 3] = q.x;
-    pos[i * 3 + 1] = q.y;
-    pos[i * 3 + 2] = q.z;
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
 function addStrut(
   parent: THREE.Object3D,
   a: THREE.Vector3,
@@ -493,7 +452,7 @@ function makeLiveScreen(): {
   update: (info: CockpitScreenInfo) => void;
 } | null {
   const face = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.40, 0.225),
+    new THREE.PlaneGeometry(0.26, 0.146),
     new THREE.MeshBasicMaterial({ color: 0x1a6f7a }),
   );
   face.name = 'screen-face';
@@ -585,7 +544,6 @@ function buildCockpit(): {
 
   const dashMat = matte(0x1a1d21);
   const cowlMat = matte(0x2c3036, { roughness: 0.72 });
-  const pillarMat = matte(0x14161a);
   const columnMat = matte(0x2a2e33, { roughness: 0.6 });
   const bezelMat = matte(0x0e1013);
   const stripMat = new THREE.MeshStandardMaterial({
@@ -596,58 +554,54 @@ function buildCockpit(): {
     metalness: 0.0,
   });
 
-  // Thin horizontal shelf behind the rim — not a camera-filling wall.
+  // Thin horizontal shelf behind the rim — no roof header and no A-pillars.
   const front = rayPoint(cam, 0, dashTop, dashNear);
   const dashLen = 0.50;
-  const dashThick = 0.064;
+  const dashThick = 0.056;
   const dash = new THREE.Mesh(new THREE.BoxGeometry(dashLen, dashThick, 1.68), dashMat);
   dash.name = 'dash';
-  dash.position.set(front.x + dashLen * 0.5, front.y - dashThick * 0.45, 0);
+  dash.position.set(front.x + dashLen * 0.5, front.y - dashThick * 0.55, 0);
   group.add(dash);
 
-  const drop = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.09, 1.68), dashMat);
-  drop.name = 'dash-drop';
-  drop.position.set(front.x + 0.02, front.y - 0.068, 0);
-  group.add(drop);
+  const fasciaH = 0.20;
+  const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.05, fasciaH, 1.68), dashMat);
+  fascia.name = 'dash-drop';
+  fascia.position.set(front.x + 0.03, front.y - fasciaH * 0.52, 0);
+  group.add(fascia);
 
-  const cowl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.028, 1.50), cowlMat);
+  const cowl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.024, 1.50), cowlMat);
   cowl.name = 'hood';
-  cowl.position.set(front.x + dashLen * 0.78, front.y + 0.008, 0);
+  cowl.position.set(front.x + dashLen * 0.78, front.y - 0.006, 0);
   group.add(cowl);
 
   const strip = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.005, 1.42), stripMat);
   strip.name = 'ambient-strip';
-  strip.position.set(front.x + 0.01, front.y + 0.006, 0);
+  strip.position.set(front.x + 0.01, front.y - 0.002, 0);
   group.add(strip);
-
-  // Roof header ≤6% of frame height (NDC 0.88–1.00).
-  const header = new THREE.Mesh(frustumSlab(cam, -1.02, 1.02, 0.88, 1.05, 0.50, 0.64), pillarMat);
-  header.name = 'header';
-  group.add(header);
-
-  const pillarL0 = rayPoint(cam, -0.94, dashTop, dashNear + 0.02);
-  const pillarL1 = rayPoint(cam, -0.91, 0.90, 0.52);
-  const pillarR0 = rayPoint(cam, 0.94, dashTop, dashNear + 0.02);
-  const pillarR1 = rayPoint(cam, 0.91, 0.90, 0.52);
-  addStrut(group, pillarL0, pillarL1, 0.020, 0.014, pillarMat, 'pillar-left');
-  addStrut(group, pillarR0, pillarR1, 0.020, 0.014, pillarMat, 'pillar-right');
 
   const live = makeLiveScreen();
   const screen = new THREE.Group();
   screen.name = 'centre-screen';
-  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.236, 0.42), bezelMat);
-  const face = live?.mesh ?? new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.225), new THREE.MeshBasicMaterial({ color: 0x1a6f7a }));
+  const bezelH = 0.156;
+  const bezelW = 0.272;
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.008, bezelH, bezelW), bezelMat);
+  const face = live?.mesh ?? new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.146), new THREE.MeshBasicMaterial({ color: 0x1a6f7a }));
   face.rotation.y = -Math.PI / 2;
-  face.position.x = -0.006;
+  face.position.x = -0.005;
   screen.add(bezel, face);
-  // Stand on the shelf: bottom at the dash top, face toward the driver.
-  screen.position.set(front.x + 0.02, front.y + 0.108, -0.22);
-  screen.rotation.y = 0.08;
-  const under = new THREE.Vector3(screen.position.x + 0.02, front.y - 0.02, screen.position.z);
+  // Landscape tablet in the dash band, to the right of the wheel — not above the dash.
+  const screenDepth = dashNear + 0.02;
+  const tanV = Math.tan(THREE.MathUtils.degToRad(COCKPIT.fovDeg) / 2);
+  const screenNdcH = bezelH / (screenDepth * tanV);
+  const screenNdcY = dashTop - screenNdcH * 0.5 - 0.02;
+  const screenPos = rayPoint(cam, 0.30, screenNdcY, screenDepth);
+  screen.position.copy(screenPos);
+  screen.rotation.y = 0.05;
+  const mountFrom = new THREE.Vector3(dash.position.x - 0.16, screen.position.y, screen.position.z);
   addStrut(
     group,
-    under,
-    new THREE.Vector3(screen.position.x + 0.005, screen.position.y - 0.05, screen.position.z),
+    mountFrom,
+    new THREE.Vector3(screen.position.x + 0.01, screen.position.y, screen.position.z),
     0.006,
     0.010,
     bezelMat,

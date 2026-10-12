@@ -21,7 +21,8 @@ describe('first-person cabin framing', () => {
     expect(driverEyeHeight()).toBeLessThan(1.28);
     expect(driverEyeHeight()).toBeCloseTo(1.2, 2);
     expect(AXLE_HEIGHT + COCKPIT.eye.y).toBeCloseTo(driverEyeHeight(), 5);
-    expect(COCKPIT.fovDeg).toBeCloseTo(70, 5);
+    expect(COCKPIT.fovDeg).toBeGreaterThanOrEqual(85);
+    expect(COCKPIT.fovDeg).toBeLessThanOrEqual(90);
   });
 
   it('puts a ~36 cm wheel 0.55–0.65 m ahead, full rim, ~35% from the left', () => {
@@ -30,19 +31,20 @@ describe('first-person cabin framing', () => {
     expect(COCKPIT.wheelRadius).toBeLessThan(0.22);
     expect(view.depth).toBeGreaterThan(0.54);
     expect(view.depth).toBeLessThan(0.66);
-    expect(view.ndcY).toBeLessThan(-0.40);
-    expect(view.ndcY).toBeGreaterThan(-0.70);
+    expect(view.ndcY).toBeLessThan(-0.60);
+    expect(view.ndcY).toBeGreaterThan(-0.85);
     // 35% from the left is ndcX ≈ -0.30.
     expect(view.ndcX).toBeLessThan(-0.18);
     expect(view.ndcX).toBeGreaterThan(-0.42);
-    expect(view.widthFrac).toBeGreaterThan(0.20);
-    expect(view.widthFrac).toBeLessThan(0.36);
+    expect(view.widthFrac).toBeGreaterThan(0.14);
+    expect(view.widthFrac).toBeLessThan(0.26);
     const rimTop = view.ndcY + view.radiusNdc;
     const rimBot = view.ndcY - view.radiusNdc;
-    expect(rimTop).toBeLessThan(COCKPIT.dashTopNdc + 0.04);
-    expect(rimTop).toBeGreaterThan(COCKPIT.dashTopNdc - 0.08);
-    expect(rimBot).toBeGreaterThan(-1.08);
-    expect(rimBot).toBeLessThan(-0.88);
+    // Only the rim top may rise above the dash line.
+    expect(rimTop).toBeLessThan(COCKPIT.dashTopNdc + 0.06);
+    expect(rimTop).toBeGreaterThan(COCKPIT.dashTopNdc - 0.02);
+    expect(rimBot).toBeGreaterThan(-1.12);
+    expect(rimBot).toBeLessThan(-0.92);
   });
 
   it('keeps the driver’s eyes inside the greenhouse, under the roof', () => {
@@ -55,14 +57,18 @@ describe('first-person cabin framing', () => {
   });
 
   it('pitches down so the road fills the windshield and the dash is a low shelf', () => {
-    expect(lookDownDeg()).toBeGreaterThan(5.5);
-    expect(lookDownDeg()).toBeLessThan(8.5);
+    expect(lookDownDeg()).toBeGreaterThan(9.5);
+    expect(lookDownDeg()).toBeLessThan(12.5);
     expect(lookDownDeg()).toBeCloseTo(LOOK_DOWN_DEG, 0);
-    expect(windshieldFraction()).toBeGreaterThan(0.52);
-    expect(windshieldFraction()).toBeLessThan(0.62);
-    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.20);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.02);
-    expect(COCKPIT.wideFovDeg).toBeGreaterThanOrEqual(90);
+    expect(windshieldFraction()).toBeGreaterThan(0.68);
+    expect(windshieldFraction()).toBeLessThan(0.78);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.52);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.38);
+    expect(COCKPIT.wideFovDeg).toBeGreaterThanOrEqual(100);
+    const tanV = Math.tan((COCKPIT.fovDeg * Math.PI) / 180 / 2);
+    const horizonFromTop = (1 - Math.tan((lookDownDeg() * Math.PI) / 180) / tanV) / 2;
+    expect(horizonFromTop).toBeGreaterThan(0.36);
+    expect(horizonFromTop).toBeLessThan(0.44);
   });
 
   it('turns the hand wheel 450° each way and returns to centre', () => {

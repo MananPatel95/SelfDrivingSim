@@ -59,3 +59,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #25 Tesla FP cockpit, HUD panels, autopilot re-engage
 
 ## [2026-10-12] ingest | PR #25 retune live cockpit to Tesla photo (0.6 m wheel, 7° pitch, thin dash)
+
+## [2026-10-12] ingest | PR #25 open windshield: 88° FOV, dash ~72% down, no A-pillars/header
