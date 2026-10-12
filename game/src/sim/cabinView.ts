@@ -24,7 +24,7 @@ export const COCKPIT = {
   /** Look slightly down and toward the road centre so the wheel sits lower-left. */
   look: { x: 14, y: 1.2 - AXLE_HEIGHT - 0.10, z: 0.06 } satisfies CabinVec,
   /** ~36 cm rim, close enough that it fills ~40% of frame width. */
-  wheel: { x: 0.30, y: 1.2 - AXLE_HEIGHT - 0.20, z: -0.18 } satisfies CabinVec,
+  wheel: { x: 0.30, y: 1.2 - AXLE_HEIGHT - 0.20, z: -0.50 } satisfies CabinVec,
   wheelRadius: 0.185,
   /** Slim modern rim tube. */
   wheelTube: 0.013,
@@ -67,18 +67,20 @@ function viewBasis(layout: { eye: CabinVec; look: CabinVec }) {
   const fz = layout.look.z - layout.eye.z;
   const fl = Math.hypot(fx, fy, fz);
   const f = { x: fx / fl, y: fy / fl, z: fz / fl };
-  // Match THREE.Camera.lookAt: backward = eye - target, right = up × backward.
+  // Match THREE.Camera.lookAt: backward = eye - target, right = up × backward
+  // = (bz.z, 0, -bz.x) with world up (0,1,0).
   const bz = { x: -f.x, y: -f.y, z: -f.z };
-  let rx = -bz.z;
+  let rx = bz.z;
   let ry = 0;
-  let rz = bz.x;
+  let rz = -bz.x;
   const rl = Math.hypot(rx, ry, rz) || 1;
   rx /= rl;
   ry /= rl;
   rz /= rl;
-  const ux = ry * bz.z - rz * bz.y;
-  const uy = rz * bz.x - rx * bz.z;
-  const uz = rx * bz.y - ry * bz.x;
+  // Three.js up is backward × right.
+  const ux = bz.y * rz - bz.z * ry;
+  const uy = bz.z * rx - bz.x * rz;
+  const uz = bz.x * ry - bz.y * rx;
   return { f, r: { x: rx, y: ry, z: rz }, u: { x: ux, y: uy, z: uz } };
 }
 

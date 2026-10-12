@@ -625,12 +625,12 @@ function buildCockpit(): {
   header.name = 'header';
   group.add(header);
 
-  const pillarL0 = rayPoint(cam, -0.96, dashTop, dashNear + 0.06);
-  const pillarL1 = rayPoint(cam, -0.90, 0.92, 0.44);
-  const pillarR0 = rayPoint(cam, 0.96, dashTop, dashNear + 0.06);
-  const pillarR1 = rayPoint(cam, 0.90, 0.92, 0.44);
-  addStrut(group, pillarL0, pillarL1, 0.04, 0.022, pillarMat, 'pillar-left');
-  addStrut(group, pillarR0, pillarR1, 0.04, 0.022, pillarMat, 'pillar-right');
+  const pillarL0 = rayPoint(cam, -0.88, dashTop, dashNear + 0.06);
+  const pillarL1 = rayPoint(cam, -0.82, 0.92, 0.44);
+  const pillarR0 = rayPoint(cam, 0.88, dashTop, dashNear + 0.06);
+  const pillarR1 = rayPoint(cam, 0.82, 0.92, 0.44);
+  addStrut(group, pillarL0, pillarL1, 0.048, 0.028, pillarMat, 'pillar-left');
+  addStrut(group, pillarR0, pillarR1, 0.048, 0.028, pillarMat, 'pillar-right');
 
   const live = makeLiveScreen();
   const screen = new THREE.Group();
