@@ -16,7 +16,7 @@ Right-side cards (stack explainer, AI View, info) are one column: each has colla
 
 Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
 
-Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|stop|yield|mix|queue` skip the menu for reproducible shots.
+Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue` skip the menu for reproducible shots.
 
 ## Key files
 

@@ -2792,7 +2792,7 @@ function applyShot(kind: string) {
   }
 }
 
-/** Intersection / lane demos from PR #20: ?demo=lane|stop|yield|mix|queue */
+/** Intersection / lane demos: ?demo=lane|left|right|stop|yield|mix|queue */
 function applyDemo(kind: string) {
   showAIView = true;
   document.getElementById('ai-view-panel')?.classList.add('visible');
@@ -2807,6 +2807,28 @@ function applyDemo(kind: string) {
     orbitYaw = -0.7;
     orbitPitch = 0.32;
     orbitDist = 16;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'left') {
+    tripStart = { x: 0, y: -90 };
+    tripEnd = { x: -160, y: 0 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = 0.35;
+    orbitPitch = 0.38;
+    orbitDist = 18;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'right') {
+    tripStart = { x: 0, y: -90 };
+    tripEnd = { x: 160, y: 0 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = -1.2;
+    orbitPitch = 0.38;
+    orbitDist = 18;
     camFollowReady = true;
     return;
   }
