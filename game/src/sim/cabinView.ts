@@ -1,8 +1,11 @@
 /**
  * Driver’s-eye framing for first person.
  * Coordinates are body-pivot local: +X nose, +Y up, +Z left.
- * The wheel sits in the lower-left of a 16:9 frame so the road stays visible.
+ * Driver's seat on screen-left (~1.2 m eye), 36 cm wheel in the lower-left third.
  */
+
+import { VEHICLE_PARAMS } from './vehicle';
+import { AXLE_HEIGHT } from './vehicleVisual';
 
 export interface CabinVec {
   x: number;
@@ -10,22 +13,43 @@ export interface CabinVec {
   z: number;
 }
 
+/** Hand-wheel lock each way from centre, matching a modern EV rack. */
+export const HAND_LOCK_DEG = 450;
+
+export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
+
 export const COCKPIT = {
-  eye: { x: -0.22, y: 0.92, z: 0.28 } satisfies CabinVec,
-  look: { x: 18, y: 0.86, z: 0.0 } satisfies CabinVec,
-  wheel: { x: 0.36, y: 0.78, z: 0.3 } satisfies CabinVec,
-  wheelRadius: 0.2,
-  fovDeg: 74,
+  /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
+  eye: { x: -0.18, y: 1.2 - AXLE_HEIGHT, z: -0.38 } satisfies CabinVec,
+  look: { x: 20, y: 1.2 - AXLE_HEIGHT - 0.04, z: -0.02 } satisfies CabinVec,
+  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.17, z: -0.42 } satisfies CabinVec,
+  /** ~36 cm rim, left of centre in the lower third. */
+  wheelRadius: 0.18,
+  /** Rim tube radius (slim modern wheel). */
+  wheelTube: 0.011,
+  fovDeg: 70,
+  /** Extra cockpit still: same layout, wider windshield view. */
+  wideFovDeg: 95,
+  /** Dash top as NDC Y (bottom of frame = -1). Covers ~28% of the frame. */
+  dashTopNdc: -0.44,
   /**
    * Road steer (radians) → hand-wheel rotation.
    * Positive rotation.x swings the top of the rim toward screen-right,
    * so a left turn (positive steer, A) uses the opposite sign.
    */
-  handGain: 4.6,
+  handGain: (HAND_LOCK_DEG * Math.PI) / 180 / ROAD_STEER_LOCK,
 } as const;
+
+export function driverEyeHeight(): number {
+  return AXLE_HEIGHT + COCKPIT.eye.y;
+}
 
 export function handWheelRotation(steerRad: number): number {
   return -steerRad * COCKPIT.handGain;
+}
+
+export function handWheelLockDeg(steerRad: number): number {
+  return (handWheelRotation(steerRad) * 180) / Math.PI;
 }
 
 /**
@@ -41,7 +65,7 @@ export function wheelViewOffset(
     fovDeg: number;
   } = COCKPIT,
   aspect = 16 / 9,
-): { ndcX: number; ndcY: number; radiusNdc: number; depth: number } {
+): { ndcX: number; ndcY: number; radiusNdc: number; depth: number; areaFrac: number } {
   const fx = layout.look.x - layout.eye.x;
   const fy = layout.look.y - layout.eye.y;
   const fz = layout.look.z - layout.eye.z;
@@ -66,10 +90,14 @@ export function wheelViewOffset(
   const depth = vx * f.x + vy * f.y + vz * f.z;
   const tanV = Math.tan((layout.fovDeg * Math.PI) / 180 / 2);
   const tanH = tanV * aspect;
+  const ndcX = (vx * rx + vy * ry + vz * rz) / depth / tanH;
+  const ndcY = (vx * ux + vy * uy + vz * uz) / depth / tanV;
+  const radiusNdc = layout.wheelRadius / depth / tanV;
   return {
-    ndcX: (vx * rx + vy * ry + vz * rz) / depth / tanH,
-    ndcY: (vx * ux + vy * uy + vz * uz) / depth / tanV,
-    radiusNdc: layout.wheelRadius / depth / tanV,
+    ndcX,
+    ndcY,
+    radiusNdc,
     depth,
+    areaFrac: (Math.PI * radiusNdc * radiusNdc) / 4,
   };
 }

@@ -89,6 +89,14 @@ describe('dynamic bicycle sedan', () => {
     expect(Math.abs(ego.slipAngle ?? 0)).toBeLessThan(0.02);
   });
 
+  it('returns the steering wheel toward centre when A/D is released', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = drive(0.6, { throttle: 0, steering: 1, brake: 0 }, ego);
+    expect(ego.steering).toBeGreaterThan(0.3);
+    ego = drive(0.7, { throttle: 0, steering: 0, brake: 0 }, ego);
+    expect(Math.abs(ego.steering)).toBeLessThan(0.08);
+  });
+
   it('does not spin in place at zero speed with full steer', () => {
     const ego = drive(1.2, { throttle: 0, steering: 1, brake: 0, handbrake: 0 });
     expect(Math.abs(ego.transform.rotation)).toBeLessThan(0.05);

@@ -47,3 +47,9 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | initial full ingest of merged PRs #1–#19 into wiki/
 
 ## [2026-10-12] lint | wiki_lint.py + .github/workflows/wiki.yml
+
+## [2026-10-12] ingest | PR #22 Kenney sedan GLB and Tesla-style cockpit
+
+## [2026-10-12] ingest | PR #22 sedan-sports + connected cockpit
+
+## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
