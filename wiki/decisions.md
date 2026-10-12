@@ -33,6 +33,7 @@ These stay in TypeScript:
 - [[pr-10]]: parked start + pick a compass direction.
 - [[pr-13]]: map start/end; both buttons required a full trip. **Supersedes** the compass UI.
 - [[pr-19]]: **Just drive** with no trip; autopilot still needs both map points. **Supersedes** the “manual requires a route” rule from #13.
+- [[pr-tesla-fp]]: **T** / the Manual banner re-engages from the current pose (replan to the trip destination, or cruise with no trip). WASD still takes over on a new press. **Supersedes** “once you take over there is no Auto”.
 
 ## Right-hand traffic and stop/yield mix
 

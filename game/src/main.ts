@@ -9,7 +9,26 @@ import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
-import { applyCameraLayers, loadEgoVisual } from './sim/egoMesh';
+import {
+  applyCameraLayers,
+  loadEgoVisual,
+  LAYER_COCKPIT,
+  LAYER_EXTERIOR,
+  LAYER_WORLD,
+  type CockpitScreenInfo,
+} from './sim/egoMesh';
+import {
+  PANEL_IDS,
+  PANEL_STORAGE_KEY,
+  avoidReserved,
+  defaultStates,
+  parsePanelStates,
+  serializePanelStates,
+  panelsKeyAction,
+  reservedHudRects,
+  type PanelId,
+  type PanelState,
+} from './ui/hudPanels';
 import {
   AXLE_HEIGHT,
   ROAD_SURFACE_Y,
@@ -122,7 +141,6 @@ let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
 let gameStarted = false;
-let observing = false;
 let tripStart: { x: number; y: number } | null = null;
 let tripEnd: { x: number; y: number } | null = null;
 let currentStack: StackProfile = 'tesla';
@@ -207,6 +225,18 @@ const inputState = {
 let egoMesh: THREE.Object3D;
 let egoBodyPivot: THREE.Group | null = null;
 let egoSteerWheel: THREE.Group | null = null;
+let egoEyeAnchor: THREE.Object3D | null = null;
+let egoLookAnchor: THREE.Object3D | null = null;
+let egoUpdateScreen: ((info: CockpitScreenInfo) => void) | null = null;
+let panelStates: Record<PanelId, PanelState> = defaultStates();
+let panelsHidden = false;
+let reengageIgnoreDrive = false;
+let autopilotBannerUntil = 0;
+const PANEL_EL: Record<PanelId, string> = {
+  explainer: 'view-explainer',
+  'ai-view': 'ai-view-panel',
+  info: 'info-card',
+};
 let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean; spinAxis?: 'x' | 'y' }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
@@ -221,6 +251,7 @@ function initThreeJS() {
   renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(QUALITY[qualityLevel].pixelRatio);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = QUALITY[qualityLevel].shadows;
   renderer.domElement.tabIndex = 0;
   renderer.domElement.style.outline = 'none';
@@ -240,13 +271,17 @@ function initThreeJS() {
   applyCameraLayers(camera, false);
   
   const ambientLight = new THREE.AmbientLight(0x6a6a6a, 0.7);
-  scene.add(ambientLight);
+  const hemi = new THREE.HemisphereLight(0xc8d8ee, 0x2a241c, 0.45);
   const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
   fillLight.position.set(-80, 40, -40);
-  scene.add(fillLight);
-  
   sunLight = new THREE.DirectionalLight(0xffffff, 1);
   sunLight.position.set(100, 100, 100);
+  for (const light of [ambientLight, hemi, fillLight, sunLight]) {
+    light.layers.enable(LAYER_WORLD);
+    light.layers.enable(LAYER_COCKPIT);
+    light.layers.enable(LAYER_EXTERIOR);
+    scene.add(light);
+  }
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 1024;
   sunLight.shadow.mapSize.height = 1024;
@@ -256,7 +291,6 @@ function initThreeJS() {
   sunLight.shadow.camera.right = 200;
   sunLight.shadow.camera.top = 200;
   sunLight.shadow.camera.bottom = -200;
-  scene.add(sunLight);
   
   // Ground - grass/terrain base
   const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
@@ -1101,11 +1135,20 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     targetLookX = egoX;
     targetLookY = egoY;
   } else if (cameraMode === 'hood') {
-    const eye = carLocalToWorld(COCKPIT.eye.x, COCKPIT.eye.y, COCKPIT.eye.z, egoX, egoY, egoYaw);
+    // Locked later (no chase lag). Place a fallback target so other modes can ease out.
+    if (egoEyeAnchor) {
+      egoEyeAnchor.updateWorldMatrix(true, false);
+      const p = new THREE.Vector3().setFromMatrixPosition(egoEyeAnchor.matrixWorld);
+      targetPosX = p.x;
+      targetPosY = p.y;
+      targetPosZ = p.z;
+    } else {
+      const eye = carLocalToWorld(COCKPIT.eye.x, COCKPIT.eye.y, COCKPIT.eye.z, egoX, egoY, egoYaw);
+      targetPosX = eye.x;
+      targetPosY = eye.y;
+      targetPosZ = eye.z;
+    }
     const look = carLocalToWorld(COCKPIT.look.x, COCKPIT.look.y, COCKPIT.look.z, egoX, egoY, egoYaw);
-    targetPosX = eye.x;
-    targetPosY = eye.y;
-    targetPosZ = eye.z;
     targetLookX = look.x;
     targetLookY = look.simY;
     hoodLookWorldY = look.y;
@@ -1145,8 +1188,6 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     camPosZ = -(camLookY + Math.sin(camYaw) * orbitDist);
   }
 
-  camera.position.set(camPosX, camPosY, camPosZ);
-  const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? hoodLookWorldY : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
   const wantFov = shotFov ?? (cameraMode === 'hood' ? COCKPIT.fovDeg : 60);
   const wantNear = cameraMode === 'hood' ? 0.04 : 0.1;
   if (Math.abs(camera.fov - wantFov) > 0.1 || camera.near !== wantNear) {
@@ -1154,6 +1195,33 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
     camera.near = wantNear;
     camera.updateProjectionMatrix();
   }
+
+  if (cameraMode === 'hood' && !debugHeroCam && !debugSideCam) {
+    applyCameraLayers(camera, true);
+    if (egoEyeAnchor && egoLookAnchor) {
+      egoEyeAnchor.updateWorldMatrix(true, false);
+      egoLookAnchor.updateWorldMatrix(true, false);
+      camera.position.setFromMatrixPosition(egoEyeAnchor.matrixWorld);
+      const look = new THREE.Vector3().setFromMatrixPosition(egoLookAnchor.matrixWorld);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(look);
+      camPosX = camera.position.x;
+      camPosY = camera.position.y;
+      camPosZ = camera.position.z;
+      return;
+    }
+    camera.position.set(targetPosX, targetPosY, targetPosZ);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(targetLookX, hoodLookWorldY, -targetLookY);
+    camPosX = targetPosX;
+    camPosY = targetPosY;
+    camPosZ = targetPosZ;
+    return;
+  }
+
+  applyCameraLayers(camera, false);
+  camera.position.set(camPosX, camPosY, camPosZ);
+  const lookZ = cameraMode === 'bev' ? 0 : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
   camera.lookAt(camLookX, lookZ, -camLookY);
 }
 
@@ -1274,8 +1342,103 @@ function humanInputFromKeys() {
   };
 }
 
+function persistPanels() {
+  try { localStorage.setItem(PANEL_STORAGE_KEY, serializePanelStates(panelStates)); } catch { /* ignore */ }
+}
+
+function applyPanelDom() {
+  const stack = document.getElementById('top-right-stack');
+  stack?.classList.toggle('panels-hidden', panelsHidden);
+  for (const id of PANEL_IDS) {
+    const el = document.getElementById(PANEL_EL[id]);
+    if (!el) continue;
+    const st = panelStates[id]!;
+    el.classList.toggle('closed', st.closed);
+    el.classList.toggle('collapsed', st.collapsed);
+    if (st.x !== null && st.y !== null) {
+      const placed = avoidReserved(
+        { id, x: st.x, y: st.y, w: el.offsetWidth || 320, h: el.offsetHeight || 80 },
+        reservedHudRects(window.innerWidth, window.innerHeight),
+        window.innerWidth,
+        window.innerHeight,
+      );
+      el.classList.add('floating');
+      el.style.left = `${placed.x}px`;
+      el.style.top = `${placed.y}px`;
+    } else {
+      el.classList.remove('floating');
+      el.style.left = '';
+      el.style.top = '';
+    }
+  }
+  showInfoCard = !panelStates.info.closed;
+  if (!panelStates['ai-view'].closed && !panelsHidden) {
+    /* keep showAIView as the 3D overlay preference */
+  }
+}
+
+function setPanelClosed(id: PanelId, closed: boolean) {
+  panelStates[id] = { ...panelStates[id]!, closed };
+  if (id === 'ai-view') {
+    showAIView = !closed;
+    perceptionViz?.setEnabled(showAIView && cameraMode !== 'hood');
+    try { localStorage.setItem('autonomy-ai-view', showAIView ? '1' : '0'); } catch { /* ignore */ }
+  }
+  if (id === 'info') showInfoCard = !closed;
+  applyPanelDom();
+  persistPanels();
+}
+
+function bindHudPanels() {
+  let drag: { id: PanelId; dx: number; dy: number } | null = null;
+  document.querySelectorAll('.hud-panel-min').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const id = (btn as HTMLElement).dataset['panel'] as PanelId;
+      if (!id) return;
+      panelStates[id] = { ...panelStates[id]!, collapsed: !panelStates[id]!.collapsed };
+      applyPanelDom();
+      persistPanels();
+    });
+  });
+  document.querySelectorAll('.hud-panel-close').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const id = (btn as HTMLElement).dataset['panel'] as PanelId;
+      if (!id) return;
+      setPanelClosed(id, true);
+    });
+  });
+  document.querySelectorAll('.hud-panel-head').forEach((head) => {
+    (head as HTMLElement).addEventListener('pointerdown', (ev) => {
+      const t = ev.target as HTMLElement;
+      if (t.closest('button')) return;
+      const panel = (head as HTMLElement).closest('.hud-panel') as HTMLElement | null;
+      const id = panel?.dataset['panel'] as PanelId | undefined;
+      if (!panel || !id) return;
+      const rect = panel.getBoundingClientRect();
+      drag = { id, dx: ev.clientX - rect.left, dy: ev.clientY - rect.top };
+      panel.setPointerCapture?.(ev.pointerId);
+    });
+  });
+  window.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    panelStates[drag.id] = {
+      ...panelStates[drag.id]!,
+      x: ev.clientX - drag.dx,
+      y: ev.clientY - drag.dy,
+    };
+    applyPanelDom();
+  });
+  window.addEventListener('pointerup', () => {
+    if (drag) persistPanels();
+    drag = null;
+  });
+}
+
 function takeManual(auto = false) {
-  observing = false;
   if (!isManual()) {
     simulation.takeover('other');
     if (!auto) showDriveHintOnce();
@@ -1283,8 +1446,22 @@ function takeManual(auto = false) {
   syncDriveBadge();
 }
 
+function engageAutopilot() {
+  if (!gameStarted) return;
+  reengageIgnoreDrive = anyDriveHeld();
+  const result = simulation.reengageAutopilot();
+  autopilotBannerUntil = performance.now() + 2200;
+  const banner = document.getElementById('decision-banner');
+  if (banner) {
+    banner.textContent = result.mode === 'trip' ? 'Autopilot engaged' : 'Autopilot engaged — cruising';
+    banner.classList.add('visible');
+    banner.classList.remove('slow', 'brake');
+  }
+  syncDriveBadge();
+}
+
 function setAutopilot(on: boolean) {
-  if (on) simulation.releaseControl();
+  if (on) engageAutopilot();
   else takeManual();
   syncDriveBadge();
 }
@@ -1325,6 +1502,14 @@ function updateHUD() {
   if (state.environment.weather !== 'clear') weatherEl.classList.add('status-warning');
   syncDriveBadge();
   updatePhysDebug();
+  egoUpdateScreen?.({
+    speedKmh: speed,
+    autopilot: state.controlSource !== 'human',
+    heading: state.ego.transform.rotation,
+    x: state.ego.transform.position.x,
+    y: state.ego.transform.position.y,
+    banner: performance.now() < autopilotBannerUntil ? 'Autopilot engaged' : lastDecision.text,
+  });
 }
 
 function updatePhysDebug() {
@@ -1376,13 +1561,13 @@ function setText(id: string, text: string) {
 
 function syncCompareChrome() {
   document.getElementById('view-explainer')?.classList.toggle('hidden', compareMode);
-  document.getElementById('ai-view-panel')?.classList.toggle('visible', showAIView && !compareMode);
   document.getElementById('bev-overlay')?.classList.toggle('visible', bevOverlayEnabled && !compareMode);
   document.getElementById('left-hud-stack')?.classList.toggle('hidden', compareMode);
   document.getElementById('drive-badge')?.classList.toggle('hidden', compareMode);
   document.getElementById('drive-hint')?.classList.toggle('visible', false);
   document.getElementById('decision-banner')?.classList.toggle('visible', showAIView && !compareMode);
   document.getElementById('minimap')?.classList.toggle('hidden', compareMode);
+  applyPanelDom();
 }
 
 function updateViewExplainer(profile: StackProfile = currentStack) {
@@ -2187,7 +2372,8 @@ function bindDriveKey(e: KeyboardEvent, down: boolean) {
   else if (k === ' ' || code === 'Space') { inputState.brake = down; used = true; }
   if (used) {
     if (k === ' ' || k.startsWith('Arrow')) e.preventDefault();
-    if (down && !isPaused) {
+    if (!down && !anyDriveHeld()) reengageIgnoreDrive = false;
+    if (down && !isPaused && !reengageIgnoreDrive) {
       if (!isManual()) takeManual(true);
     }
   }
@@ -2278,25 +2464,32 @@ function setupInput() {
       case 't':
         setAutopilot(isManual());
         break;
+      case 'p':
+        e.preventDefault();
+        {
+          const next = panelsKeyAction(panelStates, panelsHidden);
+          panelStates = next.states;
+          panelsHidden = next.hidden;
+          if (!panelStates['ai-view'].closed && !panelsHidden) showAIView = true;
+          applyPanelDom();
+          persistPanels();
+        }
+        break;
       case 'c': {
         const modes: CameraMode[] = ['chase', 'hood', 'bev', 'orbit'];
         setCameraMode(modes[(modes.indexOf(cameraMode) + 1) % modes.length]!);
         break;
       }
       case 'v':
-        showAIView = !showAIView;
-        document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
+        setPanelClosed('ai-view', !panelStates['ai-view'].closed);
         document.getElementById('decision-banner')!.classList.toggle('visible', showAIView);
-        try { localStorage.setItem('autonomy-ai-view', showAIView ? '1' : '0'); } catch { /* ignore */ }
-        perceptionViz?.setEnabled(showAIView);
         break;
       case 'g':
         showGroundTruth = !showGroundTruth;
         break;
       case 'i':
-        showInfoCard = !showInfoCard;
-        if (showInfoCard) updateInfoCard();
-        document.getElementById('info-card')!.classList.toggle('visible', showInfoCard);
+        setPanelClosed('info', !panelStates.info.closed);
+        if (!panelStates.info.closed) updateInfoCard();
         break;
       case 'm':
         compareMode = !compareMode;
@@ -2409,6 +2602,11 @@ function setupInput() {
     showPhysDebug = (ev.target as HTMLInputElement).checked;
     updatePhysDebug();
   });
+  document.getElementById('decision-banner')?.addEventListener('click', () => {
+    if (!gameStarted || isPaused) return;
+    setAutopilot(isManual());
+  });
+  bindHudPanels();
 
   const startMap = document.getElementById('start-map') as HTMLCanvasElement | null;
   startMap?.addEventListener('click', (ev) => {
@@ -2515,7 +2713,6 @@ function beginGame(mode: 'manual' | 'autopilot') {
   } else {
     simulation.beginParked();
   }
-  observing = mode === 'autopilot';
   gameStarted = true;
   document.getElementById('start-menu')?.classList.add('hidden');
   inputState.forward = false;
@@ -2691,8 +2888,6 @@ function animate(time: number) {
   lastTime = time;
 
   if (gameStarted && !isPaused) {
-    const driving = anyDriveHeld();
-    if (driving && !isManual() && !observing) takeManual(true);
     const humanInput = isManual() ? humanInputFromKeys() : undefined;
     simAccumulator += frameDt;
     if (simAccumulator > 0.25) simAccumulator = 0.25;
@@ -2752,6 +2947,9 @@ function animate(time: number) {
     updateAIView(true);
   }
 
+  if (perceptionViz) {
+    perceptionViz.group.visible = showAIView && cameraMode !== 'hood' && !compareMode;
+  }
   if (!compareMode) renderer.render(scene, camera);
 }
 
@@ -2780,17 +2978,18 @@ function updateAIView(drawRawScene: boolean) {
   };
 
   if (perceptionViz) {
-    perceptionViz.setEnabled(showAIView);
+    perceptionViz.setEnabled(showAIView && cameraMode !== 'hood');
     lastDecision = perceptionViz.update(input);
   } else {
     lastDecision = { text: 'Cruising: lane clear', severity: 'go' };
   }
 
   if (banner) {
-    banner.textContent = lastDecision.text;
-    banner.classList.toggle('visible', showAIView);
-    banner.classList.toggle('slow', lastDecision.severity === 'slow');
-    banner.classList.toggle('brake', lastDecision.severity === 'brake');
+    const engaged = performance.now() < autopilotBannerUntil;
+    banner.textContent = engaged ? 'Autopilot engaged' : lastDecision.text;
+    banner.classList.toggle('visible', !compareMode);
+    banner.classList.toggle('slow', !engaged && lastDecision.severity === 'slow');
+    banner.classList.toggle('brake', !engaged && lastDecision.severity === 'brake');
   }
 
   if (!showAIView) return;
@@ -2825,6 +3024,9 @@ async function createEgoVehicle(): Promise<THREE.Group> {
   egoBodyPivot = visual.bodyPivot;
   egoSteerWheel = visual.steerWheel;
   egoWheels = visual.wheels;
+  egoEyeAnchor = visual.eyeAnchor;
+  egoLookAnchor = visual.lookAnchor;
+  egoUpdateScreen = visual.updateScreen;
   return visual.group;
 }
 
@@ -2853,10 +3055,12 @@ async function init() {
   try {
     const stored = localStorage.getItem('autonomy-ai-view');
     if (stored === '0') showAIView = false;
+    panelStates = parsePanelStates(localStorage.getItem(PANEL_STORAGE_KEY));
+    if (!showAIView) panelStates['ai-view'] = { ...panelStates['ai-view']!, closed: true };
   } catch { /* ignore */ }
-  document.getElementById('ai-view-panel')!.classList.toggle('visible', showAIView);
-  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView);
-  perceptionViz.setEnabled(showAIView);
+  applyPanelDom();
+  document.getElementById('decision-banner')?.classList.toggle('visible', true);
+  perceptionViz.setEnabled(showAIView && cameraMode !== 'hood');
   updateAIViewExplainer(currentStack);
 
   const rawCanvas = document.getElementById('raw-camera-canvas') as HTMLCanvasElement | null;

@@ -1,7 +1,7 @@
 /**
  * Driver’s-eye framing for first person.
  * Coordinates are body-pivot local: +X nose, +Y up, +Z left.
- * Driver's seat on screen-left (~1.2 m eye), 36 cm wheel in the lower-left third.
+ * Left-hand seat at ~1.2 m; the rim fills ~40% of a 16:9 frame, lower-left.
  */
 
 import { VEHICLE_PARAMS } from './vehicle';
@@ -20,18 +20,22 @@ export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
 
 export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
-  eye: { x: -0.18, y: 1.2 - AXLE_HEIGHT, z: -0.38 } satisfies CabinVec,
-  look: { x: 20, y: 1.2 - AXLE_HEIGHT - 0.04, z: -0.02 } satisfies CabinVec,
-  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.17, z: -0.42 } satisfies CabinVec,
-  /** ~36 cm rim, left of centre in the lower third. */
-  wheelRadius: 0.18,
-  /** Rim tube radius (slim modern wheel). */
-  wheelTube: 0.011,
+  eye: { x: -0.06, y: 1.2 - AXLE_HEIGHT, z: -0.34 } satisfies CabinVec,
+  /** Look slightly down and toward the road centre so the wheel sits lower-left. */
+  look: { x: 14, y: 1.2 - AXLE_HEIGHT - 0.10, z: 0.06 } satisfies CabinVec,
+  /** ~36 cm rim, close enough that it fills ~40% of frame width. */
+  wheel: { x: 0.30, y: 1.2 - AXLE_HEIGHT - 0.20, z: -0.18 } satisfies CabinVec,
+  wheelRadius: 0.185,
+  /** Slim modern rim tube. */
+  wheelTube: 0.013,
   fovDeg: 70,
   /** Extra cockpit still: same layout, wider windshield view. */
   wideFovDeg: 95,
-  /** Dash top as NDC Y (bottom of frame = -1). Covers ~28% of the frame. */
-  dashTopNdc: -0.44,
+  /**
+   * Dash top as NDC Y (bottom of frame = -1). Road / windshield occupy the
+   * upper ~45–55% of the frame (fraction = (1 - dashTopNdc) / 2).
+   */
+  dashTopNdc: -0.06,
   /**
    * Road steer (radians) → hand-wheel rotation.
    * Positive rotation.x swings the top of the rim toward screen-right,
@@ -52,20 +56,12 @@ export function handWheelLockDeg(steerRad: number): number {
   return (handWheelRotation(steerRad) * 180) / Math.PI;
 }
 
-/**
- * Wheel center in the first-person frame.
- * ndcX/ndcY are -1..1 across the view (positive X is screen right, positive Y is up).
- */
-export function wheelViewOffset(
-  layout: {
-    eye: CabinVec;
-    look: CabinVec;
-    wheel: CabinVec;
-    wheelRadius: number;
-    fovDeg: number;
-  } = COCKPIT,
-  aspect = 16 / 9,
-): { ndcX: number; ndcY: number; radiusNdc: number; depth: number; areaFrac: number } {
+/** Windshield / road as a fraction of frame height. */
+export function windshieldFraction(dashTopNdc = COCKPIT.dashTopNdc): number {
+  return (1 - dashTopNdc) / 2;
+}
+
+function viewBasis(layout: { eye: CabinVec; look: CabinVec }) {
   const fx = layout.look.x - layout.eye.x;
   const fy = layout.look.y - layout.eye.y;
   const fz = layout.look.z - layout.eye.z;
@@ -83,21 +79,47 @@ export function wheelViewOffset(
   const ux = ry * bz.z - rz * bz.y;
   const uy = rz * bz.x - rx * bz.z;
   const uz = rx * bz.y - ry * bz.x;
+  return { f, r: { x: rx, y: ry, z: rz }, u: { x: ux, y: uy, z: uz } };
+}
 
+/**
+ * Wheel center in the first-person frame.
+ * ndcX/ndcY are -1..1 across the view (positive X is screen right, positive Y is up).
+ */
+export function wheelViewOffset(
+  layout: {
+    eye: CabinVec;
+    look: CabinVec;
+    wheel: CabinVec;
+    wheelRadius: number;
+    fovDeg: number;
+  } = COCKPIT,
+  aspect = 16 / 9,
+): {
+  ndcX: number;
+  ndcY: number;
+  radiusNdc: number;
+  depth: number;
+  areaFrac: number;
+  widthFrac: number;
+} {
+  const { f, r, u } = viewBasis(layout);
   const vx = layout.wheel.x - layout.eye.x;
   const vy = layout.wheel.y - layout.eye.y;
   const vz = layout.wheel.z - layout.eye.z;
   const depth = vx * f.x + vy * f.y + vz * f.z;
   const tanV = Math.tan((layout.fovDeg * Math.PI) / 180 / 2);
   const tanH = tanV * aspect;
-  const ndcX = (vx * rx + vy * ry + vz * rz) / depth / tanH;
-  const ndcY = (vx * ux + vy * uy + vz * uz) / depth / tanV;
+  const ndcX = (vx * r.x + vy * r.y + vz * r.z) / depth / tanH;
+  const ndcY = (vx * u.x + vy * u.y + vz * u.z) / depth / tanV;
   const radiusNdc = layout.wheelRadius / depth / tanV;
+  const widthFrac = (2 * layout.wheelRadius / depth / tanH) / 2;
   return {
     ndcX,
     ndcY,
     radiusNdc,
     depth,
     areaFrac: (Math.PI * radiusNdc * radiusNdc) / 4,
+    widthFrac,
   };
 }

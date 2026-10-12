@@ -47,15 +47,27 @@ export interface EgoWheelRef {
   spinAxis: 'x' | 'y';
 }
 
+export interface CockpitScreenInfo {
+  speedKmh: number;
+  autopilot: boolean;
+  heading: number;
+  x: number;
+  y: number;
+  banner: string;
+}
+
 export interface EgoVisual {
   group: THREE.Group;
   bodyPivot: THREE.Group;
   steerWheel: THREE.Group;
   wheels: EgoWheelRef[];
   drawCalls: number;
+  eyeAnchor: THREE.Object3D;
+  lookAnchor: THREE.Object3D;
+  updateScreen: (info: CockpitScreenInfo) => void;
 }
 
-export const EGO_DRAW_CALL_BUDGET = 24;
+export const EGO_DRAW_CALL_BUDGET = 36;
 
 function xform(
   geo: THREE.BufferGeometry,
@@ -171,9 +183,9 @@ function isGlassTriangle(
   ax: number, ay: number, az: number,
   bx: number, by: number, bz: number,
   cx: number, cy: number, cz: number,
-  nax: number, nay: number, naz: number,
-  nbx: number, nby: number, nbz: number,
-  ncx: number, ncy: number, ncz: number,
+  nax: number, _nay: number, naz: number,
+  nbx: number, _nby: number, nbz: number,
+  ncx: number, _ncy: number, ncz: number,
 ): boolean {
   // Kenney-local: +Z forward, +X left, +Y up.
   // Only the greenhouse openings — never hood, roof skin, doors, or rear quarters.
@@ -196,9 +208,9 @@ function splitBodyGlass(root: THREE.Object3D): void {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh || !/^body$/i.test(mesh.name) || !mesh.parent) return;
     const geo = mesh.geometry;
-    const pos = geo.getAttribute('position');
-    const nrm = geo.getAttribute('normal');
-    const uv = geo.getAttribute('uv');
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute | undefined;
+    const nrm = geo.getAttribute('normal') as THREE.BufferAttribute | undefined;
+    const uv = geo.getAttribute('uv') as THREE.BufferAttribute | undefined;
     if (!pos || !nrm) return;
     const glassPos: number[] = [];
     const bodyPos: number[] = [];
@@ -378,55 +390,31 @@ function addStrut(
   return mesh;
 }
 
-function makeScreenFaceTexture(): THREE.Texture | null {
+function matte(color: number, extras: ConstructorParameters<typeof THREE.MeshStandardMaterial>[0] = {}): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.84,
+    metalness: 0.06,
+    side: THREE.DoubleSide,
+    ...extras,
+  });
+}
+
+function makeLogoTexture(): THREE.Texture | null {
   if (typeof document === 'undefined') return null;
   try {
     const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 320;
+    canvas.width = 256;
+    canvas.height = 128;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.fillStyle = '#1a3d4a';
-    ctx.fillRect(0, 0, 512, 320);
-    ctx.fillStyle = '#2a5a68';
-    ctx.fillRect(0, 0, 512, 36);
-    ctx.fillStyle = '#8fd4e2';
-    ctx.beginPath();
-    ctx.arc(28, 18, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#d8e6ea';
-    ctx.fillRect(48, 14, 70, 8);
-    ctx.fillRect(130, 14, 44, 8);
-    ctx.fillStyle = '#16303a';
-    ctx.fillRect(16, 52, 250, 252);
-    ctx.fillStyle = '#1f4d3c';
-    ctx.beginPath();
-    ctx.moveTo(40, 280);
-    ctx.lineTo(90, 160);
-    ctx.lineTo(200, 120);
-    ctx.lineTo(240, 200);
-    ctx.lineTo(180, 280);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#3ec8ff';
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(50, 270);
-    ctx.quadraticCurveTo(140, 150, 230, 190);
-    ctx.stroke();
-    const tiles = [
-      [286, 52, '#1a6f7a'],
-      [394, 52, '#245a86'],
-      [286, 158, '#3a4a22'],
-      [394, 158, '#5a3a16'],
-    ];
-    for (const [x, y, color] of tiles) {
-      ctx.fillStyle = String(color);
-      ctx.fillRect(Number(x), Number(y), 102, 96);
-      ctx.fillStyle = '#cfe8ee';
-      ctx.fillRect(Number(x) + 12, Number(y) + 16, 60, 8);
-      ctx.fillRect(Number(x) + 12, Number(y) + 32, 40, 6);
-    }
+    ctx.fillStyle = '#1a1c20';
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = '#d8dde4';
+    ctx.font = 'bold 52px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TESLA', 128, 64);
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
@@ -436,95 +424,222 @@ function makeScreenFaceTexture(): THREE.Texture | null {
   }
 }
 
+function drawCockpitScreen(
+  ctx: CanvasRenderingContext2D,
+  info: CockpitScreenInfo,
+): void {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  ctx.fillStyle = '#0b1116';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.fillStyle = '#151c22';
+  ctx.fillRect(0, 0, w, 28);
+  ctx.fillStyle = info.autopilot ? '#7ad3a0' : '#e6c56a';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(info.autopilot ? 'AUTO' : 'MANUAL', 16, 19);
+  ctx.fillStyle = '#8aa';
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(info.banner.slice(0, 42), w - 14, 19);
+
+  ctx.fillStyle = '#f3f6f8';
+  ctx.font = 'bold 92px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(String(Math.round(info.speedKmh)), 28, 150);
+  ctx.fillStyle = '#8aa';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('km/h', 28, 178);
+
+  // Top-down lane viz on the right half (Tesla-style visualization).
+  const vx = w * 0.46;
+  const vy = 40;
+  const vw = w - vx - 16;
+  const vh = h - vy - 16;
+  ctx.fillStyle = '#1a2228';
+  ctx.fillRect(vx, vy, vw, vh);
+  ctx.fillStyle = '#2a3238';
+  ctx.fillRect(vx + vw * 0.22, vy, vw * 0.56, vh);
+  ctx.strokeStyle = '#c9a227';
+  ctx.setLineDash([10, 12]);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(vx + vw * 0.5, vy + 8);
+  ctx.lineTo(vx + vw * 0.5, vy + vh - 8);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#d8dde4';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(vx + vw * 0.22, vy + 2, vw * 0.56, vh - 4);
+
+  const cx = vx + vw * 0.5;
+  const cy = vy + vh * 0.72;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#c5cad1';
+  ctx.beginPath();
+  ctx.moveTo(0, -22);
+  ctx.lineTo(11, 16);
+  ctx.lineTo(0, 10);
+  ctx.lineTo(-11, 16);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function makeLiveScreen(): {
+  mesh: THREE.Mesh;
+  update: (info: CockpitScreenInfo) => void;
+} | null {
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.33, 0.186),
+    new THREE.MeshBasicMaterial({ color: 0x1a6f7a }),
+  );
+  face.name = 'screen-face';
+  face.rotation.y = -Math.PI / 2;
+  if (typeof document === 'undefined') {
+    return { mesh: face, update: () => undefined };
+  }
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { mesh: face, update: () => undefined };
+    drawCockpitScreen(ctx, {
+      speedKmh: 0, autopilot: false, heading: 0, x: 0, y: 0, banner: 'Manual',
+    });
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    face.material = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff });
+    return {
+      mesh: face,
+      update: (info) => {
+        drawCockpitScreen(ctx, info);
+        tex.needsUpdate = true;
+      },
+    };
+  } catch {
+    return { mesh: face, update: () => undefined };
+  }
+}
+
 function buildHandWheel(): THREE.Group {
   const group = new THREE.Group();
   group.name = 'hand-wheel';
   const R = COCKPIT.wheelRadius;
   const tube = COCKPIT.wheelTube;
-  const leather = new THREE.MeshLambertMaterial({ color: 0x1b1e23, side: THREE.DoubleSide });
-  const metal = new THREE.MeshLambertMaterial({ color: 0xc9d0d8, side: THREE.DoubleSide });
-  const mark = new THREE.MeshLambertMaterial({ color: 0xf4ead2, emissive: 0xffd27a, emissiveIntensity: 0.55 });
+  const leather = matte(0x16181c);
+  const hubMat = matte(0x22262c, { roughness: 0.55, metalness: 0.18 });
+  const spokeMat = matte(0x1c1f24, { roughness: 0.7 });
 
-  addMerged(group, [xform(new THREE.TorusGeometry(R, tube, 8, 40), 0, 0, 0, new THREE.Euler(0, Math.PI / 2, 0))], leather, false);
+  addMerged(group, [xform(new THREE.TorusGeometry(R, tube, 10, 48), 0, 0, 0, new THREE.Euler(0, Math.PI / 2, 0))], leather, false);
 
-  const spokeParts: THREE.BufferGeometry[] = [
-    xform(new THREE.CylinderGeometry(0.018, 0.022, 0.028, 14), 0, 0, 0, new THREE.Euler(0, 0, Math.PI / 2)),
-  ];
-  for (const ang of [-0.52, 0.52, Math.PI]) {
+  // Two downward spokes (~4 o'clock and 8 o'clock), Tesla-style round wheel.
+  const spokeParts: THREE.BufferGeometry[] = [];
+  for (const ang of [Math.PI * 0.72, Math.PI * 1.28]) {
     spokeParts.push(
       xform(
-        new THREE.BoxGeometry(0.008, R * 0.78, 0.012),
+        new THREE.BoxGeometry(0.018, R * 0.72, 0.034),
         0,
-        Math.cos(ang) * R * 0.36,
-        Math.sin(ang) * R * 0.36,
+        Math.cos(ang) * R * 0.34,
+        Math.sin(ang) * R * 0.34,
         new THREE.Euler(ang, 0, 0),
       ),
     );
   }
-  addMerged(group, spokeParts, metal, false);
-  // Thin strip on the rim at 12 o'clock (torus lies in YZ). Rotates with the wheel.
-  const notch = new THREE.Mesh(new THREE.BoxGeometry(tube * 1.8, tube * 1.4, 0.032), mark);
-  notch.name = 'wheel-mark';
-  notch.position.set(0, R + tube * 0.15, 0);
-  group.add(notch);
+  addMerged(group, spokeParts, spokeMat, false);
+
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.062, 0.036, 20), hubMat);
+  hub.name = 'wheel-hub';
+  hub.rotation.z = Math.PI / 2;
+  group.add(hub);
+
+  const logoMap = makeLogoTexture();
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.09, 0.045),
+    logoMap
+      ? new THREE.MeshStandardMaterial({ map: logoMap, roughness: 0.45, metalness: 0.15 })
+      : matte(0xd8dde4, { roughness: 0.4 }),
+  );
+  plate.name = 'wheel-logo';
+  plate.rotation.y = -Math.PI / 2;
+  plate.position.set(-0.02, 0, 0);
+  group.add(plate);
   return group;
 }
 
-function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
+function buildCockpit(): {
+  group: THREE.Group;
+  steerWheel: THREE.Group;
+  updateScreen: (info: CockpitScreenInfo) => void;
+} {
   const group = new THREE.Group();
   group.name = 'cockpit';
   const dashTop = COCKPIT.dashTopNdc;
   const cam = cabinCamera(COCKPIT.fovDeg);
 
-  const dashMat = new THREE.MeshLambertMaterial({ color: 0x5c646e, side: THREE.DoubleSide });
-  const hoodMat = new THREE.MeshLambertMaterial({ color: 0xc5cad1, side: THREE.DoubleSide });
-  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x2a3038, side: THREE.DoubleSide });
-  const columnMat = new THREE.MeshLambertMaterial({ color: 0x4a515a });
-  const bezelMat = new THREE.MeshLambertMaterial({ color: 0x1b1f24 });
-  const screenMap = makeScreenFaceTexture();
-  const screenMat = screenMap
-    ? new THREE.MeshBasicMaterial({ color: 0xffffff, map: screenMap })
-    : new THREE.MeshBasicMaterial({ color: 0x1a6f7a });
+  const dashMat = matte(0x1c1f24);
+  const cowlMat = matte(0x2a2e34, { roughness: 0.7 });
+  const pillarMat = matte(0x121417);
+  const columnMat = matte(0x2a2e33, { roughness: 0.6 });
+  const bezelMat = matte(0x101214);
+  const skinMat = matte(0x1a1512, { roughness: 0.95, transparent: true, opacity: 0.55 });
+  const stripMat = new THREE.MeshStandardMaterial({
+    color: 0xff7a33,
+    emissive: 0xff6a22,
+    emissiveIntensity: 0.65,
+    roughness: 0.4,
+    metalness: 0.0,
+  });
 
-  // Height is framed for the 70° hood view (bottom ~28%). Extra-wide X also fills the 95° still.
-  const dash = new THREE.Mesh(frustumSlab(cam, -1.7, 1.7, -1.35, dashTop, 0.24, 0.98), dashMat);
+  const dash = new THREE.Mesh(frustumSlab(cam, -1.85, 1.85, -1.4, dashTop, 0.22, 1.05), dashMat);
   dash.name = 'dash';
   group.add(dash);
 
-  const hood = new THREE.Mesh(frustumSlab(cam, -1.55, 1.55, dashTop - 0.01, -0.27, 0.9, 1.7), hoodMat);
-  hood.name = 'hood';
-  group.add(hood);
+  const footwell = new THREE.Mesh(frustumSlab(cam, -1.2, 0.4, -1.45, -0.72, 0.18, 0.55), dashMat);
+  footwell.name = 'footwell';
+  group.add(footwell);
 
-  const header = new THREE.Mesh(frustumSlab(cam, -1.08, 1.08, 0.9, 1.12, 0.4, 0.54), pillarMat);
+  const cowl = new THREE.Mesh(frustumSlab(cam, -1.6, 1.6, dashTop - 0.02, dashTop + 0.07, 0.95, 1.55), cowlMat);
+  cowl.name = 'hood';
+  group.add(cowl);
+
+  const header = new THREE.Mesh(frustumSlab(cam, -1.15, 1.15, 0.78, 1.2, 0.38, 0.62), pillarMat);
   header.name = 'header';
   group.add(header);
 
-  const pillarL0 = rayPoint(cam, -0.96, dashTop, 0.86);
-  const pillarL1 = rayPoint(cam, -0.9, 0.98, 0.46);
-  const pillarR0 = rayPoint(cam, 0.96, dashTop, 0.86);
-  const pillarR1 = rayPoint(cam, 0.9, 0.98, 0.46);
-  addStrut(group, pillarL0, pillarL1, 0.024, 0.016, pillarMat, 'pillar-left');
-  addStrut(group, pillarR0, pillarR1, 0.024, 0.016, pillarMat, 'pillar-right');
+  const pillarL0 = rayPoint(cam, -0.98, dashTop, 0.92);
+  const pillarL1 = rayPoint(cam, -0.88, 0.92, 0.44);
+  const pillarR0 = rayPoint(cam, 0.98, dashTop, 0.92);
+  const pillarR1 = rayPoint(cam, 0.88, 0.92, 0.44);
+  addStrut(group, pillarL0, pillarL1, 0.038, 0.022, pillarMat, 'pillar-left');
+  addStrut(group, pillarR0, pillarR1, 0.038, 0.022, pillarMat, 'pillar-right');
 
+  const strip = new THREE.Mesh(frustumSlab(cam, -1.15, 1.15, dashTop - 0.018, dashTop + 0.012, 0.55, 0.72), stripMat);
+  strip.name = 'ambient-strip';
+  group.add(strip);
+
+  const live = makeLiveScreen();
   const screen = new THREE.Group();
   screen.name = 'centre-screen';
-  // Thin in X so the lit face points back at the driver (camera looks +X).
-  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.176, 0.28), bezelMat);
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.256, 0.156), screenMat);
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.208, 0.36), bezelMat);
+  const face = live?.mesh ?? new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.186), new THREE.MeshBasicMaterial({ color: 0x1a6f7a }));
   face.rotation.y = -Math.PI / 2;
-  face.position.x = -0.006;
+  face.position.x = -0.007;
   screen.add(bezel, face);
-  const sit = rayPoint(cam, 0.38, dashTop, 0.76);
-  const under = rayPoint(cam, 0.38, dashTop - 0.05, 0.78);
-  screen.position.set(sit.x, sit.y + 0.1, sit.z);
-  screen.rotation.y = 0.18;
-  // Short stub under the tablet, behind the face, so it never crosses the UI.
+  const sit = rayPoint(cam, 0.42, dashTop + 0.02, 0.72);
+  const under = rayPoint(cam, 0.42, dashTop - 0.08, 0.78);
+  screen.position.set(sit.x, sit.y + 0.11, sit.z);
+  screen.rotation.y = 0.16;
   addStrut(
     group,
     under,
-    new THREE.Vector3(sit.x + 0.03, sit.y + 0.04, sit.z),
-    0.012,
-    0.016,
+    new THREE.Vector3(sit.x + 0.02, sit.y + 0.02, sit.z),
+    0.01,
+    0.014,
     bezelMat,
     'screen-mount',
   );
@@ -534,19 +649,37 @@ function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
   group.add(steerWheel);
 
-  const columnEnd = rayPoint(cam, -0.2, -0.78, 0.68);
+  const columnEnd = rayPoint(cam, -0.28, -0.85, 0.72);
   addStrut(
     group,
     new THREE.Vector3(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z),
     columnEnd,
-    0.03,
-    0.04,
+    0.028,
+    0.038,
     columnMat,
     'steer-column',
   );
 
+  const kneeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.14), skinMat);
+  kneeL.name = 'knee-left';
+  const k0 = rayPoint(cam, -0.22, -0.92, 0.55);
+  kneeL.position.copy(k0);
+  const kneeR = kneeL.clone();
+  kneeR.name = 'knee-right';
+  const k1 = rayPoint(cam, 0.04, -0.94, 0.58);
+  kneeR.position.copy(k1);
+  group.add(kneeL, kneeR);
+
+  const handL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.08), skinMat);
+  handL.name = 'hand-left';
+  handL.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.04, COCKPIT.wheel.z + COCKPIT.wheelRadius * 0.55);
+  const handR = handL.clone();
+  handR.name = 'hand-right';
+  handR.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.04, COCKPIT.wheel.z - COCKPIT.wheelRadius * 0.22);
+  group.add(handL, handR);
+
   setLayerDeep(group, LAYER_COCKPIT);
-  return { group, steerWheel };
+  return { group, steerWheel, updateScreen: live?.update ?? (() => undefined) };
 }
 
 /** Center a Kenney/placeholder wheel and put its axle along +Z (left/right). */
@@ -651,12 +784,30 @@ export function assembleEgoVisual(source: THREE.Object3D): EgoVisual {
   const cockpit = buildCockpit();
   bodyPivot.add(cockpit.group);
 
+  const eyeAnchor = new THREE.Object3D();
+  eyeAnchor.name = 'eye-anchor';
+  eyeAnchor.position.set(COCKPIT.eye.x, COCKPIT.eye.y, COCKPIT.eye.z);
+  bodyPivot.add(eyeAnchor);
+  const lookAnchor = new THREE.Object3D();
+  lookAnchor.name = 'look-anchor';
+  lookAnchor.position.set(COCKPIT.look.x, COCKPIT.look.y, COCKPIT.look.z);
+  bodyPivot.add(lookAnchor);
+
+  const cabinFill = new THREE.PointLight(0xffe6cc, 0.55, 2.8, 1.4);
+  cabinFill.name = 'cabin-fill';
+  cabinFill.position.set(COCKPIT.eye.x + 0.15, COCKPIT.eye.y + 0.05, COCKPIT.eye.z);
+  cabinFill.layers.set(LAYER_COCKPIT);
+  bodyPivot.add(cabinFill);
+
   return {
     group,
     bodyPivot,
     steerWheel: cockpit.steerWheel,
     wheels,
     drawCalls: countMeshes(group),
+    eyeAnchor,
+    lookAnchor,
+    updateScreen: cockpit.updateScreen,
   };
 }
 

@@ -10,7 +10,7 @@ AUTONOMY CITY is a browser 3D self-driving city. You watch or drive a sedan whil
 
 It is an educational sim, not a product of the named companies.
 
-## Current state (after PR #22)
+## Current state (after Tesla FP / re-engage work)
 
 - City only. F1 Tesla-style, F2 Waymo-style, F3 Waabi-style, plus compare mode. F4 Aurora, F5 rail, and F6 maritime were removed in [[pr-3]].
 - Game loop is a fixed **30 Hz** step with render interpolation (`SIM_DT = 1/30` in `main.ts`).
@@ -18,10 +18,10 @@ It is an educational sim, not a product of the named companies.
 - Autopilot follows a Manhattan **right-hand-lane** route and slows for grid corners so it stays on asphalt ([[pr-18]], [[pr-20]]). Right turns cut the near corner; left turns go wide.
 - Pedestrians walk sidewalks, wait, and cross; cars yield to anyone in the lane ([[pr-5]]) and also at junctions ([[pr-20]]).
 - Intersections are a seeded mix of all-way **STOP**, **YIELD** (minor road), and **uncontrolled** — about a third each. Ego and every AI traffic car share `decideIntersection`. This **supersedes** cycling traffic lights as the live control (true through [[pr-19]]).
-- Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner while parked in manual.
+- Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner reads **Manual — press T to re-engage**; T or the banner replans Auto from the current pose ([[pr-tesla-fp]]).
 - Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, and BEV occupancy stay in TypeScript. See [[decisions]] and [[lidar-wasm]].
 - Reproducible shots: `?seed=` (default 3) and `?demo=lane|stop|yield|mix|queue`.
-- Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). First person is a connected Tesla-style cockpit ([[ego-mesh]], [[pr-22]]).
+- Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). Live first person is a locked left-seat Tesla-style cockpit; the GLB and debug rays are hidden ([[ego-mesh]], [[pr-tesla-fp]]). Right-side HUD cards stack, collapse, close, and drag.
 
 ## How to run
 

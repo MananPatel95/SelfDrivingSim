@@ -145,7 +145,9 @@ make dev
 | Esc / ⚙ | Pause / settings (Resume, Restart, Quality, Perception, Shadow, camera, controls) |
 | WASD / arrows | Drive (W throttle, S brake then reverse, A/D steer; takes over from autopilot) |
 | Space | Handbrake (rear lock / oversteer) |
-| T | Toggle AUTOPILOT / MANUAL |
+| T | Toggle AUTOPILOT / MANUAL (re-engage from current pose) |
+| Centre banner | Click Manual to re-engage; click Auto to take over |
+| P | Panels: reset layout, or toggle the right-side column |
 | C | Cycle camera (chase / hood / BEV / orbit) |
 | Right-mouse hold + drag | Orbit camera (yaw / pitch); eases back behind the car after ~1.5 s |
 | Scroll wheel | Zoom (clamped) |

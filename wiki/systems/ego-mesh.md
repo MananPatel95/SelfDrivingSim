@@ -10,7 +10,7 @@ The player car is Kenney’s Car Kit **sedan-sports** (`sedan-sports.glb`, CC0, 
 
 Fit: ~4.7 m long × 1.85 m wide × 1.45 m tall. Body-paint colormap cells (including the dark-grey hood/door cells) are tinted silver. Only greenhouse window faces are split out as dark glass. Lights, trim and tyres keep their original colours. Kenney +Z-forward is rotated to sim +X-forward. Wheels (`wheel-front-left` etc.) are detached onto planted pivots at `AXLE_HEIGHT` so cosmetic roll/pitch of `bodyPivot` does not lift them off the road. Front pivots yaw with steer; meshes spin on the axle.
 
-First-person does not render the exterior shell (camera layer `LAYER_EXTERIOR`). A separate cockpit group (`LAYER_COCKPIT`) draws a full-width dash covering the bottom ~28% of the frame, a silver hood/cowl sliver, A-pillars from the dash corners to a thin roof header, a landscape ~15" centre tablet, a steering column, and a 36 cm wheel whose lower rim sits behind the dash. No roof tint plane.
+First-person does not render the exterior shell (camera layer `LAYER_EXTERIOR`) and does not draw the 3D perception overlay. A separate cockpit group (`LAYER_COCKPIT`) uses matte `MeshStandardMaterial` plus a cabin fill light: windshield frame (A-pillars + header), long dark dash with an orange ambient strip, ~15" landscape tablet (live speed, AUTO/MANUAL, top-down lane), steering column, two-spoke round wheel with a hub plate, optional dim hands/knees. Eye/look anchors on `bodyPivot` are what the hood camera copies each frame ([[pr-tesla-fp]]). This **supersedes** the thin grey dash / three-spoke beige-mark wheel from [[pr-22]] as the live cockpit.
 
 Do not replace `updateVehicle`, `removeGround`, or `createBEVOccupancyFromAgents`. `simHotPath.ts` stays unused.
 

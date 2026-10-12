@@ -8,6 +8,7 @@ import {
   SEDAN_MODEL_URL,
   SILVER_PAINT,
   assembleEgoVisual,
+  applyCameraLayers,
   makePlaceholderSedan,
 } from './egoMesh';
 import { COCKPIT } from './cabinView';
@@ -66,7 +67,7 @@ describe('Kenney sedan-sports mesh', () => {
     expect(visual.steerWheel.position.z).toBeCloseTo(COCKPIT.wheel.z, 5);
     expect(visual.steerWheel.position.x).toBeGreaterThan(COCKPIT.eye.x);
     expect(visual.steerWheel.position.y).toBeLessThan(COCKPIT.eye.y);
-    expect(COCKPIT.wheelRadius).toBeCloseTo(0.18, 5);
+    expect(COCKPIT.wheelRadius).toBeCloseTo(0.185, 5);
   });
 
   it('fits the Kenney stand-in to about 4.7 × 1.85 × 1.45 m', () => {
@@ -144,10 +145,30 @@ describe('Kenney sedan-sports mesh', () => {
     const screenSize = screenBox.getSize(new THREE.Vector3());
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
     expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
-    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.55);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.35);
-    const mark = named(visual.group, 'wheel-mark');
-    expect(mark.position.y).toBeGreaterThan(COCKPIT.wheelRadius * 0.9);
-    expect(Math.abs(mark.position.x)).toBeLessThan(0.02);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.2);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(0.12);
+    named(visual.group, 'wheel-hub');
+    named(visual.group, 'wheel-logo');
+    named(visual.group, 'ambient-strip');
+    expect(visual.eyeAnchor.position.x).toBeCloseTo(COCKPIT.eye.x, 5);
+    expect(visual.lookAnchor.position.x).toBeCloseTo(COCKPIT.look.x, 5);
+  });
+
+  it('hides the exterior layer from a first-person camera', () => {
+    const visual = buildEgoVisual();
+    const cam = new THREE.PerspectiveCamera();
+    applyCameraLayers(cam, true);
+    expect(cam.layers.isEnabled(LAYER_COCKPIT)).toBe(true);
+    expect(cam.layers.isEnabled(LAYER_EXTERIOR)).toBe(false);
+    let exterior = 0;
+    let cockpit = 0;
+    visual.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (mesh.layers.isEnabled(LAYER_EXTERIOR)) exterior += 1;
+      if (mesh.layers.isEnabled(LAYER_COCKPIT)) cockpit += 1;
+    });
+    expect(exterior).toBeGreaterThan(0);
+    expect(cockpit).toBeGreaterThan(0);
   });
 });

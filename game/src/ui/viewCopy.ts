@@ -44,7 +44,7 @@ export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
   },
   hood: {
     title: 'First person',
-    uses: 'Left-hand seat, eye height about 1.2 m. A 36 cm wheel sits left of centre in the lower third and turns ~450° each way with A/D. Thin dash, centre screen, thin A-pillars; the road fills the upper ~65% of the view.',
+    uses: 'Left-hand seat, eye height about 1.2 m. A 36 cm two-spoke wheel sits lower-left (~40% of frame width) and turns ~450° with A/D. Dark dash, ambient strip, centre tablet, A-pillars into a roof header. The Kenney body and debug rays are hidden. Road fills the upper ~50%.',
     diff: 'Chase follows from behind and can look around with RMB. BEV is top-down. Orbit is free around the car.',
   },
   bev: {

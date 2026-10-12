@@ -33,6 +33,34 @@ MANUAL badge after WASD / T takeover.
 ### 11-collision.png
 Ego stopped against an NPC with COLLISION flash (no interpenetration).
 
+## First-person cockpit (live driving)
+
+Live hood-camera stills (not `?shot=cabin` rigs). Compare with a real Model 3/Y interior.
+
+### fp_straight.png
+First person while driving straight: locked eye point, Kenney body hidden, windshield frame, dark dash, two-spoke wheel, centre tablet.
+
+### fp_steer_left.png
+Full left lock (~450°) while driving.
+
+### fp_steer_right.png
+Full right lock while driving.
+
+### fp_intersection_50.png
+First person at about 50 km/h at an intersection.
+
+### hud_panels_open.png
+Right-side column with explainer, AI View, and info all open — no overlap.
+
+### hud_panels_collapsed.png
+One card collapsed in the column.
+
+### hud_panels_dragged.png
+One card dragged off the stack, still clear of the minimap / speed HUD / banner.
+
+### autopilot_engaged.png
+Centre banner after T / banner click re-engages Auto.
+
 ## Environment Effects
 
 ### 07-night-fog.png
