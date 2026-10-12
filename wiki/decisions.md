@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-12
-sources: [3, 6, 12, 20]
+sources: [3, 6, 12, 20, 24]
 ---
 
 # Decisions

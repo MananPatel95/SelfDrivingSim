@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [5, 7, 8, 20]
+sources: [5, 7, 8, 20, 24]
 ---
 
 # Pedestrians

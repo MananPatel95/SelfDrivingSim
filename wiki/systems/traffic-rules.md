@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [3, 5, 20]
+sources: [3, 5, 20, 24]
 ---
 
 # Traffic rules and intersections
