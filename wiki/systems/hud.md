@@ -12,7 +12,7 @@ Tesla **Detections** counts vision boxes (`hudDetectionCount`), including `stop_
 
 Parked or driving in manual: the decision banner is **Manual — press T to re-engage**, not “Cruising: lane clear” ([[ai-view]]). The banner is a button: click it (or press **T**) to re-engage Auto from the current pose. A short **Autopilot engaged** flash follows. WASD still takes over on a new key press.
 
-Right-side cards (stack explainer, AI View, info) are one column: each has collapse and close, and is draggable by its header. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-tesla-fp]]).
+Right-side cards (stack explainer, AI View, info) are one column: each has collapse and close, and is draggable by its header. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]).
 
 Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
 
