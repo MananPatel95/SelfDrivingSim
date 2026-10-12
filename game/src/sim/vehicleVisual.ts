@@ -5,10 +5,10 @@
  */
 
 export const ROAD_SURFACE_Y = 0.02;
-/** Kenney sedan native AABB before our +X-forward fit (meters). */
+/** Kenney sedan-sports native AABB before our +X-forward fit (meters). */
 export const KENNEY_NATIVE_LENGTH = 2.55;
-export const KENNEY_NATIVE_WIDTH = 1.5;
-export const KENNEY_NATIVE_HEIGHT = 1.3;
+export const KENNEY_NATIVE_WIDTH = 1.3;
+export const KENNEY_NATIVE_HEIGHT = 1.1;
 export const KENNEY_NATIVE_WHEEL_RADIUS = 0.3;
 /** Visual wheel center |x| (left/right) and |z| (fore/aft) in Kenney space. */
 export const KENNEY_NATIVE_WHEEL_LATERAL = 0.425;
@@ -22,7 +22,12 @@ export const SEDAN_SCALE_LENGTH = SEDAN_LENGTH / KENNEY_NATIVE_LENGTH;
 export const SEDAN_SCALE_WIDTH = SEDAN_WIDTH / KENNEY_NATIVE_WIDTH;
 export const SEDAN_SCALE_HEIGHT = SEDAN_HEIGHT / KENNEY_NATIVE_HEIGHT;
 
-export const VISUAL_WHEEL_RADIUS = KENNEY_NATIVE_WHEEL_RADIUS * SEDAN_SCALE_HEIGHT;
+/**
+ * Road-wheel radius stays at the review-accepted size (old 1.3 m native height
+ * scale). The sports body uses a shorter native height, so we do not grow the
+ * tires with SEDAN_SCALE_HEIGHT.
+ */
+export const VISUAL_WHEEL_RADIUS = KENNEY_NATIVE_WHEEL_RADIUS * (SEDAN_HEIGHT / 1.3);
 export const AXLE_HEIGHT = ROAD_SURFACE_Y + VISUAL_WHEEL_RADIUS;
 export const MAX_COSMETIC_ROLL = (5 * Math.PI) / 180;
 export const MAX_COSMETIC_PITCH = (3 * Math.PI) / 180;
@@ -30,7 +35,7 @@ export const MAX_COSMETIC_PITCH = (3 * Math.PI) / 180;
 export const BODY_CLEARANCE = 0.135;
 
 /** Half the tire width after a uniform wheel scale (circular tires). */
-export const VISUAL_WHEEL_HALF_WIDTH = 0.175 * SEDAN_SCALE_HEIGHT;
+export const VISUAL_WHEEL_HALF_WIDTH = 0.175 * (SEDAN_HEIGHT / 1.3);
 
 export const WHEEL_PLAN_OFFSETS: ReadonlyArray<{ x: number; z: number; front: boolean }> = [
   { x: KENNEY_NATIVE_WHEEL_LONG * SEDAN_SCALE_LENGTH, z: KENNEY_NATIVE_WHEEL_LATERAL * SEDAN_SCALE_WIDTH, front: true },

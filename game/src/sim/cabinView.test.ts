@@ -44,6 +44,11 @@ describe('first-person cabin framing', () => {
     expect(COCKPIT.look.x).toBeGreaterThan(COCKPIT.wheel.x);
   });
 
+  it('keeps a wide-FOV still and a dash that covers the lower third', () => {
+    expect(COCKPIT.wideFovDeg).toBeGreaterThanOrEqual(90);
+    expect(COCKPIT.dashTopNdc).toBeCloseTo(-0.44, 2);
+  });
+
   it('turns the hand wheel 450° each way and returns to centre', () => {
     expect(handWheelLockDeg(ROAD_STEER_LOCK)).toBeCloseTo(-HAND_LOCK_DEG, 5);
     expect(handWheelLockDeg(-ROAD_STEER_LOCK)).toBeCloseTo(HAND_LOCK_DEG, 5);

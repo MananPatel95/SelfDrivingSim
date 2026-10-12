@@ -22,12 +22,16 @@ export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
   eye: { x: -0.18, y: 1.2 - AXLE_HEIGHT, z: -0.38 } satisfies CabinVec,
   look: { x: 20, y: 1.2 - AXLE_HEIGHT - 0.04, z: -0.02 } satisfies CabinVec,
-  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.33, z: -0.42 } satisfies CabinVec,
+  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.17, z: -0.42 } satisfies CabinVec,
   /** ~36 cm rim, left of centre in the lower third. */
   wheelRadius: 0.18,
   /** Rim tube radius (slim modern wheel). */
   wheelTube: 0.011,
   fovDeg: 70,
+  /** Extra cockpit still: same layout, wider windshield view. */
+  wideFovDeg: 95,
+  /** Dash top as NDC Y (bottom of frame = -1). Covers ~28% of the frame. */
+  dashTopNdc: -0.44,
   /**
    * Road steer (radians) → hand-wheel rotation.
    * Positive rotation.x swings the top of the rim toward screen-right,

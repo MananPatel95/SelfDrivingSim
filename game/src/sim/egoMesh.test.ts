@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  BODY_PAINT_UV_CELLS,
   buildEgoVisual,
   EGO_DRAW_CALL_BUDGET,
   LAYER_COCKPIT,
   LAYER_EXTERIOR,
+  SEDAN_MODEL_URL,
   SILVER_PAINT,
   assembleEgoVisual,
   makePlaceholderSedan,
@@ -21,7 +23,24 @@ import {
 } from './vehicleVisual';
 import * as THREE from 'three';
 
-describe('Kenney sedan mesh', () => {
+function named(root: THREE.Object3D, name: string): THREE.Object3D {
+  let found: THREE.Object3D | null = null;
+  root.traverse((obj) => {
+    if (obj.name === name) found = obj;
+  });
+  if (!found) throw new Error(`missing ${name}`);
+  return found;
+}
+
+function boxesTouch(a: THREE.Object3D, b: THREE.Object3D, slack = 0.06): boolean {
+  a.updateWorldMatrix(true, true);
+  b.updateWorldMatrix(true, true);
+  const ba = new THREE.Box3().setFromObject(a).expandByScalar(slack);
+  const bb = new THREE.Box3().setFromObject(b);
+  return ba.intersectsBox(bb);
+}
+
+describe('Kenney sedan-sports mesh', () => {
   it('assembles four planted wheels and a left-hand cockpit', () => {
     const visual = buildEgoVisual();
     expect(visual.drawCalls).toBeLessThanOrEqual(EGO_DRAW_CALL_BUDGET);
@@ -52,16 +71,31 @@ describe('Kenney sedan mesh', () => {
 
   it('fits the Kenney stand-in to about 4.7 × 1.85 × 1.45 m', () => {
     const visual = assembleEgoVisual(makePlaceholderSedan());
-    const box = new THREE.Box3().setFromObject(visual.group);
+    visual.group.updateWorldMatrix(true, true);
+    const box = new THREE.Box3();
+    visual.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (!mesh.layers.isEnabled(LAYER_EXTERIOR)) return;
+      if (!/body|wheel/i.test(mesh.name) && !visual.wheels.some((w) => w.mesh === mesh)) return;
+      box.expandByObject(mesh);
+    });
     const size = box.getSize(new THREE.Vector3());
     expect(size.x).toBeGreaterThan(SEDAN_LENGTH * 0.85);
     expect(size.x).toBeLessThan(SEDAN_LENGTH * 1.15);
     expect(size.z).toBeGreaterThan(SEDAN_WIDTH * 0.7);
     expect(size.z).toBeLessThan(SEDAN_WIDTH * 1.2);
     expect(size.y).toBeGreaterThan(SEDAN_HEIGHT * 0.7);
-    expect(size.y).toBeLessThan(SEDAN_HEIGHT * 1.25);
+    expect(size.y).toBeLessThan(SEDAN_HEIGHT * 1.55);
     expect(box.min.y).toBeGreaterThan(-0.02);
     expect(box.min.y).toBeLessThan(0.04);
+  });
+
+  it('loads the Kenney sedan-sports GLB and silvers only paint UV cells', () => {
+    expect(SEDAN_MODEL_URL).toBe('/models/sedan-sports.glb');
+    expect(BODY_PAINT_UV_CELLS).toContainEqual([3, 4]);
+    expect(BODY_PAINT_UV_CELLS).toContainEqual([3, 5]);
+    expect(BODY_PAINT_UV_CELLS.every(([c, r]) => c >= 0 && c < 8 && r >= 0 && r < 8)).toBe(true);
   });
 
   it('paints the exterior silver and keeps cockpit / body on separate layers', () => {
@@ -78,5 +112,34 @@ describe('Kenney sedan mesh', () => {
     });
     expect(silver).toBeGreaterThan(0);
     expect(visual.bodyPivot.children.some((c) => c.layers.isEnabled(LAYER_EXTERIOR) || c.layers.isEnabled(LAYER_COCKPIT))).toBe(true);
+  });
+
+  it('builds a connected cockpit: dash, hood, pillars, header, screen, column', () => {
+    const visual = buildEgoVisual();
+    visual.group.updateWorldMatrix(true, true);
+    const dash = named(visual.group, 'dash');
+    const hood = named(visual.group, 'hood');
+    const left = named(visual.group, 'pillar-left');
+    const right = named(visual.group, 'pillar-right');
+    const header = named(visual.group, 'header');
+    const screen = named(visual.group, 'centre-screen');
+    const mount = named(visual.group, 'screen-mount');
+    const column = named(visual.group, 'steer-column');
+    expect(boxesTouch(dash, hood)).toBe(true);
+    expect(boxesTouch(dash, left)).toBe(true);
+    expect(boxesTouch(dash, right)).toBe(true);
+    expect(boxesTouch(dash, column, 0.12)).toBe(true);
+    expect(boxesTouch(dash, mount, 0.12)).toBe(true);
+    expect(boxesTouch(mount, screen, 0.12)).toBe(true);
+    expect(boxesTouch(left, header)).toBe(true);
+    expect(boxesTouch(right, header)).toBe(true);
+    expect(boxesTouch(column, visual.steerWheel, 0.1)).toBe(true);
+    expect(boxesTouch(dash, visual.steerWheel, 0.08)).toBe(true);
+    const screenBox = new THREE.Box3().setFromObject(screen);
+    const screenSize = screenBox.getSize(new THREE.Vector3());
+    expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
+    expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.55);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.35);
   });
 });

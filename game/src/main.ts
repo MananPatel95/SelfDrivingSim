@@ -148,6 +148,8 @@ let debugSideCam: { height: number; side: number; lookY: number } | null = null;
 let debugHeroCam: { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number } | null = null;
 /** Photo-only hand-wheel angle (degrees, left positive). */
 let shotHandDeg: number | null = null;
+/** Photo-only hood FOV override (degrees). */
+let shotFov: number | null = null;
 let photoMode = false;
 const CHASE_RETURN_DELAY = 1.5;
 const CHASE_DIST_DEFAULT = 9.2;
@@ -1145,7 +1147,7 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
 
   camera.position.set(camPosX, camPosY, camPosZ);
   const lookZ = cameraMode === 'bev' ? 0 : cameraMode === 'hood' ? hoodLookWorldY : Math.max(0.4, Math.min(1.15, camPosY * 0.4));
-  const wantFov = cameraMode === 'hood' ? COCKPIT.fovDeg : 60;
+  const wantFov = shotFov ?? (cameraMode === 'hood' ? COCKPIT.fovDeg : 60);
   const wantNear = cameraMode === 'hood' ? 0.04 : 0.1;
   if (Math.abs(camera.fov - wantFov) > 0.1 || camera.near !== wantNear) {
     camera.fov = wantFov;
@@ -2555,7 +2557,7 @@ function hideChrome() {
   perceptionViz?.setEnabled(false);
 }
 
-/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|exterior|side|wheel */
+/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|side|wheel */
 function applyShot(kind: string) {
   beginGame('manual');
   hideChrome();
@@ -2565,7 +2567,8 @@ function applyShot(kind: string) {
   debugSideCam = null;
   debugHeroCam = null;
   shotHandDeg = null;
-  if (kind === 'cabin' || kind === 'cabin-a' || kind === 'cabin-d') {
+  shotFov = null;
+  if (kind === 'cabin' || kind === 'cabin-a' || kind === 'cabin-d' || kind === 'cabin-wide') {
     setCameraMode('hood');
     if (kind === 'cabin-a') {
       inputState.left = true;
@@ -2574,6 +2577,9 @@ function applyShot(kind: string) {
     if (kind === 'cabin-d') {
       inputState.right = true;
       shotHandDeg = -200;
+    }
+    if (kind === 'cabin-wide') {
+      shotFov = COCKPIT.wideFovDeg;
     }
   } else if (kind === 'exterior') {
     setCameraMode('orbit');

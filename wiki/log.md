@@ -49,3 +49,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] lint | wiki_lint.py + .github/workflows/wiki.yml
 
 ## [2026-10-12] ingest | PR #22 Kenney sedan GLB and Tesla-style cockpit
+
+## [2026-10-12] ingest | PR #22 sedan-sports + connected cockpit

@@ -1,5 +1,5 @@
 /**
- * Kenney CC0 sedan (GLB) plus a minimal Tesla-style cockpit overlay.
+ * Kenney CC0 sedan-sports (GLB) plus a connected Tesla-style cockpit overlay.
  * Wheels are detached so they stay planted while the body rolls about the axle.
  */
 
@@ -21,11 +21,22 @@ import {
   WHEEL_PLAN_OFFSETS,
 } from './vehicleVisual';
 
-export const SEDAN_MODEL_URL = '/models/sedan.glb';
+export const SEDAN_MODEL_URL = '/models/sedan-sports.glb';
 export const SILVER_PAINT = 0xc5cad1;
 export const LAYER_WORLD = 0;
 export const LAYER_COCKPIT = 1;
 export const LAYER_EXTERIOR = 2;
+
+/**
+ * Kenney 8×8 colormap cells used as body paint on sedan-sports (glTF v=0 is
+ * the top of the image). Glass, lights, chrome and tyres use other cells.
+ */
+export const BODY_PAINT_UV_CELLS: ReadonlyArray<readonly [number, number]> = [
+  [3, 4],
+  [3, 5],
+  [6, 2],
+  [6, 3],
+];
 
 export interface EgoWheelRef {
   pivot: THREE.Group;
@@ -105,7 +116,13 @@ export function applyCameraLayers(camera: THREE.Camera, hood: boolean): void {
   }
 }
 
-function silverizeMap(tex: THREE.Texture): THREE.Texture {
+function paintCellKey(col: number, row: number): string {
+  return `${col},${row}`;
+}
+
+const PAINT_CELL_KEYS = new Set(BODY_PAINT_UV_CELLS.map(([c, r]) => paintCellKey(c, r)));
+
+function silverizePaintCells(tex: THREE.Texture): THREE.Texture {
   const img = tex.image as { width: number; height: number } | undefined;
   const canDraw = typeof document !== 'undefined' && img && (img as HTMLCanvasElement).width;
   if (!canDraw) return tex;
@@ -119,17 +136,23 @@ function silverizeMap(tex: THREE.Texture): THREE.Texture {
     ctx.drawImage(src, 0, 0);
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const p = data.data;
-    for (let i = 0; i < p.length; i += 4) {
-      const r = p[i]!, g = p[i + 1]!, b = p[i + 2]!;
-      const mx = Math.max(r, g, b);
-      const sat = mx - Math.min(r, g, b);
-      if (mx < 88 && sat < 45) continue; // glass / cladding
-      if (r > 220 && g > 180 && b < 90) continue; // headlights
-      if (r > 200 && g < 90 && b < 90) continue; // tail lights
-      const lum = 0.25 * r + 0.5 * g + 0.25 * b;
-      p[i] = Math.round(158 + lum * 0.28);
-      p[i + 1] = Math.round(162 + lum * 0.27);
-      p[i + 2] = Math.round(168 + lum * 0.25);
+    const cols = 8;
+    const rows = 8;
+    const cw = canvas.width / cols;
+    const ch = canvas.height / rows;
+    for (let i = 0, y = 0; y < canvas.height; y += 1) {
+      const row = Math.min(rows - 1, Math.floor(y / ch));
+      for (let x = 0; x < canvas.width; x += 1, i += 4) {
+        const col = Math.min(cols - 1, Math.floor(x / cw));
+        if (!PAINT_CELL_KEYS.has(paintCellKey(col, row))) continue;
+        const r = p[i]!;
+        const g = p[i + 1]!;
+        const b = p[i + 2]!;
+        const lum = 0.25 * r + 0.5 * g + 0.25 * b;
+        p[i] = Math.round(168 + lum * 0.22);
+        p[i + 1] = Math.round(172 + lum * 0.21);
+        p[i + 2] = Math.round(178 + lum * 0.2);
+      }
     }
     ctx.putImageData(data, 0, 0);
     const next = new THREE.CanvasTexture(canvas);
@@ -150,11 +173,10 @@ function paintSilver(root: THREE.Object3D): void {
     const list = Array.isArray(src) ? src : [src];
     const next = list.map((mat) => {
       const mapped = (mat as THREE.MeshStandardMaterial).map ?? null;
-      const processed = mapped ? silverizeMap(mapped) : null;
-      const map = processed && processed !== mapped ? processed : null;
+      const processed = mapped ? silverizePaintCells(mapped) : null;
       return new THREE.MeshLambertMaterial({
-        color: map ? 0xffffff : SILVER_PAINT,
-        map,
+        color: processed || mapped ? 0xffffff : SILVER_PAINT,
+        map: processed ?? mapped ?? null,
         transparent: false,
       });
     });
@@ -167,7 +189,7 @@ function paintSilver(root: THREE.Object3D): void {
 /** Kenney-shaped stand-in so tests can assemble without fetching a GLB. */
 export function makePlaceholderSedan(): THREE.Group {
   const root = new THREE.Group();
-  root.name = 'sedan';
+  root.name = 'sedan-sports';
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(KENNEY_NATIVE_WIDTH, 1.15, KENNEY_NATIVE_LENGTH),
     new THREE.MeshLambertMaterial({ color: 0xffffff }),
@@ -195,8 +217,144 @@ export function makePlaceholderSedan(): THREE.Group {
   return root;
 }
 
+function cabinCamera(fovDeg: number, aspect = 16 / 9): THREE.PerspectiveCamera {
+  const cam = new THREE.PerspectiveCamera(fovDeg, aspect, 0.05, 80);
+  cam.position.set(COCKPIT.eye.x, COCKPIT.eye.y, COCKPIT.eye.z);
+  cam.up.set(0, 1, 0);
+  cam.lookAt(COCKPIT.look.x, COCKPIT.look.y, COCKPIT.look.z);
+  cam.updateMatrixWorld(true);
+  cam.updateProjectionMatrix();
+  return cam;
+}
+
+/** Point at NDC (x,y) and look-axis depth (metres in front of the camera). */
+function rayPoint(cam: THREE.PerspectiveCamera, ndcX: number, ndcY: number, depth: number): THREE.Vector3 {
+  const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+  const tanH = tanV * cam.aspect;
+  return new THREE.Vector3(ndcX * depth * tanH, ndcY * depth * tanV, -depth).applyMatrix4(cam.matrixWorld);
+}
+
+function frustumSlab(
+  cam: THREE.PerspectiveCamera,
+  ndcX0: number,
+  ndcX1: number,
+  ndcY0: number,
+  ndcY1: number,
+  d0: number,
+  d1: number,
+): THREE.BufferGeometry {
+  const p = (x: number, y: number, d: number) => rayPoint(cam, x, y, d);
+  const v = [
+    p(ndcX0, ndcY0, d0),
+    p(ndcX1, ndcY0, d0),
+    p(ndcX0, ndcY1, d0),
+    p(ndcX1, ndcY1, d0),
+    p(ndcX0, ndcY0, d1),
+    p(ndcX1, ndcY0, d1),
+    p(ndcX0, ndcY1, d1),
+    p(ndcX1, ndcY1, d1),
+  ];
+  const idx = [
+    0, 2, 3, 0, 3, 1,
+    5, 7, 6, 5, 6, 4,
+    0, 1, 5, 0, 5, 4,
+    2, 6, 7, 2, 7, 3,
+    0, 4, 6, 0, 6, 2,
+    1, 3, 7, 1, 7, 5,
+  ];
+  const pos = new Float32Array(idx.length * 3);
+  for (let i = 0; i < idx.length; i += 1) {
+    const q = v[idx[i]!]!;
+    pos[i * 3] = q.x;
+    pos[i * 3 + 1] = q.y;
+    pos[i * 3 + 2] = q.z;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function addStrut(
+  parent: THREE.Object3D,
+  a: THREE.Vector3,
+  b: THREE.Vector3,
+  r0: number,
+  r1: number,
+  mat: THREE.Material,
+  name: string,
+): THREE.Mesh {
+  const len = a.distanceTo(b);
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, Math.max(len, 0.02), 10), mat);
+  mesh.name = name;
+  mesh.position.copy(a).add(b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+  mesh.castShadow = false;
+  parent.add(mesh);
+  return mesh;
+}
+
+function makeScreenFaceTexture(): THREE.Texture | null {
+  if (typeof document === 'undefined') return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 320;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#0c1418';
+    ctx.fillRect(0, 0, 512, 320);
+    ctx.fillStyle = '#152028';
+    ctx.fillRect(0, 0, 512, 36);
+    ctx.fillStyle = '#8fd4e2';
+    ctx.beginPath();
+    ctx.arc(28, 18, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#d8e6ea';
+    ctx.fillRect(48, 14, 70, 8);
+    ctx.fillRect(130, 14, 44, 8);
+    ctx.fillStyle = '#16303a';
+    ctx.fillRect(16, 52, 250, 252);
+    ctx.fillStyle = '#1f4d3c';
+    ctx.beginPath();
+    ctx.moveTo(40, 280);
+    ctx.lineTo(90, 160);
+    ctx.lineTo(200, 120);
+    ctx.lineTo(240, 200);
+    ctx.lineTo(180, 280);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#3ec8ff';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(50, 270);
+    ctx.quadraticCurveTo(140, 150, 230, 190);
+    ctx.stroke();
+    const tiles = [
+      [286, 52, '#1a6f7a'],
+      [394, 52, '#245a86'],
+      [286, 158, '#3a4a22'],
+      [394, 158, '#5a3a16'],
+    ];
+    for (const [x, y, color] of tiles) {
+      ctx.fillStyle = String(color);
+      ctx.fillRect(Number(x), Number(y), 102, 96);
+      ctx.fillStyle = '#cfe8ee';
+      ctx.fillRect(Number(x) + 12, Number(y) + 16, 60, 8);
+      ctx.fillRect(Number(x) + 12, Number(y) + 32, 40, 6);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+    return tex;
+  } catch {
+    return null;
+  }
+}
+
 function buildHandWheel(): THREE.Group {
   const group = new THREE.Group();
+  group.name = 'hand-wheel';
   const R = COCKPIT.wheelRadius;
   const tube = COCKPIT.wheelTube;
   const leather = new THREE.MeshLambertMaterial({ color: 0x1b1e23, side: THREE.DoubleSide });
@@ -228,36 +386,70 @@ function buildHandWheel(): THREE.Group {
 
 function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
   const group = new THREE.Group();
-  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x2c3036 });
+  group.name = 'cockpit';
+  const dashTop = COCKPIT.dashTopNdc;
+  const cam = cabinCamera(COCKPIT.fovDeg);
+
+  const dashMat = new THREE.MeshLambertMaterial({ color: 0x3a414a, side: THREE.DoubleSide });
+  const hoodMat = new THREE.MeshLambertMaterial({ color: 0xc5cad1, side: THREE.DoubleSide });
+  const pillarMat = new THREE.MeshLambertMaterial({ color: 0x23282e, side: THREE.DoubleSide });
+  const columnMat = new THREE.MeshLambertMaterial({ color: 0x2f353c });
+  const bezelMat = new THREE.MeshLambertMaterial({ color: 0x111318 });
+  const screenMap = makeScreenFaceTexture();
   const screenMat = new THREE.MeshLambertMaterial({
-    color: 0x07181c,
-    emissive: 0x1a7a84,
-    emissiveIntensity: 0.55,
+    color: screenMap ? 0xffffff : 0x0c1418,
+    map: screenMap,
+    emissive: 0x1a4a58,
+    emissiveIntensity: 0.45,
   });
 
-  // Thin dash strip only — no hood slab, no roof plane. Mid-grey so it reads on asphalt.
-  const dashMatVisible = new THREE.MeshLambertMaterial({ color: 0x3c4148 });
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 1.22), dashMatVisible);
-  dash.position.set(0.56, COCKPIT.wheel.y - 0.07, 0);
+  // Height is framed for the 70° hood view (bottom ~28%). Extra-wide X also fills the 95° still.
+  const dash = new THREE.Mesh(frustumSlab(cam, -1.7, 1.7, -1.35, dashTop, 0.24, 0.98), dashMat);
+  dash.name = 'dash';
   group.add(dash);
 
-  // Portrait centre screen, inboard of the wheel (toward z=0 / screen-right).
-  const screen = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.2, 0.14), screenMat);
-  screen.position.set(0.50, COCKPIT.wheel.y + 0.04, 0.04);
-  group.add(screen);
+  const hood = new THREE.Mesh(frustumSlab(cam, -1.55, 1.55, dashTop - 0.01, -0.27, 0.9, 1.7), hoodMat);
+  hood.name = 'hood';
+  group.add(hood);
 
-  const pillarGeo = new THREE.CylinderGeometry(0.009, 0.008, 0.58, 8);
-  const nearPillar = new THREE.Mesh(pillarGeo, pillarMat);
-  nearPillar.position.set(0.92, 0.88, -0.88);
-  nearPillar.rotation.z = 0.22;
-  const farPillar = new THREE.Mesh(pillarGeo, pillarMat);
-  farPillar.position.set(0.92, 0.88, 0.88);
-  farPillar.rotation.z = 0.22;
-  group.add(nearPillar, farPillar);
+  const header = new THREE.Mesh(frustumSlab(cam, -1.08, 1.08, 0.9, 1.12, 0.4, 0.54), pillarMat);
+  header.name = 'header';
+  group.add(header);
+
+  const pillarL0 = rayPoint(cam, -0.96, dashTop, 0.86);
+  const pillarL1 = rayPoint(cam, -0.9, 0.98, 0.46);
+  const pillarR0 = rayPoint(cam, 0.96, dashTop, 0.86);
+  const pillarR1 = rayPoint(cam, 0.9, 0.98, 0.46);
+  addStrut(group, pillarL0, pillarL1, 0.024, 0.016, pillarMat, 'pillar-left');
+  addStrut(group, pillarR0, pillarR1, 0.024, 0.016, pillarMat, 'pillar-right');
+
+  const screen = new THREE.Group();
+  screen.name = 'centre-screen';
+  const bezel = new THREE.Mesh(new THREE.BoxGeometry(0.332, 0.208, 0.012), bezelMat);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.304, 0.184), screenMat);
+  face.position.z = -0.0068;
+  screen.add(bezel, face);
+  const sit = rayPoint(cam, 0.22, dashTop, 0.72);
+  const sitInDash = rayPoint(cam, 0.22, dashTop - 0.08, 0.72);
+  screen.position.set(sit.x, sit.y + 0.108, sit.z);
+  screen.lookAt(COCKPIT.eye.x, COCKPIT.eye.y - 0.05, COCKPIT.eye.z);
+  addStrut(group, sitInDash, screen.position.clone(), 0.014, 0.02, bezelMat, 'screen-mount');
+  group.add(screen);
 
   const steerWheel = buildHandWheel();
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
   group.add(steerWheel);
+
+  const columnEnd = rayPoint(cam, -0.2, -0.78, 0.68);
+  addStrut(
+    group,
+    new THREE.Vector3(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z),
+    columnEnd,
+    0.03,
+    0.04,
+    columnMat,
+    'steer-column',
+  );
 
   setLayerDeep(group, LAYER_COCKPIT);
   return { group, steerWheel };

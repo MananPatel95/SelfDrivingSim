@@ -22,7 +22,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Traffic rules](systems/traffic-rules.md) — lights + yield to peds
 - [Pedestrians](systems/pedestrians.md) — sidewalks and crossings
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
-- [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 GLB + cockpit
+- [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 sedan-sports + cockpit
 - [HUD and menus](systems/hud.md) — start menu, minimap
 - [Data engine](systems/data-engine.md) — Python mine/label/train
 - [Testing](systems/testing.md) — Vitest and screenshots
@@ -63,7 +63,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #17](sources/pr-17.md) — cabin wheel
 - [PR #18](sources/pr-18.md) — corner turns
 - [PR #19](sources/pr-19.md) — Just drive
-- [PR #22](sources/pr-22.md) — Kenney sedan + Tesla-style cockpit (open)
+- [PR #22](sources/pr-22.md) — Kenney sedan-sports + Tesla-style cockpit (open)
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

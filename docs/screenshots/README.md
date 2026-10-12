@@ -58,10 +58,10 @@ Minimap marks stop (red), yield (yellow), and uncontrolled (grey) junctions.
 ### 20-traffic-queued-at-stop.png
 Several AI traffic cars stopped at an all-way stop, not colliding.
 
-## Modern cabin and Kenney sedan
+## Modern cabin and Kenney sedan-sports
 
 ### cabin3_cockpit_straight.png
-First person, left-hand seat, 36 cm wheel, thin dash and centre screen.
+First person, left-hand seat, full-width dash, hood sliver, A-pillars, 15" centre tablet, 36 cm wheel.
 
 ### cabin3_cockpit_steer_left.png
 A held: hand wheel turned counter-clockwise (~450° lock).
@@ -69,8 +69,11 @@ A held: hand wheel turned counter-clockwise (~450° lock).
 ### cabin3_cockpit_steer_right.png
 D held: hand wheel turned clockwise.
 
+### cabin3_cockpit_wide.png
+Same cockpit at a wider FOV (`?shot=cabin-wide`).
+
 ### cabin3_exterior_three_quarter.png
-Front 3/4 of the CC0 Kenney sedan (silver).
+Front 3/4 of the CC0 Kenney sedan-sports (silver paint, dark glass).
 
 ### cabin3_exterior_low_side.png
 Low side view: tires inside the arches and on the road.
