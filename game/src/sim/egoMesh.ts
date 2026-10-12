@@ -32,6 +32,8 @@ export const LAYER_EXTERIOR = 2;
  * the top of the image). Glass, lights, chrome and tyres use other cells.
  */
 export const BODY_PAINT_UV_CELLS: ReadonlyArray<readonly [number, number]> = [
+  [2, 4],
+  [2, 5],
   [3, 4],
   [3, 5],
   [6, 2],
@@ -173,15 +175,18 @@ function isGlassTriangle(
   nbx: number, nby: number, nbz: number,
   ncx: number, ncy: number, ncz: number,
 ): boolean {
+  // Kenney-local: +Z forward, +X left, +Y up.
+  // Only the greenhouse openings — never hood, roof skin, doors, or rear quarters.
+  const x = (ax + bx + cx) / 3;
   const y = (ay + by + cy) / 3;
-  // Kenney-local: +Z forward, +X left, +Y up. Keep the painted roof.
-  if (y < 0.52) return false;
+  const z = (az + bz + cz) / 3;
+  if (y < 0.56 || y > 0.96) return false;
+  if (z > 0.52 || z < -0.58) return false;
   const nx = (nax + nbx + ncx) / 3;
-  const ny = (nay + nby + ncy) / 3;
   const nz = (naz + nbz + ncz) / 3;
-  if (nz > 0.38 && y < 0.98) return true;
-  if (nz < -0.38 && y < 0.98) return true;
-  if (Math.abs(nx) > 0.58 && y < 0.8 && ny < 0.35) return true;
+  if (Math.abs(nx) > 0.85 && Math.abs(x) > 0.48 && y < 0.82 && z > -0.55 && z < 0.48) return true;
+  if (nz > 0.4 && y > 0.68 && z > 0.2 && z < 0.5) return true;
+  if (nz < -0.4 && y > 0.72 && z < -0.2 && z > -0.58 && Math.abs(x) < 0.5) return true;
   return false;
 }
 
@@ -457,8 +462,10 @@ function buildHandWheel(): THREE.Group {
     );
   }
   addMerged(group, spokeParts, metal, false);
-  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.024, 0.02), mark);
-  notch.position.set(-0.014, R * 0.9, 0);
+  // Thin strip on the rim at 12 o'clock (torus lies in YZ). Rotates with the wheel.
+  const notch = new THREE.Mesh(new THREE.BoxGeometry(tube * 1.8, tube * 1.4, 0.032), mark);
+  notch.name = 'wheel-mark';
+  notch.position.set(0, R + tube * 0.15, 0);
   group.add(notch);
   return group;
 }
@@ -507,11 +514,20 @@ function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
   face.rotation.y = -Math.PI / 2;
   face.position.x = -0.006;
   screen.add(bezel, face);
-  const sit = rayPoint(cam, 0.22, dashTop, 0.72);
-  const sitInDash = rayPoint(cam, 0.22, dashTop - 0.08, 0.72);
-  screen.position.set(sit.x, sit.y + 0.108, sit.z);
-  screen.rotation.y = 0.22;
-  addStrut(group, sitInDash, screen.position.clone(), 0.014, 0.02, bezelMat, 'screen-mount');
+  const sit = rayPoint(cam, 0.38, dashTop, 0.76);
+  const under = rayPoint(cam, 0.38, dashTop - 0.05, 0.78);
+  screen.position.set(sit.x, sit.y + 0.1, sit.z);
+  screen.rotation.y = 0.18;
+  // Short stub under the tablet, behind the face, so it never crosses the UI.
+  addStrut(
+    group,
+    under,
+    new THREE.Vector3(sit.x + 0.03, sit.y + 0.04, sit.z),
+    0.012,
+    0.016,
+    bezelMat,
+    'screen-mount',
+  );
   group.add(screen);
 
   const steerWheel = buildHandWheel();

@@ -12,7 +12,7 @@ Hood is a left-of-frame seat at ~1.2 m (`COCKPIT` in [[ego-mesh]]). A 36 cm whee
 
 The mesh yaw must match the nose ([[pr-11]], `meshYawForHeading`). An old +4 m orbit offset made wheel-height shots impossible; that is gone ([[pr-4]]).
 
-Demo shots: `?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|side|wheel`.
+Demo shots: `?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|exterior-hood|side|wheel`.
 
 ## Key files
 

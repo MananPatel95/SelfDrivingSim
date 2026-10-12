@@ -93,6 +93,7 @@ describe('Kenney sedan-sports mesh', () => {
 
   it('loads the Kenney sedan-sports GLB and silvers only paint UV cells', () => {
     expect(SEDAN_MODEL_URL).toBe('/models/sedan-sports.glb');
+    expect(BODY_PAINT_UV_CELLS).toContainEqual([2, 5]);
     expect(BODY_PAINT_UV_CELLS).toContainEqual([3, 4]);
     expect(BODY_PAINT_UV_CELLS).toContainEqual([3, 5]);
     expect(BODY_PAINT_UV_CELLS.every(([c, r]) => c >= 0 && c < 8 && r >= 0 && r < 8)).toBe(true);
@@ -130,7 +131,11 @@ describe('Kenney sedan-sports mesh', () => {
     expect(boxesTouch(dash, right)).toBe(true);
     expect(boxesTouch(dash, column, 0.12)).toBe(true);
     expect(boxesTouch(dash, mount, 0.12)).toBe(true);
-    expect(boxesTouch(mount, screen, 0.12)).toBe(true);
+    expect(boxesTouch(mount, screen, 0.16)).toBe(true);
+    const mountBox = new THREE.Box3().setFromObject(mount);
+    const faceBox = new THREE.Box3().setFromObject(screen);
+    // Mount stays under/behind the tablet — it must not cover the screen face.
+    expect(mountBox.max.y).toBeLessThan(faceBox.max.y - 0.02);
     expect(boxesTouch(left, header)).toBe(true);
     expect(boxesTouch(right, header)).toBe(true);
     expect(boxesTouch(column, visual.steerWheel, 0.1)).toBe(true);
@@ -141,5 +146,8 @@ describe('Kenney sedan-sports mesh', () => {
     expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
     expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.55);
     expect(COCKPIT.dashTopNdc).toBeLessThan(-0.35);
+    const mark = named(visual.group, 'wheel-mark');
+    expect(mark.position.y).toBeGreaterThan(COCKPIT.wheelRadius * 0.9);
+    expect(Math.abs(mark.position.x)).toBeLessThan(0.02);
   });
 });

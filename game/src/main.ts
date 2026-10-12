@@ -8,7 +8,7 @@ import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
-import { COCKPIT, handWheelRotation } from './sim/cabinView';
+import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import { applyCameraLayers, loadEgoVisual } from './sim/egoMesh';
 import {
   AXLE_HEIGHT,
@@ -2557,7 +2557,7 @@ function hideChrome() {
   perceptionViz?.setEnabled(false);
 }
 
-/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|side|wheel */
+/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|exterior-hood|side|wheel */
 function applyShot(kind: string) {
   beginGame('manual');
   hideChrome();
@@ -2572,11 +2572,11 @@ function applyShot(kind: string) {
     setCameraMode('hood');
     if (kind === 'cabin-a') {
       inputState.left = true;
-      shotHandDeg = 200;
+      shotHandDeg = HAND_LOCK_DEG;
     }
     if (kind === 'cabin-d') {
       inputState.right = true;
-      shotHandDeg = -200;
+      shotHandDeg = -HAND_LOCK_DEG;
     }
     if (kind === 'cabin-wide') {
       shotFov = COCKPIT.wideFovDeg;
@@ -2584,6 +2584,9 @@ function applyShot(kind: string) {
   } else if (kind === 'exterior') {
     setCameraMode('orbit');
     debugHeroCam = { x: 4.6, y: 1.4, z: -3.4, lookX: 0.15, lookY: 0.58, lookZ: 0.0 };
+  } else if (kind === 'exterior-hood') {
+    setCameraMode('orbit');
+    debugHeroCam = { x: 2.4, y: 5.4, z: 0.05, lookX: 0.9, lookY: 0.62, lookZ: 0.0 };
   } else if (kind === 'side') {
     debugSideCam = { height: 0.55, side: 6.2, lookY: 0.62 };
   } else if (kind === 'wheel') {
