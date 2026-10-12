@@ -315,6 +315,8 @@ const CLASS_SIZE_RANGES: Record<EntityClass, { length: [number, number]; width: 
   pole: { length: [0.1, 0.5], width: [0.1, 0.5], height: [2.0, 15.0] },
   traffic_light: { length: [0.3, 1.0], width: [0.3, 1.0], height: [0.3, 1.5] },
   traffic_sign: { length: [0.5, 2.0], width: [0.1, 0.5], height: [0.5, 2.0] },
+  stop_sign: { length: [0.4, 1.2], width: [0.08, 0.4], height: [2.0, 3.6] },
+  yield_sign: { length: [0.4, 1.2], width: [0.08, 0.4], height: [2.0, 3.6] },
   building: { length: [5.0, 100.0], width: [5.0, 100.0], height: [3.0, 100.0] },
   barrier: { length: [0.5, 10.0], width: [0.2, 1.0], height: [0.5, 1.5] },
   cone: { length: [0.2, 0.5], width: [0.2, 0.5], height: [0.3, 1.0] },

@@ -99,6 +99,15 @@ export function planTrajectory(
     desiredSpeed = 0;
     stoppingDistance = Math.min(stoppingDistance, vec3Distance(egoState.transform.position, goal));
   }
+
+  const rule = input.rule;
+  if (rule) {
+    desiredSpeed = Math.min(desiredSpeed, rule.maxSpeed);
+    if (rule.mustStop) {
+      desiredSpeed = 0;
+      stoppingDistance = Math.min(stoppingDistance, 3.5);
+    }
+  }
   
   // Slow for obstacles
   if (obstacleAhead) {
@@ -168,6 +177,8 @@ export function planTrajectory(
       trajectory,
       acceleration,
       steering,
+      reason: rule?.reason,
+      severity: rule?.severity,
     },
     newState: {
       ...state,

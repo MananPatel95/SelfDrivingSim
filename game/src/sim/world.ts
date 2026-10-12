@@ -7,6 +7,14 @@ import type {
   Entity, Vec3, Lane, Intersection, TrafficLight, RideRequest
 } from './types';
 import { vec3, SeededRandom } from './math';
+import {
+  type ControlledIntersection,
+  type RoadUser,
+  type StopBook,
+  buildControlledIntersection,
+  decideIntersection,
+  signPose,
+} from './intersectionRules';
 
 export interface CityConfig {
   gridSize: number; // Number of blocks per side
@@ -18,6 +26,7 @@ export interface CityConfig {
 export interface WorldMap {
   lanes: Lane[];
   intersections: Intersection[];
+  controlledIntersections: ControlledIntersection[];
   trafficLights: TrafficLight[];
   staticEntities: Entity[];
   spawnPoints: Vec3[];
@@ -125,6 +134,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
   const rng = new SeededRandom(seed);
   const lanes: Lane[] = [];
   const intersections: Intersection[] = [];
+  const controlledIntersections: ControlledIntersection[] = [];
   const trafficLights: TrafficLight[] = [];
   const staticEntities: Entity[] = [];
   const spawnPoints: Vec3[] = [];
@@ -132,7 +142,6 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
   
   let laneId = 0;
   let entityId = 1000;
-  let lightId = 0;
   let intersectionId = 0;
   
   const totalSize = config.gridSize * config.blockSize;
@@ -142,9 +151,9 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
   for (let i = 0; i <= config.gridSize; i++) {
     const pos = -halfSize + i * config.blockSize;
     
-    // North-South roads (2 lanes each direction)
+    // North-South roads (right-hand traffic: northbound +X, southbound −X)
     for (let dir = 0; dir < 2; dir++) {
-      const offset = dir === 0 ? -config.laneWidth : config.laneWidth;
+      const offset = dir === 0 ? config.laneWidth : -config.laneWidth;
       const points = [];
       for (let j = 0; j <= config.gridSize * 10; j++) {
         const y = -halfSize + (j / 10) * config.blockSize;
@@ -185,12 +194,14 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
     }
   }
   
-  // Generate intersections with traffic lights
+  // Seeded mix of all-way STOP, YIELD (minor road), and uncontrolled.
   for (let i = 0; i <= config.gridSize; i++) {
     for (let j = 0; j <= config.gridSize; j++) {
       const x = -halfSize + i * config.blockSize;
       const y = -halfSize + j * config.blockSize;
-      
+      const controlled = buildControlledIntersection(intersectionId, i, j, vec3(x, y, 0), seed);
+      controlledIntersections.push(controlled);
+
       const intersection: Intersection = {
         id: intersectionId++,
         center: vec3(x, y, 0),
@@ -198,29 +209,27 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
         incomingLanes: [],
         outgoingLanes: [],
         trafficLightIds: [],
+        control: controlled.control,
       };
-      
-      // Add traffic lights at major intersections (not edges)
-      if (i > 0 && i < config.gridSize && j > 0 && j < config.gridSize) {
-        for (let dir = 0; dir < 4; dir++) {
-          const angle = (dir * Math.PI) / 2;
-          const lightPos = vec3(
-            x + Math.cos(angle) * config.laneWidth * 2,
-            y + Math.sin(angle) * config.laneWidth * 2,
-            4
-          );
-          
-          const light: TrafficLight = {
-            id: lightId++,
-            position: lightPos,
-            state: dir % 2 === 0 ? 'green' : 'red',
-            forLaneIds: [],
-          };
-          trafficLights.push(light);
-          intersection.trafficLightIds.push(light.id);
-        }
+
+      for (const heading of controlled.signedHeadings) {
+        const pose = signPose(controlled, heading);
+        const kind = controlled.control === 'stop' ? 'stop_sign' : 'yield_sign';
+        staticEntities.push({
+          id: entityId++,
+          classType: kind,
+          transform: { position: vec3(pose.x, pose.y, 1.6), rotation: pose.yaw },
+          boundingBox: {
+            center: vec3(pose.x, pose.y, 1.6),
+            size: vec3(0.9, 0.18, 3.2),
+            yaw: pose.yaw,
+          },
+          velocity: vec3(0, 0, 0),
+          isStatic: true,
+          occlusionLevel: 0,
+        });
       }
-      
+
       intersections.push(intersection);
     }
   }
@@ -396,7 +405,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
     spawnPoints.push(vec3(-halfSize + i * config.blockSize + config.laneWidth, -halfSize + 10, 0));
   }
   
-  return { lanes, intersections, trafficLights, staticEntities, spawnPoints, pickupPoints };
+  return { lanes, intersections, controlledIntersections, trafficLights, staticEntities, spawnPoints, pickupPoints };
 }
 
 // Traffic AI - simple lane following with traffic light obedience
@@ -406,13 +415,31 @@ export interface TrafficVehicle extends Entity {
   targetSpeed: number;
 }
 
+export interface TrafficRuleContext {
+  intersections: readonly ControlledIntersection[];
+  book: StopBook;
+  now: number;
+  others: RoadUser[];
+}
+
+export function entityToRoadUser(entity: Entity): RoadUser {
+  return {
+    id: entity.id,
+    x: entity.transform.position.x,
+    y: entity.transform.position.y,
+    yaw: entity.transform.rotation,
+    speed: Math.hypot(entity.velocity.x, entity.velocity.y),
+  };
+}
+
 export function updateTrafficVehicle(
   vehicle: TrafficVehicle,
   lanes: Lane[],
   trafficLights: TrafficLight[],
   allVehicles: TrafficVehicle[],
   dt: number,
-  pedestrians: Pedestrian[] = []
+  pedestrians: Pedestrian[] = [],
+  rules?: TrafficRuleContext,
 ): TrafficVehicle {
   const lane = lanes.find(l => l.id === vehicle.laneId);
   if (!lane || lane.points.length < 2) return vehicle;
@@ -465,8 +492,22 @@ export function updateTrafficVehicle(
     speed
   );
   if (yieldPed) shouldStop = true;
-  if (shouldStop) accel = Math.min(accel, yieldPed ? -6.5 : -3.5);
-  speed = Math.max(0, Math.min(v0, speed + accel * dt));
+  let ruleCap = v0;
+  if (rules) {
+    const self = entityToRoadUser(vehicle);
+    const decision = decideIntersection(
+      self,
+      rules.others,
+      pedestrians.map(p => ({ x: p.transform.position.x, y: p.transform.position.y })),
+      rules.intersections,
+      rules.book,
+      rules.now,
+    );
+    ruleCap = Math.min(ruleCap, decision.maxSpeed);
+    if (decision.mustStop) shouldStop = true;
+  }
+  if (shouldStop) accel = Math.min(accel, yieldPed ? -6.5 : -4.5);
+  speed = Math.max(0, Math.min(Math.min(v0, ruleCap), speed + accel * dt));
   
   // Move along lane
   const progress = vehicle.laneProgress + (speed * dt) / (lane.points.length * 2);

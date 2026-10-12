@@ -34,7 +34,7 @@ import {
   WAABI_INFO_CARD, WaabiStackState, runWaabiStack,
   BEVOccupancy, AdversarialVariant
 } from './stacks/waabi';
-import { TESLA_INFO_CARD, detectVisibleAgents, type VisionDetection } from './stacks/tesla';
+import { TESLA_INFO_CARD, detectVisibleAgents, hudDetectionCount, type VisionDetection } from './stacks/tesla';
 import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
 import { LIDAR_CONFIGS } from './sensors/lidar';
 import type { LidarConfig } from './sim/types';
@@ -561,6 +561,66 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       pole.castShadow = true;
       return pole;
     }
+
+    case 'stop_sign': {
+      const group = new THREE.Group();
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.06, 2.55, 8),
+        new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
+      );
+      pole.position.y = 1.28;
+      group.add(pole);
+      const rim = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.48, 0.48, 0.05, 8),
+        new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }),
+      );
+      rim.rotation.x = Math.PI / 2;
+      rim.rotation.z = Math.PI / 8;
+      rim.position.y = 2.52;
+      group.add(rim);
+      const face = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.4, 0.4, 0.06, 8),
+        new THREE.MeshLambertMaterial({ color: 0xc81e1e }),
+      );
+      face.rotation.x = Math.PI / 2;
+      face.rotation.z = Math.PI / 8;
+      face.position.y = 2.53;
+      group.add(face);
+      return group as unknown as THREE.Mesh;
+    }
+
+    case 'yield_sign': {
+      const group = new THREE.Group();
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.06, 2.35, 8),
+        new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
+      );
+      pole.position.y = 1.18;
+      group.add(pole);
+      const shape = new THREE.Shape();
+      shape.moveTo(0, -0.42);
+      shape.lineTo(0.46, 0.36);
+      shape.lineTo(-0.46, 0.36);
+      shape.closePath();
+      const face = new THREE.Mesh(
+        new THREE.ShapeGeometry(shape),
+        new THREE.MeshLambertMaterial({ color: 0xf4f4f4, side: THREE.DoubleSide }),
+      );
+      face.position.y = 2.42;
+      group.add(face);
+      const inner = new THREE.Shape();
+      inner.moveTo(0, -0.22);
+      inner.lineTo(0.28, 0.24);
+      inner.lineTo(-0.28, 0.24);
+      inner.closePath();
+      const red = new THREE.Mesh(
+        new THREE.ShapeGeometry(inner),
+        new THREE.MeshLambertMaterial({ color: 0xc81e1e, side: THREE.DoubleSide }),
+      );
+      red.position.set(0, 2.42, 0.01);
+      group.add(red);
+      return group as unknown as THREE.Mesh;
+    }
     
     default: {
       const geometry = new THREE.BoxGeometry(2, 2, 2);
@@ -713,6 +773,45 @@ function rebuildStaticCity() {
     scene.add(mesh);
     staticCityMeshes.push(mesh);
   }
+
+  const signs = statics.filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign');
+  for (const sign of signs) {
+    const mesh = createEntityMesh(sign.classType) as THREE.Mesh;
+    mesh.position.set(sign.transform.position.x, 0, -sign.transform.position.y);
+    mesh.rotation.y = -sign.transform.rotation;
+    scene.add(mesh);
+    staticCityMeshes.push(mesh);
+  }
+
+  const stopLines: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+  for (const inter of simulation.getState().worldMap.controlledIntersections) {
+    if (inter.control === 'none') continue;
+    for (const heading of inter.signedHeadings) {
+      const fx = Math.cos(heading);
+      const fy = Math.sin(heading);
+      stopLines.push({
+        x: inter.center.x - fx * inter.stopLineDist,
+        y: 0.035,
+        z: -(inter.center.y - fy * inter.stopLineDist),
+        ry: heading,
+      });
+    }
+  }
+  if (stopLines.length > 0) {
+    const lineMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f4 });
+    const dummyLine = new THREE.Object3D();
+    const lines = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 0.03, 3.4), lineMat, stopLines.length);
+    stopLines.forEach((p, i) => {
+      dummyLine.position.set(p.x, p.y, p.z);
+      dummyLine.rotation.set(0, -(p.ry ?? 0), 0);
+      dummyLine.scale.set(1, 1, 1);
+      dummyLine.updateMatrix();
+      lines.setMatrixAt(i, dummyLine.matrix);
+    });
+    lines.instanceMatrix.needsUpdate = true;
+    scene.add(lines);
+    staticCityMeshes.push(lines);
+  }
 }
 
 function updateEntityMeshes() {
@@ -774,6 +873,8 @@ const DETECTION_COLORS: Record<string, number> = {
   pedestrian: 0xff00ff,
   cyclist: 0x00ffff,
   motorcycle: 0xffff00,
+  stop_sign: 0xff3333,
+  yield_sign: 0xffcc33,
   default: 0x00ff00,
 };
 
@@ -1190,8 +1291,12 @@ function updateHUD() {
 
   document.getElementById('speed-value')!.textContent = `${Math.round(speed)} km/h`;
   document.getElementById('stopping-dist')!.textContent = `${Math.round(state.ego.stoppingDistance)} m`;
+  const signs = state.worldMap.staticEntities.filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign');
+  if (currentStack === 'tesla') {
+    latestVisionDetections = detectVisibleAgents(state.ego, [...state.trafficVehicles, ...state.pedestrians, ...signs]);
+  }
   document.getElementById('detection-count')!.textContent =
-    String(state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4).length);
+    String(hudDetectionCount(currentStack, latestVisionDetections, state.perceptionTracks));
   const colEl = document.getElementById('collision-count');
   if (colEl) {
     colEl.textContent = String(state.collisionCount);
@@ -2015,6 +2120,28 @@ function updateMinimap() {
     ctx.stroke();
   }
 
+  for (const inter of state.worldMap.controlledIntersections) {
+    const p = toMap(inter.center.x, inter.center.y);
+    if (p.x < -10 || p.y < -10 || p.x > w + 10 || p.y > h + 10) continue;
+    if (inter.control === 'stop') {
+      ctx.fillStyle = '#d12626';
+      ctx.fillRect(p.x - 3.5, p.y - 3.5, 7, 7);
+    } else if (inter.control === 'yield') {
+      ctx.fillStyle = '#f0d24b';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y + 4);
+      ctx.lineTo(p.x + 4, p.y - 3);
+      ctx.lineTo(p.x - 4, p.y - 3);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#8a8f96';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   ctx.fillStyle = '#f2c14e';
   for (const car of state.trafficVehicles) {
     const p = toMap(car.transform.position.x, car.transform.position.y);
@@ -2484,7 +2611,8 @@ function animate(time: number) {
 function updateAIView(drawRawScene: boolean) {
   const banner = document.getElementById('decision-banner');
   const state = simulation.getState();
-  const agents = [...state.trafficVehicles, ...state.pedestrians];
+  const signs = state.worldMap.staticEntities.filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign');
+  const agents = [...state.trafficVehicles, ...state.pedestrians, ...signs];
   if (latestVisionDetections.length === 0 || currentStack === 'tesla') {
     latestVisionDetections = detectVisibleAgents(state.ego, agents);
   }
@@ -2500,6 +2628,8 @@ function updateAIView(drawRawScene: boolean) {
     plannerOutput: state.lastPlannerOutput,
     visionDetections: latestVisionDetections,
     occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
+    controlSource: state.controlSource,
+    rule: state.lastRule,
   };
 
   if (perceptionViz) {

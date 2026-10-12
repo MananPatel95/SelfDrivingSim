@@ -11,8 +11,14 @@ import {
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
   TrafficVehicle, updateTrafficVehicle, Pedestrian, updatePedestrian,
   shouldYieldToPedestrian, type RoadActor,
-  generateRideRequest, roadRoute
+  generateRideRequest, entityToRoadUser
 } from './world';
+import { placeInRightLane, rightLaneRoute } from './rightLane';
+import {
+  type RuleDecision,
+  type StopBook,
+  decideIntersection,
+} from './intersectionRules';
 
 export type ZoneType = 'city';
 import { vec3, vec3Distance, vec3Length, SeededRandom, egoToWorld } from './math';
@@ -66,6 +72,7 @@ export interface SimulationState {
   controlSource: 'policy' | 'human' | 'oracle';
   lastTakeover?: TakeoverEvent;
   lastPlannerOutput: PlannerOutput | null;
+  lastRule: RuleDecision | null;
   collisionCount: number;
   lastCollision: CollisionEvent | null;
 }
@@ -82,6 +89,7 @@ export class Simulation {
   private lidarEveryN = 2;
   /** Ids currently overlapping the car, so a curb graze is one collision not one per frame. */
   private contactIds = new Set<number>();
+  private stopBook: StopBook = { arrivals: new Map() };
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -111,6 +119,7 @@ export class Simulation {
     this.lastPlannerOutput = null;
     this.lastLidarPoints = [];
     this.entityIdCounter = 0;
+    this.stopBook = { arrivals: new Map() };
     const worldMap = generateCityMap(this.config.seed, this.config.cityConfig);
     const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
     const ego = createEgoState('car', spawnPoint, Math.PI / 2);
@@ -140,6 +149,7 @@ export class Simulation {
       isRunning: true,
       controlSource: 'policy',
       lastPlannerOutput: null,
+      lastRule: null,
       collisionCount: 0,
       lastCollision: null,
     };
@@ -293,7 +303,25 @@ export class Simulation {
       );
     }
 
-    // Update traffic vehicles
+    const nowSec = this.state.timestamp / 1000;
+    const roadUsers = [
+      ...this.state.trafficVehicles.map(entityToRoadUser),
+      {
+        id: -1,
+        x: this.state.ego.transform.position.x,
+        y: this.state.ego.transform.position.y,
+        yaw: this.state.ego.transform.rotation,
+        speed: vec3Length(this.state.ego.velocity),
+      },
+    ];
+    const ruleCtx = {
+      intersections: this.state.worldMap.controlledIntersections,
+      book: this.stopBook,
+      now: nowSec,
+      others: roadUsers,
+    };
+
+    // Update traffic vehicles — same stop / yield / ROW rules as ego
     for (let i = 0; i < this.state.trafficVehicles.length; i++) {
       this.state.trafficVehicles[i] = updateTrafficVehicle(
         this.state.trafficVehicles[i]!,
@@ -301,7 +329,8 @@ export class Simulation {
         trafficLights,
         this.state.trafficVehicles,
         dt,
-        this.state.pedestrians
+        this.state.pedestrians,
+        ruleCtx
       );
     }
     
@@ -355,11 +384,44 @@ export class Simulation {
     }));
     
     // Plan trajectory
+    const signDetections = this.state.worldMap.staticEntities
+      .filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign')
+      .filter(e => {
+        const dx = e.transform.position.x - egoPos.x;
+        const dy = e.transform.position.y - egoPos.y;
+        return dx * dx + dy * dy < 55 * 55;
+      })
+      .map(e => ({
+        id: e.id,
+        classType: e.classType,
+        confidence: 0.95,
+        boundingBox: e.boundingBox,
+        velocity: e.velocity,
+      }));
+
+    const egoUser = {
+      id: -1,
+      x: this.state.ego.transform.position.x,
+      y: this.state.ego.transform.position.y,
+      yaw: this.state.ego.transform.rotation,
+      speed: vec3Length(this.state.ego.velocity),
+    };
+    const lastRule = decideIntersection(
+      egoUser,
+      this.state.trafficVehicles.map(entityToRoadUser),
+      this.state.pedestrians.map(p => ({ x: p.transform.position.x, y: p.transform.position.y })),
+      this.state.worldMap.controlledIntersections,
+      this.stopBook,
+      nowSec,
+    );
+    this.state.lastRule = lastRule;
+
     const plannerInput = {
       egoState: this.state.ego,
-      detections: worldDetections,
+      detections: [...worldDetections, ...signDetections],
       route: this.state.route,
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
+      rule: lastRule,
     };
     
     const hazard = obstacleAhead(
@@ -463,6 +525,15 @@ export class Simulation {
     );
     if (yieldToPed) {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
+    }
+
+    if (this.state.controlSource !== 'human' && lastRule.mustStop) {
+      vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
+    } else if (this.state.controlSource !== 'human' && lastRule.maxSpeed < 8) {
+      const speed = vec3Length(this.state.ego.velocity);
+      if (speed > lastRule.maxSpeed + 0.3) {
+        vehicleInput = { ...vehicleInput, throttle: 0, brake: Math.max(vehicleInput.brake, 0.45) };
+      }
     }
 
     // Update ego vehicle (bicycle model)
@@ -751,15 +822,16 @@ export class Simulation {
     this.state.controlSource = 'human';
   }
 
-  /** Place the car on a start point and follow a road route to the end. */
+  /** Place the car on a start point and follow a right-hand-lane road route to the end. */
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
-    const route = roadRoute(start, end);
+    const route = rightLaneRoute(start, end);
     const next = route[Math.min(1, route.length - 1)] ?? end;
-    const yaw = Math.atan2(next.y - start.y, next.x - start.x);
+    const placed = route[0] ?? placeInRightLane(start.x, start.y, 0);
+    const yaw = Math.atan2(next.y - placed.y, next.x - placed.x);
     this.faceAndPark(yaw);
     this.state.ego = {
       ...this.state.ego,
-      transform: { position: { x: start.x, y: start.y, z: 0 }, rotation: yaw },
+      transform: { position: { x: placed.x, y: placed.y, z: 0 }, rotation: yaw },
     };
     this.state.route = route;
     this.state.plannerState = createPlannerState();

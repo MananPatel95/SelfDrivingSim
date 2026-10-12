@@ -311,7 +311,8 @@ export function detectVisibleAgents(
     if (entity.classType === 'building' || entity.classType === 'tree' || entity.classType === 'pole') continue;
     const dynamic = entity.classType === 'pedestrian' || entity.classType === 'car'
       || entity.classType === 'truck' || entity.classType === 'cyclist' || entity.classType === 'bus';
-    if (!dynamic) continue;
+    const signed = entity.classType === 'stop_sign' || entity.classType === 'yield_sign';
+    if (!dynamic && !signed) continue;
     // Heavily occluded agents are weaker, not invisible — a camera can still
     // glimpse a pedestrian stepping out from behind a van.
 
@@ -351,6 +352,16 @@ export function detectVisibleAgents(
   }
 
   return results;
+}
+
+/** HUD detection count must match what Tesla AI View actually boxes. */
+export function hudDetectionCount(
+  stack: 'tesla' | 'waymo' | 'waabi' | string,
+  visionDetections: ReadonlyArray<{ classType: string }>,
+  lidarTracks: ReadonlyArray<{ missedFrames: number; confidence: number }>,
+): number {
+  if (stack === 'tesla') return visionDetections.length;
+  return lidarTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4).length;
 }
 
 function getDefaultSize(classType: string): Vec3 {
