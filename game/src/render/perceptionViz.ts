@@ -33,6 +33,8 @@ export interface PerceptionVizInput {
   plannerOutput: PlannerOutput | null;
   visionDetections: VisionDetection[];
   occupancy?: BEVOccupancy;
+  controlSource?: 'policy' | 'human' | 'oracle';
+  rule?: { reason: string; severity: DecisionInfo['severity'] } | null;
 }
 
 function pathColor(severity: DecisionInfo['severity']): number {
@@ -42,6 +44,12 @@ function pathColor(severity: DecisionInfo['severity']): number {
 }
 
 export function computeDecision(input: PerceptionVizInput): DecisionInfo {
+  if (input.controlSource === 'human') {
+    return { text: 'Manual', severity: 'go' };
+  }
+  if (input.rule && input.rule.severity !== 'go') {
+    return { text: input.rule.reason, severity: input.rule.severity };
+  }
   const ego = input.ego;
   const speed = vec3Length(ego.velocity);
   const heading = ego.transform.rotation;
