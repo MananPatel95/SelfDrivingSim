@@ -1,7 +1,7 @@
 ---
 tags: [entity]
 updated: 2026-10-12
-sources: [4, 6, 7]
+sources: [4, 6, 7, 27]
 ---
 
 # `vehicle.ts`

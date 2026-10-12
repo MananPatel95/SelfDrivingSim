@@ -1,14 +1,14 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [3, 18, 20, 22]
+sources: [3, 18, 20, 22, 27]
 ---
 
 # Testing and screenshots
 
 Vitest lives next to the code (`game/src/**/*.test.ts`). `cd game && npm test` runs the suite. `make test` also runs `pipeline` pytest.
 
-Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car stays on a 14 m asphalt cross. City-life tests keep trees off the road and pedestrians on sidewalks. `vehicle.test.ts` also covers dry ABS stopping distance (50 and 100 km/h), time to peak decel, straight-line brake with no lateral drift, and standstill hold.
+Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car stays on a 14 m asphalt cross. City-life tests keep trees off the road and pedestrians on sidewalks. `vehicle.test.ts` also covers dry ABS stopping distance (50 and 100 km/h), time to peak decel, straight-line brake with no lateral drift, and standstill hold ([[pr-27]]).
 
 [[pr-20]] added:
 

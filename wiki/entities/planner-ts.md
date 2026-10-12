@@ -1,7 +1,7 @@
 ---
 tags: [entity]
 updated: 2026-10-12
-sources: [18, 20]
+sources: [18, 20, 27]
 ---
 
 # `planner.ts`
