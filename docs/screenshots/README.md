@@ -49,6 +49,9 @@ Full right lock while driving.
 ### fp_intersection_50.png
 First person at about 50 km/h at an intersection.
 
+### compare_fp_straight.png / compare_fp_steer_left.png / compare_fp_steer_right.png / compare_fp_intersection_50.png
+Side-by-side of the Tesla Model 3/Y reference (left) and the live hood shot (right).
+
 ### hud_panels_open.png
 Right-side column with explainer, AI View, and info all open — no overlap.
 
