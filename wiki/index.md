@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25]
+sources: [1, 20, 22, 24, 25, 29]
 ---
 
 # Wiki index
@@ -70,7 +70,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #22](sources/pr-22.md) — Kenney sedan-sports + Tesla-style cockpit
 - [PR #24](sources/pr-24.md) — traffic random walk, deadlock breaker
 - [PR #25](sources/pr-25.md) — live first-person cockpit, stacked HUD panels, T re-engage
-- [collision-physics](sources/pr-collision-physics.md) — impulse collisions, snap, tumble (PR number pending)
+- [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

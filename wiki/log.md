@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25]
+sources: [1, 20, 22, 24, 25, 29]
 ---
 
 # Wiki log
@@ -70,4 +70,4 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-12] merge | origin/main (#24 traffic) into PR #25 cockpit branch
 
-## [2026-10-12] ingest | collision-physics impulse collisions, snap, tumble
+## [2026-10-12] ingest | PR #29 impulse collisions, snap, tumble
