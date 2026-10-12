@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [3, 4]
+sources: [3, 4, 26]
 ---
 
 # Game loop and fixed step

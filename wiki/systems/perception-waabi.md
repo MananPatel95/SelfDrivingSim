@@ -1,7 +1,7 @@
 ---
 tags: [system, perception, perf]
 updated: 2026-10-12
-sources: [2, 3]
+sources: [2, 3, 26]
 ---
 
 # Perception F3 — Waabi-style

@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22]
+sources: [1, 20, 22, 26]
 ---
 
 # Wiki log
@@ -56,4 +56,4 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
 
-## [2026-10-12] ingest | cursor/f3-view-perf-d05a F3 Waabi view: 10 Hz occupancy, skip duplicate lidar
+## [2026-10-12] ingest | PR #26 F3 Waabi view: 10 Hz occupancy, skip duplicate lidar

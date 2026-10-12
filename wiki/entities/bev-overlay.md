@@ -1,7 +1,7 @@
 ---
 tags: [entity, render, perf]
 updated: 2026-10-12
-sources: []
+sources: [26]
 ---
 
 # `bevOverlay.ts`
