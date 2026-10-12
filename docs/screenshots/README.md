@@ -58,6 +58,17 @@ Minimap marks stop (red), yield (yellow), and uncontrolled (grey) junctions.
 ### 20-traffic-queued-at-stop.png
 Several AI traffic cars stopped at an all-way stop, not colliding.
 
+## Traffic random walk (PR #24)
+
+### 21-traffic-flow-intersection.png
+F2 Waymo BEV after `?seed=3&demo=mix`. Minimap shows AI cars spread across the grid (not piled in one box). Live junctions have magenta NPCs on crossing streets.
+
+### 22-traffic-car-turning.png
+High orbit on the origin junction. An NPC is in the intersection with a fused box; another has already cleared north. Cross-street cars are on the east–west approaches.
+
+### 23-ego-autopilot-intersection.png
+F2, `?seed=3&demo=stop`. Ego AUTOPILOT has fully stopped then is moving through the all-way stop at ~8–10 km/h (`Cruising: lane clear`), not stuck at 0 km/h behind a deadlocked NPC.
+
 ## Modern cabin and Kenney sedan-sports
 
 ### cabin3_cockpit_straight.png
