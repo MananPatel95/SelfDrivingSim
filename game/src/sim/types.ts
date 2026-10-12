@@ -37,6 +37,7 @@ export type EntityClass =
   | 'car' | 'truck' | 'bus' | 'motorcycle' | 'bicycle'
   | 'pedestrian' | 'cyclist'
   | 'traffic_light' | 'traffic_sign' | 'pole' | 'tree'
+  | 'stop_sign' | 'yield_sign'
   | 'building' | 'barrier' | 'cone'
   | 'train' | 'ship' | 'boat' | 'buoy'
   | 'bridge' | 'platform' | 'signal' | 'quay';
@@ -116,6 +117,8 @@ export interface Intersection {
   incomingLanes: number[];
   outgoingLanes: number[];
   trafficLightIds: number[];
+  /** Seeded mix: all-way stop, yield on the minor road, or uncontrolled. */
+  control?: 'stop' | 'yield' | 'none';
 }
 
 // World state
@@ -271,6 +274,13 @@ export interface PlannerInput {
   occupancyGrid?: Float32Array;
   route: Vec3[];
   trafficLightStates: Map<number, TrafficLightState>;
+  /** Shared stop / yield / uncontrolled decision for this frame. */
+  rule?: {
+    maxSpeed: number;
+    mustStop: boolean;
+    reason: string;
+    severity: 'go' | 'slow' | 'brake';
+  };
 }
 
 export interface PlannerOutput {
@@ -279,6 +289,8 @@ export interface PlannerOutput {
   steering: number;
   candidateTrajectories?: Trajectory[];
   selectedTrajectoryIndex?: number;
+  reason?: string;
+  severity?: 'go' | 'slow' | 'brake';
 }
 
 // Stack profile interface
