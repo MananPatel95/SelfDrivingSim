@@ -4,11 +4,13 @@ import {
   MAX_COSMETIC_ROLL,
   MAX_COSMETIC_PITCH,
   BODY_CLEARANCE,
+  BODY_HALF_WIDTH,
   lowestWheelPointY,
   lowestBodyPointY,
   plantedVehiclePose,
   clampCosmeticAttitude,
   noseInSimPlane,
+  tireOuterHalfWidth,
 } from './vehicleVisual';
 
 describe('planted wheels stay on the road', () => {
@@ -52,6 +54,11 @@ describe('planted wheels stay on the road', () => {
   it('does not put any body corner under the road at huge commanded roll', () => {
     const y = lowestBodyPointY(1.2, 0.8);
     expect(y - ROAD_SURFACE_Y).toBeGreaterThanOrEqual(0.12);
+  });
+
+  it('keeps every tire inside the body / wheel-arch half-width', () => {
+    expect(tireOuterHalfWidth()).toBeLessThan(BODY_HALF_WIDTH - 0.02);
+    expect(BODY_HALF_WIDTH).toBeGreaterThan(0.9);
   });
 
   it('points the nose along the heading, not sideways or backward', () => {

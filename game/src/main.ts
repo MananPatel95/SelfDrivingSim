@@ -9,12 +9,10 @@ import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
 import { COCKPIT, handWheelRotation } from './sim/cabinView';
+import { buildEgoVisual } from './sim/egoMesh';
 import {
   AXLE_HEIGHT,
-  BODY_PARTS,
   ROAD_SURFACE_Y,
-  VISUAL_WHEEL_RADIUS,
-  WHEEL_PLAN_OFFSETS,
   clampCosmeticAttitude,
   meshYawForHeading,
 } from './sim/vehicleVisual';
@@ -2402,6 +2400,46 @@ function beginGame(mode: 'manual' | 'autopilot') {
   if (mode === 'manual') showDriveHintOnce();
 }
 
+function hideChrome() {
+  photoMode = true;
+  showAIView = false;
+  showGroundTruth = false;
+  document.getElementById('status-panel')?.classList.add('hidden');
+  document.getElementById('left-hud-stack')?.classList.add('hidden');
+  document.getElementById('drive-badge')?.classList.add('hidden');
+  document.getElementById('ai-view-panel')?.classList.remove('visible');
+  document.getElementById('decision-banner')?.classList.remove('visible');
+  document.getElementById('view-explainer')?.classList.add('hidden');
+  document.getElementById('drive-hint')?.classList.remove('visible');
+  document.getElementById('bev-overlay')?.classList.remove('visible');
+  document.getElementById('minimap')?.classList.add('hidden');
+  document.getElementById('start-menu')?.classList.add('hidden');
+  perceptionViz?.setEnabled(false);
+}
+
+/** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|exterior|side */
+function applyShot(kind: string) {
+  beginGame('manual');
+  hideChrome();
+  takeManual(true);
+  inputState.left = false;
+  inputState.right = false;
+  if (kind === 'cabin' || kind === 'cabin-a' || kind === 'cabin-d') {
+    setCameraMode('hood');
+    if (kind === 'cabin-a') inputState.left = true;
+    if (kind === 'cabin-d') inputState.right = true;
+  } else if (kind === 'exterior') {
+    debugSideCam = null;
+    setCameraMode('orbit');
+    orbitYaw = 0.78;
+    orbitPitch = 0.22;
+    orbitDist = 7.2;
+    camFollowReady = false;
+  } else if (kind === 'side') {
+    debugSideCam = { height: 0.30, side: 5.2, lookY: 0.36 };
+  }
+}
+
 let lastTime = 0;
 let displayFps = 0;
 let fpsFrames = 0;
@@ -2543,118 +2581,12 @@ function updateAIView(drawRawScene: boolean) {
   }
 }
 
-// Create a more detailed ego vehicle mesh
 function createEgoVehicle(): THREE.Group {
-  const group = new THREE.Group();
-
-  // Body rotates about the axle so wheels stay planted on the road.
-  egoBodyPivot = new THREE.Group();
-  egoBodyPivot.position.y = AXLE_HEIGHT;
-  group.add(egoBodyPivot);
-
-  const pearl = new THREE.MeshLambertMaterial({ color: 0xe7eef6 });
-  const cladding = new THREE.MeshLambertMaterial({ color: 0x1b212a });
-  const black = new THREE.MeshLambertMaterial({ color: 0x12151b });
-  const glass = new THREE.MeshLambertMaterial({
-    color: 0xb7d4ea, transparent: true, opacity: 0.28, side: THREE.DoubleSide,
-  });
-  const glassSide = new THREE.MeshLambertMaterial({
-    color: 0x8eb4cc, transparent: true, opacity: 0.32, side: THREE.DoubleSide,
-  });
-  const lamp = new THREE.MeshLambertMaterial({ color: 0xf7fbff, emissive: 0xd0f2ff, emissiveIntensity: 1 });
-  const tail = new THREE.MeshLambertMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 0.75 });
-  const leather = new THREE.MeshLambertMaterial({ color: 0x23272e, side: THREE.DoubleSide });
-  const metal = new THREE.MeshLambertMaterial({ color: 0xd5dbe3, side: THREE.DoubleSide });
-  const screen = new THREE.MeshLambertMaterial({ color: 0x0e3038, emissive: 0x1c7a88, emissiveIntensity: 0.45 });
-  const notchMat = new THREE.MeshLambertMaterial({ color: 0xfff4dc, emissive: 0xffd98a, emissiveIntensity: 0.8 });
-
-  const addBox = (
-    w: number, h: number, d: number,
-    x: number, y: number, z: number,
-    mat: THREE.Material,
-    rotZ = 0,
-  ) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-    mesh.position.set(x, y, z);
-    if (rotZ) mesh.rotation.z = rotZ;
-    mesh.castShadow = true;
-    egoBodyPivot!.add(mesh);
-    return mesh;
-  };
-
-  for (const part of BODY_PARTS) {
-    addBox(part.halfX * 2, part.halfY * 2, part.halfZ * 2, part.cx, part.cy, part.cz, pearl);
-  }
-  // Dark rocker line, full-width lamps, black roof over a raked greenhouse.
-  addBox(2.2, 0.08, 0.04, 0.05, 0.08, 0.78, cladding);
-  addBox(2.2, 0.08, 0.04, 0.05, 0.08, -0.78, cladding);
-  const hood = addBox(1.35, 0.04, 1.28, 1.28, 0.56, 0, pearl, -0.08);
-  hood.material = new THREE.MeshLambertMaterial({ color: 0xe7eef6, side: THREE.DoubleSide });
-  addBox(0.03, 0.05, 1.15, 2.38, 0.48, 0, lamp);
-  addBox(0.03, 0.07, 0.55, 2.38, 0.28, 0, black);
-  addBox(0.03, 0.045, 1.15, -2.28, 0.46, 0, tail);
-  addBox(0.9, 0.04, 1.05, -0.18, 1.08, 0, black);
-  const windshield = addBox(0.02, 0.62, 1.08, 0.5, 0.82, 0, glass, 0.5);
-  windshield.castShadow = false;
-  addBox(0.03, 0.6, 0.035, 0.48, 0.82, 0.52, black, 0.5);
-  addBox(0.03, 0.6, 0.035, 0.48, 0.82, -0.52, black, 0.5);
-  addBox(0.85, 0.36, 0.02, -0.12, 0.82, 0.6, glassSide).castShadow = false;
-  addBox(0.85, 0.36, 0.02, -0.12, 0.82, -0.6, glassSide).castShadow = false;
-  addBox(0.02, 0.4, 0.95, -0.72, 0.84, 0, glass, -0.45).castShadow = false;
-  addBox(0.1, 0.04, 0.14, 0.32, 0.7, 0.8, black);
-  addBox(0.1, 0.04, 0.14, 0.32, 0.7, -0.8, black);
-
-  const dash = addBox(0.55, 0.12, 1.16, 0.78, 0.5, 0, black);
-  dash.castShadow = false;
-  addBox(0.22, 0.05, 0.42, 0.55, 0.56, 0.28, black).castShadow = false;
-  addBox(0.015, 0.09, 0.26, 1.02, 0.58, 0, screen).castShadow = false;
-  addBox(0.7, 0.16, 0.035, -0.05, 0.52, 0.58, black).castShadow = false;
-  addBox(0.7, 0.16, 0.035, -0.05, 0.52, -0.58, black).castShadow = false;
-
-  const { wheel } = COCKPIT;
-  egoSteerWheel = new THREE.Group();
-  egoSteerWheel.position.set(wheel.x, wheel.y, wheel.z);
-  const wheelRim = new THREE.Mesh(
-    new THREE.TorusGeometry(COCKPIT.wheelRadius, 0.015, 12, 32),
-    leather,
-  );
-  wheelRim.rotation.y = Math.PI / 2;
-  egoSteerWheel.add(wheelRim);
-  for (const ang of [0, (2 * Math.PI) / 3, (4 * Math.PI) / 3]) {
-    const spoke = new THREE.Mesh(
-      new THREE.BoxGeometry(0.012, COCKPIT.wheelRadius * 0.9, 0.016),
-      metal,
-    );
-    spoke.position.set(0, Math.cos(ang) * COCKPIT.wheelRadius * 0.4, Math.sin(ang) * COCKPIT.wheelRadius * 0.4);
-    spoke.rotation.x = ang;
-    egoSteerWheel.add(spoke);
-  }
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.042, 0.045, 16), metal);
-  hub.rotation.z = Math.PI / 2;
-  egoSteerWheel.add(hub);
-  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.032, 0.026), notchMat);
-  notch.position.set(-0.02, COCKPIT.wheelRadius * 0.82, 0);
-  egoSteerWheel.add(notch);
-  egoBodyPivot.add(egoSteerWheel);
-
-  egoWheels = [];
-  const tireGeo = new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, 0.28, 18);
-  const rimGeo = new THREE.TorusGeometry(0.2, 0.035, 8, 16);
-  const tireMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const rimMat = new THREE.MeshLambertMaterial({ color: 0xd0d5de });
-  for (const spec of WHEEL_PLAN_OFFSETS) {
-    const pivot = new THREE.Group();
-    pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
-    const tire = new THREE.Mesh(tireGeo, tireMat);
-    const rim = new THREE.Mesh(rimGeo, rimMat);
-    tire.rotation.x = Math.PI / 2;
-    pivot.add(tire);
-    pivot.add(rim);
-    group.add(pivot);
-    egoWheels.push({ pivot, mesh: tire, front: spec.front });
-  }
-
-  return group;
+  const visual = buildEgoVisual();
+  egoBodyPivot = visual.bodyPivot;
+  egoSteerWheel = visual.steerWheel;
+  egoWheels = visual.wheels;
+  return visual.group;
 }
 
 async function init() {
@@ -2707,6 +2639,8 @@ async function init() {
   syncDriveBadge();
 
   document.getElementById('loading')!.classList.add('hidden');
+  const shot = new URLSearchParams(window.location.search).get('shot');
+  if (shot) applyShot(shot);
   lastTime = performance.now();
   requestAnimationFrame(animate);
   (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
@@ -2747,6 +2681,12 @@ async function init() {
       showPhysDebug = true;
       const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
       if (box) box.checked = true;
+    },
+    applyShot,
+    setCameraMode,
+    holdSteer(dir: 'left' | 'right' | 'none') {
+      inputState.left = dir === 'left';
+      inputState.right = dir === 'right';
     },
   };
   console.log('AUTONOMY CITY started!');
