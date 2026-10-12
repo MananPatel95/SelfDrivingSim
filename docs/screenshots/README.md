@@ -18,6 +18,9 @@ Waabi-style BEV overlay (F3) showing:
 - Occupancy heatmaps (current, +1s, +2s, +3s)
 - Sim World variant table (20+ variants with pass/fail)
 
+### verify-f3-perf.png
+F3 after the 10 Hz occupancy overlay (`?demo=lane&stack=waabi`): ground voxels, AI View occupancy inset, Current/+1s/+2s/+3s heatmaps, trajectory fan. Visualisation is the same; the overlay no longer recasts roof lidar.
+
 ### 04-compare-mode.png
 Compare mode (M key) split-screen:
 - Left: Tesla-style voxels with depth jitter
@@ -32,6 +35,37 @@ MANUAL badge after WASD / T takeover.
 
 ### 11-collision.png
 Ego stopped against an NPC with COLLISION flash (no interpenetration).
+
+## First-person cockpit (live driving)
+
+Live hood-camera stills (not `?shot=cabin` rigs). Compare with a real Model 3/Y interior.
+
+### fp_straight.png
+First person while driving straight: locked eye point, Kenney body hidden, open windshield (no A-pillars or header), solid full-width dash filling the lower ~30% of the frame, two-spoke wheel, tablet inset to the right of the wheel.
+
+### fp_steer_left.png
+Full left lock (~450°) while driving.
+
+### fp_steer_right.png
+Full right lock while driving.
+
+### fp_intersection_50.png
+First person at about 50 km/h at an intersection.
+
+### compare_fp_straight.png / compare_fp_steer_left.png / compare_fp_steer_right.png / compare_fp_intersection_50.png
+Side-by-side of the Tesla Model 3/Y reference (left) and the live hood shot (right).
+
+### hud_panels_open.png
+Right-side column with explainer, AI View, and info all open — no overlap.
+
+### hud_panels_collapsed.png
+One card collapsed in the column.
+
+### hud_panels_dragged.png
+One card dragged off the stack, still clear of the minimap / speed HUD / banner.
+
+### autopilot_engaged.png
+Centre banner after T / banner click re-engages Auto.
 
 ## Environment Effects
 
@@ -57,6 +91,17 @@ Minimap marks stop (red), yield (yellow), and uncontrolled (grey) junctions.
 
 ### 20-traffic-queued-at-stop.png
 Several AI traffic cars stopped at an all-way stop, not colliding.
+
+## Traffic random walk (PR #24)
+
+### 21-traffic-flow-intersection.png
+F2 Waymo BEV after `?seed=3&demo=mix`. Minimap shows AI cars spread across the grid (not piled in one box). Live junctions have magenta NPCs on crossing streets.
+
+### 22-traffic-car-turning.png
+High orbit on the origin junction. An NPC is in the intersection with a fused box; another has already cleared north. Cross-street cars are on the east–west approaches.
+
+### 23-ego-autopilot-intersection.png
+F2, `?seed=3&demo=stop`. Ego AUTOPILOT has fully stopped then is moving through the all-way stop at ~8–10 km/h (`Cruising: lane clear`), not stuck at 0 km/h behind a deadlocked NPC.
 
 ## Modern cabin and Kenney sedan-sports
 

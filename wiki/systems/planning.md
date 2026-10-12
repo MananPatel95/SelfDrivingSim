@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [13, 18, 20, 27]
+sources: [13, 18, 20, 25, 27]
 ---
 
 # Planning and autopilot
@@ -14,9 +14,13 @@ Map clicks still snap to the road axis (`snapToRoad`, [[pr-13]]). Ego trips then
 
 `oracleSupervisor` can take over for imminent VRU collisions when `useOracle` is on (headless).
 
+After a human takeover, **T** / the Manual banner calls `Simulation.reengageAutopilot()` ([[pr-25]]). That rebuilds `mergeIntoLaneRoute` from the current pose and heading: ease into the right-hand lane, then a Manhattan right-lane path to the stored trip destination, or a cruise-ahead path if there was no trip. `plannerState` resets; stop/yield still apply on the next step. Held WASD does not immediately steal control.
+
 ## Key files
 
 - `game/src/planning/planner.ts`
 - `game/src/planning/planner.test.ts`
 - `game/src/sim/rightLane.ts`
 - `game/src/sim/world.ts`
+- `game/src/sim/simulation.ts`
+- `game/src/sim/reengage.test.ts`
