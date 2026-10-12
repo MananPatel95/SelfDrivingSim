@@ -640,10 +640,9 @@ function buildCockpit(): {
   face.rotation.y = -Math.PI / 2;
   face.position.x = -0.006;
   screen.add(bezel, face);
-  // Sit ON the dash: top a little above the shelf, bottom in the dash body.
-  const sit = rayPoint(cam, 0.40, dashTop - 0.08, dashNear + 0.05);
-  screen.position.set(sit.x, sit.y, sit.z);
-  screen.rotation.y = 0.10;
+  // Stand on the shelf: bottom at the dash top, face toward the driver.
+  screen.position.set(front.x + 0.03, front.y + 0.125, -0.22);
+  screen.rotation.y = 0.08;
   const under = new THREE.Vector3(screen.position.x + 0.02, front.y - 0.02, screen.position.z);
   addStrut(
     group,
