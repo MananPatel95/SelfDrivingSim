@@ -83,6 +83,8 @@ export interface EgoState {
   throttleFiltered?: number;
   brakeFiltered?: number;
   inReverse?: boolean;
+  /** Seconds S has been held at a standstill before GTA reverse engages. */
+  reverseHoldSec?: number;
 }
 
 // Traffic light

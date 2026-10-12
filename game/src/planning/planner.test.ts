@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createPlannerState, planTrajectory } from './planner';
-import { createEgoState, updateVehicle } from '../sim/vehicle';
+import { createEgoState, updateVehicle, vehicleInputFromAccel } from '../sim/vehicle';
 import { vec3 } from '../sim/math';
 
 /** North on x=0, then along y=0. Asphalt is the 14 m roads around those lines. */
@@ -35,11 +35,7 @@ describe('autopilot grid corners', () => {
       }, planner);
       planner = newState;
       const accel = output.acceleration;
-      ego = updateVehicle(ego, {
-        throttle: accel > 0 ? accel / 3 : 0,
-        steering: output.steering,
-        brake: accel < 0 ? -accel / 8 : 0,
-      }, dt);
+      ego = updateVehicle(ego, vehicleInputFromAccel(accel, output.steering), dt);
       const x = ego.transform.position.x;
       const y = ego.transform.position.y;
       if (!onAsphalt(x, y)) leftRoad = true;

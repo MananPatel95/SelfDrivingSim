@@ -23,10 +23,10 @@ export const VEHICLE_PARAMS: Record<VehicleType, VehicleParams> = {
     wheelbase: 2.7,
     maxSpeed: 54, // ~194 km/h
     maxAccel: 4.2,
-    maxDecel: 9.0,
+    maxDecel: 9.81, // 1.0 g peak (ABS, dry)
     maxSteeringAngle: 0.55,
     mass: 1480,
-    brakeForce: 14000,
+    brakeForce: 16800,
     dragCoeff: 0.32,
   },
   truck: {
@@ -73,6 +73,22 @@ export interface VehicleInput {
 const G = 9.81;
 const RHO = 1.225;
 const PHYS_SUBSTEPS = 2;
+/** Pad force as a fraction of `brakeForce`; full pedal still saturates ABS. */
+const BRAKE_PAD_GAIN = 0.95;
+/** Longitudinal tyre utilisation under ABS (peak-μ, no lockup). */
+const ABS_MU_UTIL = 1.01;
+/** Brake-pressure rise 1/rate seconds (~0.12 s to full). */
+const BRAKE_PRESSURE_RISE = 8.5;
+const BRAKE_PRESSURE_FALL = 7;
+/** Engine braking / overrun, N. ~0.35 m/s² on the sedan. */
+const ENGINE_BRAKE_N = 520;
+/** Hold S at rest this long before GTA reverse. */
+const REVERSE_DWELL_SEC = 0.28;
+
+/** Autopilot comfort deceleration (m/s²). */
+export const COMFORT_DECEL = 3.0;
+/** Autopilot / oracle emergency deceleration (m/s²). */
+export const EMERGENCY_DECEL = 9.0;
 const GEAR_RATIOS = [3.42, 2.05, 1.38, 1.05, 0.84, 0.67];
 const FINAL_DRIVE = 3.72;
 const REVERSE_RATIO = 3.15;
@@ -149,6 +165,36 @@ function engineTorqueNm(rpm: number): number {
   return 275 + (215 - 275) * (r - 5600) / (REDLINE - 5600);
 }
 
+/**
+ * Map a requested +deceleration (m/s²) onto 0..1 brake pedal.
+ * Comfort (~3) and emergency (~9) share the same sedan brake model.
+ */
+export function brakePedalForDecel(decel: number, vehicleType: VehicleType = 'car'): number {
+  if (!(decel > 0.05)) return 0;
+  const peak = Math.max(VEHICLE_PARAMS[vehicleType].maxDecel, 1);
+  return clamp(decel / peak, 0, 1);
+}
+
+/** Planner/oracle accel (m/s²) → WASD-style vehicle input. */
+export function vehicleInputFromAccel(
+  accel: number,
+  steering: number,
+  vehicleType: VehicleType = 'car'
+): VehicleInput {
+  return {
+    throttle: accel > 0 ? clamp(accel / 3, 0, 1) : 0,
+    steering,
+    brake: accel < 0 ? brakePedalForDecel(-accel, vehicleType) : 0,
+  };
+}
+
+function hudStoppingDistance(speed: number, dyn: CarDynamics): number {
+  if (speed < 0.25) return 0;
+  const peakA = ABS_MU_UTIL * dyn.mu * G + dyn.crr * G + ENGINE_BRAKE_N / dyn.mass;
+  const tRise = 1 / BRAKE_PRESSURE_RISE;
+  return speed * tRise * 0.5 + (speed * speed) / (2 * Math.max(peakA, 1));
+}
+
 function approach(current: number, target: number, dt: number, up: number, down: number): number {
   const rate = Math.abs(target) >= Math.abs(current) && Math.sign(target) === Math.sign(current || target)
     ? up
@@ -208,6 +254,7 @@ function defaultPhysics(state: EgoState) {
     bodyRoll: finite(state.bodyRoll),
     bodyPitch: finite(state.bodyPitch),
     inReverse: !!state.inReverse,
+    reverseHoldSec: finite(state.reverseHoldSec),
   };
 }
 
@@ -234,15 +281,26 @@ function stepDynamics(
   const drag = 0.5 * RHO * dyn.cd * dyn.area * speed * speed;
   const rollR = dyn.crr * dyn.mass * G;
   const dragDir = Math.sign(u || 1);
-  const fxBrake = -dragDir * brakeForce;
+  let fxBrake = -dragDir * brakeForce;
   const fxHb = -dragDir * handbrake * 9000;
-  let fx = driveForce + fxBrake + fxHb - dragDir * (drag + rollR);
+  const absLimit = ABS_MU_UTIL * dyn.mu * dyn.mass * G;
+  let fx: number;
+  // ABS: keep longitudinal demand at peak-μ so the tyres do not lock/slide.
+  // Handbrake skips this so Space can still break the rear loose.
+  if (handbrake < 0.25) {
+    fxBrake = clamp(fxBrake, -absLimit, absLimit);
+    const tyreLong = clamp(driveForce + fxBrake + fxHb, -absLimit, absLimit);
+    fx = tyreLong - dragDir * (drag + rollR);
+  } else {
+    fx = driveForce + fxBrake + fxHb - dragDir * (drag + rollR);
+  }
   if (Math.abs(u) > 50) fx -= dragDir * (Math.abs(u) - 50) * 180;
 
   const parked = Math.abs(driveForce) < 120 && brakeForce < 40 && handbrake < 0.05 && Math.abs(u) < 0.25;
-  let uDot = parked ? -u * 18 : fx / dyn.mass;
+  const brakeHold = brakeForce > 250 && Math.abs(u) < 0.35 && Math.abs(driveForce) < 200 && handbrake < 0.25;
+  let uDot = parked || brakeHold ? -u * 22 : fx / dyn.mass;
   let nu = u + uDot * dt;
-  if (parked || (Math.abs(nu) < 0.05 && Math.abs(driveForce) < 40 && brakeForce < 40)) nu = 0;
+  if (parked || brakeHold || (Math.abs(nu) < 0.05 && Math.abs(driveForce) < 40 && brakeForce < 40)) nu = 0;
   if (brakeForce > 200 && Math.sign(nu) !== Math.sign(u) && Math.abs(driveForce) < 80) nu = 0;
 
   const delta = clamp(steer, -0.6, 0.6);
@@ -316,15 +374,27 @@ export function updateVehicle(
   let wantThrottle = Math.max(0, rawThrottle);
   let wantBrake = rawBrake;
   let inReverse = p.inReverse;
+  let reverseHoldSec = p.reverseHoldSec;
 
   if (input.gtaReverse) {
     const stopped = Math.abs(p.bodyVx) < 0.4 && Math.abs(p.bodyVy) < 0.4;
+    if (!inReverse && stopped && rawBrake > 0.15 && wantThrottle < 0.05) {
+      reverseHoldSec += dt;
+    } else if (!inReverse) {
+      reverseHoldSec = 0;
+    }
     if (rawBrake > 0.15 && stopped && wantThrottle < 0.05) {
-      inReverse = true;
-      wantThrottle = rawBrake;
-      wantBrake = 0;
+      if (inReverse || reverseHoldSec >= REVERSE_DWELL_SEC) {
+        inReverse = true;
+        wantThrottle = rawBrake;
+        wantBrake = 0;
+      } else {
+        wantBrake = Math.max(wantBrake, rawBrake);
+        wantThrottle = 0;
+      }
     } else if (p.bodyVx > 0.6 || wantThrottle > 0.2) {
       inReverse = false;
+      reverseHoldSec = 0;
     }
     if (inReverse && rawBrake > 0.05 && wantThrottle < 0.05) {
       wantThrottle = rawBrake;
@@ -349,7 +419,7 @@ export function updateVehicle(
 
   const steerFilt = approachSteer(p.steerFiltered, rawSteer, dt);
   const thrFilt = approach(p.throttleFiltered, wantThrottle, dt, 4.2, 6.5);
-  const brkFilt = approach(p.brakeFiltered, wantBrake, dt, 8, 7);
+  const brkFilt = approach(p.brakeFiltered, wantBrake, dt, BRAKE_PRESSURE_RISE, BRAKE_PRESSURE_FALL);
   const hbFilt = approach(state.handbrake ?? 0, rawHb, dt, 10, 8);
 
   const speed = Math.hypot(p.bodyVx, p.bodyVy);
@@ -377,8 +447,12 @@ export function updateVehicle(
   let driveForce = (torque * liveRatio * FINAL_DRIVE * DRIVELINE_EFF) / dyn.wheelRadius;
   if (inReverse) driveForce = -Math.min(Math.max(driveForce, 2200 * thrFilt), 4200);
   else driveForce = Math.min(driveForce, 7200);
+  if (!inReverse && thrFilt < 0.1 && Math.abs(p.bodyVx) > 0.55) {
+    const fade = 1 - thrFilt / 0.1;
+    driveForce -= Math.sign(p.bodyVx) * ENGINE_BRAKE_N * fade;
+  }
 
-  const brakeForce = brkFilt * params.brakeForce * 0.72;
+  const brakeForce = brkFilt * params.brakeForce * BRAKE_PAD_GAIN;
 
   const h = dt / PHYS_SUBSTEPS;
   let x = state.transform.position.x;
@@ -412,13 +486,13 @@ export function updateVehicle(
   const vx = u * c - v * s;
   const vy = u * s + v * c;
   const worldSpeed = Math.hypot(vx, vy);
-  const stoppingDistance = (worldSpeed * worldSpeed) / (2 * params.maxDecel);
+  const stoppingDistance = hudStoppingDistance(worldSpeed, dyn);
 
   // Cosmetic only, from body accel in g — not from the huge slip-angle number.
   const targetRoll = clamp((-ay / G) * 0.07, -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
-  const targetPitch = clamp((-ax / G) * 0.045, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
+  const targetPitch = clamp((-ax / G) * 0.05, -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
   const bodyRoll = clamp(approach(p.bodyRoll, targetRoll, dt, 3.5, 3.5), -MAX_COSMETIC_ROLL, MAX_COSMETIC_ROLL);
-  const bodyPitch = clamp(approach(p.bodyPitch, targetPitch, dt, 3.2, 3.2), -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
+  const bodyPitch = clamp(approach(p.bodyPitch, targetPitch, dt, 6.5, 4.2), -MAX_COSMETIC_PITCH, MAX_COSMETIC_PITCH);
   const wheelSpin = p.wheelSpin + (u / dyn.wheelRadius) * dt;
 
   return {
@@ -450,6 +524,7 @@ export function updateVehicle(
     throttleFiltered: thrFilt,
     brakeFiltered: brkFilt,
     inReverse,
+    reverseHoldSec,
   };
 }
 
@@ -484,6 +559,7 @@ export function createEgoState(
     throttleFiltered: 0,
     brakeFiltered: 0,
     inReverse: false,
+    reverseHoldSec: 0,
   };
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { generateCityMap, nearestGridLine } from './world';
 import { vec3 } from './math';
 import { createPlannerState, planTrajectory } from '../planning/planner';
-import { createEgoState, updateVehicle } from './vehicle';
+import { createEgoState, updateVehicle, vehicleInputFromAccel } from './vehicle';
 import {
   LANE_OFFSET,
   inRightLane,
@@ -74,11 +74,7 @@ describe('right-hand traffic lanes', () => {
       }, planner);
       planner = newState;
       const accel = output.acceleration;
-      ego = updateVehicle(ego, {
-        throttle: accel > 0 ? accel / 3 : 0,
-        steering: output.steering,
-        brake: accel < 0 ? -accel / 8 : 0,
-      }, dt);
+      ego = updateVehicle(ego, vehicleInputFromAccel(accel, output.steering), dt);
       const x = ego.transform.position.x;
       const y = ego.transform.position.y;
       const yaw = ego.transform.rotation;

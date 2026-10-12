@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 26]
+sources: [1, 20, 22, 24, 25, 26, 27]
 ---
 
 # Wiki log
@@ -73,3 +73,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #26 F3 Waabi view: 10 Hz occupancy, skip duplicate lidar
 
 ## [2026-10-12] merge | origin/main (#24 traffic, #25 cockpit) into PR #26 F3 view
+
+## [2026-10-12] ingest | PR #27 dry ABS sedan braking (~1 g, 36–40 m from 100 km/h)
+
+## [2026-10-12] merge | PR #26 F3 view into PR #27 braking

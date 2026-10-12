@@ -23,7 +23,7 @@ import {
 
 export type ZoneType = 'city';
 import { vec3, vec3Distance, vec3Length, SeededRandom, egoToWorld } from './math';
-import { createEgoState, updateVehicle, VehicleInput } from './vehicle';
+import { createEgoState, updateVehicle, VehicleInput, vehicleInputFromAccel } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
 import { planTrajectory, createPlannerState, PlannerState, oracleSupervisor } from '../planning/planner';
@@ -496,11 +496,7 @@ export class Simulation {
       );
       
       if (oracleResult.takeover) {
-        vehicleInput = {
-          throttle: oracleResult.accel! > 0 ? oracleResult.accel! / 3 : 0,
-          steering: oracleResult.steering!,
-          brake: oracleResult.accel! < 0 ? -oracleResult.accel! / 8 : 0,
-        };
+        vehicleInput = vehicleInputFromAccel(oracleResult.accel!, oracleResult.steering!);
         this.state.controlSource = 'oracle';
         takeover = {
           timestamp: this.state.timestamp,
@@ -510,19 +506,11 @@ export class Simulation {
         };
         this.state.lastTakeover = takeover;
       } else {
-        vehicleInput = {
-          throttle: plannerOutput.acceleration > 0 ? plannerOutput.acceleration / 3 : 0,
-          steering: plannerOutput.steering,
-          brake: plannerOutput.acceleration < 0 ? -plannerOutput.acceleration / 8 : 0,
-        };
+        vehicleInput = vehicleInputFromAccel(plannerOutput.acceleration, plannerOutput.steering);
         this.state.controlSource = 'policy';
       }
     } else {
-      vehicleInput = {
-        throttle: plannerOutput.acceleration > 0 ? plannerOutput.acceleration / 3 : 0,
-        steering: plannerOutput.steering,
-        brake: plannerOutput.acceleration < 0 ? -plannerOutput.acceleration / 8 : 0,
-      };
+      vehicleInput = vehicleInputFromAccel(plannerOutput.acceleration, plannerOutput.steering);
       this.state.controlSource = 'policy';
     }
 
