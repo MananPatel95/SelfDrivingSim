@@ -2794,8 +2794,9 @@ async function init() {
 
   initThreeJS();
 
+  const seedParam = Number(new URLSearchParams(window.location.search).get('seed'));
   simulation = new Simulation({
-    seed: Date.now(),
+    seed: Number.isFinite(seedParam) && seedParam > 0 ? seedParam : 3,
     profile: 'baseline_lidar',
     environment: { timeOfDay: 'day', weather: 'clear', visibility: 1 },
     useOracle: false,
