@@ -1,0 +1,44 @@
+---
+tags: [source]
+updated: 2026-10-12
+sources: []
+---
+
+# F3 Waabi view performance (branch `cursor/f3-view-perf-d05a`)
+
+## What changed
+
+The F3 overlay no longer recasts a full `roofLidar` cloud against all 595 static entities every 200 ms. Occupancy, the trajectory fan, and Sim World run at 10 Hz from traffic + pedestrians into pooled grids. Heatmaps use RGBA `ImageData` instead of per-cell `fillStyle`/`fillRect`. 3D occupancy voxels already used `InstancedMesh`; prediction lines and the plan polyline now write into existing attributes. `npm run bench:views` reports F1/F2/F3 subsystem times; `f3Perf.test.ts` bounds lidar scans, occupancy allocs, and F3 work.
+
+Headless CPU (Node, no WASM batch): F3 extra **199 ms → 0.30 ms** (~667×). The 199 ms was almost entirely a duplicate `simulateLidarScan(roofLidar)` (`181 ms` of 23k rays × 641 boxes). Occupancy splat was already 0.05–0.14 ms.
+
+Chrome headless + SwiftShader (this VM, software GL ~8–10 fps for every view):
+
+| Size | F1 fps | F2 fps | F3 fps | F3 within 10% of F1 |
+| --- | --- | --- | --- | --- |
+| 1280×720 | 9.8 | 9.9 | 9.7 | yes |
+| 1920×1080 | 8.3 | 7.2 | 7.9 | yes |
+
+F3 overlay work on the live path: `lidarScans = 0`, `occupancyAllocs` stay at the 16-grid pool, `staticEntitiesTouched = 0`. Shared 3D fill-rate, not occupancy, sets FPS here. On an M-series GPU where F1 is ≥60, F3’s extra 0.3 ms is ~2% of a 16.7 ms frame.
+
+## Why
+
+User report: F3 Waabi-style view was very slow. Target: F3 within ~10% of F1 FPS, ≥60 fps at 1080p with normal traffic, visualisation unchanged.
+
+## Pages touched
+
+perception-waabi, ai-view, bev-overlay, lidar-wasm, testing, main-ts, game-loop
+
+## Claims superseded
+
+The live F3 HUD no longer calls `runWaabiStack`. Occupancy still comes from TypeScript `createBEVOccupancyFromAgents` (not WASM `fill_occupancy`). Lidar `cast_rays` stays in Rust/WASM for the simulation scan; F3 does not add a TypeScript fallback.
+
+## Key files
+
+- `game/src/stacks/waabi.ts`
+- `game/src/render/bevOverlay.ts`
+- `game/src/render/occupancyPaint.ts`
+- `game/src/render/perceptionViz.ts`
+- `game/src/render/f3Perf.test.ts`
+- `game/scripts/bench-views.ts`
+- `game/src/main.ts`

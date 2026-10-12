@@ -55,3 +55,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #22 sedan-sports + connected cockpit
 
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
+
+## [2026-10-12] ingest | cursor/f3-view-perf-d05a F3 Waabi view: 10 Hz occupancy, skip duplicate lidar

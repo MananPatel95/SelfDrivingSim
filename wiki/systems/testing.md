@@ -16,7 +16,9 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 - `intersectionRules.test.ts` — ~1/3 mix, full stop, yield-to-major, yield-to-right, Tesla HUD count, Manual banner
 - `trafficStop.test.ts` — several NPCs at an all-way stop: each full-stops, no overlap, they leave in arrival order
 
-Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png`.
+`npm run bench:views` (`game/scripts/bench-views.ts`) prints F1/F2/F3 subsystem times. Pass `--browser` to also measure rAF FPS in headless Chrome at 1280×720 and 1920×1080 (`?demo=lane&stack=`). `src/render/f3Perf.test.ts` bounds F3 lidar scans (must stay 0 on the overlay path), occupancy allocs after warmup, static-entity walks, and PerceptionVisualizer typed-array allocs.
+
+Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png`. F3 occupancy stills: `verify-f3-dense-occupancy.png` and `verify-f3-perf.png` (`?demo=lane&stack=waabi`).
 
 ## Key files
 
@@ -25,4 +27,6 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/rightLane.test.ts`
 - `game/src/sim/intersectionRules.test.ts`
 - `game/src/sim/trafficStop.test.ts`
+- `game/src/render/f3Perf.test.ts`
+- `game/scripts/bench-views.ts`
 - `docs/screenshots/README.md`

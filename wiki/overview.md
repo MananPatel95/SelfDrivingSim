@@ -28,6 +28,7 @@ It is an educational sim, not a product of the named companies.
 - `make dev` rebuilds WASM then starts Vite.
 - `cd game && npm run dev` is enough when `game/crates/autonomy-sim/pkg/` is already committed.
 - Tests: `cd game && npm test` (Vitest). Full: `make test`.
+- View benchmark: `cd game && npm run bench:views` (add `--browser` for Chrome FPS).
 
 ## Key files
 

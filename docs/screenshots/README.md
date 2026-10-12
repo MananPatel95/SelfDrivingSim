@@ -18,6 +18,9 @@ Waabi-style BEV overlay (F3) showing:
 - Occupancy heatmaps (current, +1s, +2s, +3s)
 - Sim World variant table (20+ variants with pass/fail)
 
+### verify-f3-perf.png
+F3 after the 10 Hz occupancy overlay (`?demo=lane&stack=waabi`): ground voxels, AI View occupancy inset, Current/+1s/+2s/+3s heatmaps, trajectory fan. Visualisation is the same; the overlay no longer recasts roof lidar.
+
 ### 04-compare-mode.png
 Compare mode (M key) split-screen:
 - Left: Tesla-style voxels with depth jitter

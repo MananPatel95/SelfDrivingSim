@@ -29,30 +29,14 @@ import {
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
-  WAABI_INFO_CARD, WaabiStackState, runWaabiStack,
-  BEVOccupancy, AdversarialVariant
+  WAABI_INFO_CARD,
 } from './stacks/waabi';
 import { TESLA_INFO_CARD, detectVisibleAgents, hudDetectionCount, type VisionDetection } from './stacks/tesla';
 import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
+import { getDisplayedOccupancy, tickWaabiBevOverlay } from './render/bevOverlay';
+import { f3WorkStats } from './stacks/waabi';
 import { LIDAR_CONFIGS } from './sensors/lidar';
 import type { LidarConfig } from './sim/types';
-
-let waabiState: WaabiStackState = {
-  tracks: [],
-  occupancy: {
-    current: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t1s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t2s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t3s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-  },
-  candidateTrajectories: [],
-  selectedTrajectoryIndex: 0,
-  simWorld: {
-    replayBuffer: [],
-    variants: [],
-    lastGenerationTime: 0,
-  },
-};
 
 let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
@@ -1418,212 +1402,19 @@ function updateOverlaysForStack(profile: StackProfile) {
   updateViewExplainer(profile);
 }
 
-// Render BEV occupancy heatmaps for Waabi
-function renderBEVHeatmaps() {
+function renderBEVHeatmaps(nowMs: number) {
   if (!bevOverlayEnabled) return;
-  
-  const canvas = document.getElementById('bev-canvas') as HTMLCanvasElement;
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d')!;
   const state = simulation.getState();
-  
-  // Run Waabi stack to get real occupancy and trajectories
-  const entities = [
-    ...state.worldMap.staticEntities,
-    ...state.trafficVehicles,
-    ...state.pedestrians,
-  ];
-  
-  const waabiResult = runWaabiStack(
-    state.ego,
-    entities,
-    state.environment,
-    waabiState,
-    state.timestamp,
-    42,
-    10
-  );
-  waabiState = waabiResult.newState;
-  
-  // Clear canvas
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  const cellWidth = canvas.width / 4;
-  const cellHeight = canvas.height / 2;
-  
-  // Draw 4 occupancy grids: current, +1s, +2s, +3s
-  const grids = [
-    { occ: waabiResult.occupancy.current, label: 'Current', x: 0, y: 0 },
-    { occ: waabiResult.occupancy.t1s, label: '+1s', x: cellWidth, y: 0 },
-    { occ: waabiResult.occupancy.t2s, label: '+2s', x: cellWidth * 2, y: 0 },
-    { occ: waabiResult.occupancy.t3s, label: '+3s', x: cellWidth * 3, y: 0 },
-  ];
-  
-  grids.forEach(({ occ, label, x, y }, i) => {
-    // Draw grid background/border
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 1, y + 1, cellWidth - 4, cellHeight - 22);
-    
-    ctx.fillStyle = '#12182a';
-    ctx.fillRect(x + 2, y + 2, cellWidth - 6, cellHeight - 24);
-    renderOccupancyGrid(ctx, occ, x + 2, y + 2, cellWidth - 6, cellHeight - 24);
-    
-    // Draw label
-    ctx.fillStyle = i === 0 ? '#00ffff' : '#888';
-    ctx.font = '10px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, x + cellWidth / 2, y + cellHeight - 5);
+  tickWaabiBevOverlay({
+    ego: state.ego,
+    traffic: state.trafficVehicles,
+    pedestrians: state.pedestrians,
+    timestamp: state.timestamp,
+    nowMs,
+    canvas: document.getElementById('bev-canvas') as HTMLCanvasElement | null,
+    variantsBody: document.getElementById('simworld-variants'),
+    variantsStats: document.getElementById('simworld-stats'),
   });
-  
-  // Draw trajectory fan in bottom half
-  ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height - 20);
-  ctx.scale(3, -3); // Scale and flip Y
-  
-  // Draw all candidate trajectories
-  waabiResult.trajectories.forEach((traj, i) => {
-    const isSelected = i === waabiState.selectedTrajectoryIndex;
-    ctx.strokeStyle = isSelected ? '#00ff00' : '#ff6600';
-    ctx.lineWidth = isSelected ? 0.5 : 0.2;
-    ctx.globalAlpha = isSelected ? 1 : 0.5;
-    
-    ctx.beginPath();
-    traj.points.forEach((pt, j) => {
-      const dx = pt.position.x - state.ego.transform.position.x;
-      const dy = pt.position.y - state.ego.transform.position.y;
-      if (j === 0) ctx.moveTo(dx, dy);
-      else ctx.lineTo(dx, dy);
-    });
-    ctx.stroke();
-    
-    // Show cost on selected trajectory
-    if (isSelected && traj.points.length > 0) {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '3px Arial';
-      const lastPt = traj.points[traj.points.length - 1]!;
-      const dx = lastPt.position.x - state.ego.transform.position.x;
-      const dy = lastPt.position.y - state.ego.transform.position.y;
-      ctx.fillText(`Cost: ${traj.cost.toFixed(1)}`, dx + 1, dy);
-    }
-  });
-  
-  ctx.globalAlpha = 1;
-  ctx.restore();
-  
-  // Update Sim World table
-  updateSimWorldTable(waabiState.simWorld.variants);
-}
-
-// Render a single occupancy grid
-function renderOccupancyGrid(
-  ctx: CanvasRenderingContext2D,
-  occ: BEVOccupancy,
-  x: number, y: number,
-  width: number, height: number
-) {
-  if (occ.grid.length === 0) return;
-  
-  const gridSize = Math.sqrt(occ.grid.length);
-  const cellW = width / gridSize;
-  const cellH = height / gridSize;
-  
-  for (let gy = 0; gy < gridSize; gy++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const value = occ.grid[gy * gridSize + gx] || 0;
-      if (value > 0.01) {
-        // Heatmap color: blue (low) -> red (high)
-        const r = Math.min(255, Math.floor(value * 255 * 2));
-        const g = Math.max(0, Math.min(255, Math.floor((1 - value) * 255)));
-        const b = Math.max(0, 150 - Math.floor(value * 150));
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.fillRect(
-          x + gx * cellW,
-          y + (gridSize - gy - 1) * cellH,
-          Math.max(cellW + 0.8, 3),
-          Math.max(cellH + 0.8, 3)
-        );
-      }
-    }
-  }
-  
-  // Draw ego marker at center
-  ctx.fillStyle = '#00ffff';
-  ctx.beginPath();
-  ctx.arc(x + width / 2, y + height / 2, 2, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// Update Sim World adversarial variants table
-function updateSimWorldTable(variants: AdversarialVariant[]) {
-  const tbody = document.getElementById('simworld-variants');
-  const statsEl = document.getElementById('simworld-stats');
-  if (!tbody || !statsEl) return;
-  
-  // Clear existing rows
-  tbody.innerHTML = '';
-  
-  // Ensure we have at least 20 variants for display
-  const displayVariants = variants.length >= 20 ? variants : generateDisplayVariants(variants);
-  
-  // Count pass/fail
-  let passCount = 0;
-  let failCount = 0;
-  
-  displayVariants.forEach(v => {
-    if (v.result === 'pass') passCount++;
-    else if (v.result === 'fail') failCount++;
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td style="padding: 2px 4px; color: #aaa;">${v.id.slice(0, 10)}</td>
-      <td style="padding: 2px 4px; text-align: center; color: #888;">${v.perturbations[0]?.type || 'mixed'}</td>
-      <td style="padding: 2px 4px; text-align: center;">
-        <span style="color: ${v.result === 'pass' ? '#00ff88' : v.result === 'fail' ? '#ff4444' : '#888'};">
-          ${v.result === 'pass' ? '✓' : v.result === 'fail' ? '✗' : '?'}
-        </span>
-      </td>
-      <td style="padding: 2px 4px; text-align: right; color: ${v.metrics && v.metrics.minTTC < 2 ? '#ffaa00' : '#888'};">
-        ${v.metrics ? v.metrics.minTTC.toFixed(1) + 's' : '-'}
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
-  
-  statsEl.textContent = `${displayVariants.length} variants: ${passCount} pass, ${failCount} fail`;
-}
-
-// Generate display variants when we don't have enough from simulation
-function generateDisplayVariants(existingVariants: AdversarialVariant[]): AdversarialVariant[] {
-  const result = [...existingVariants];
-  const types: Array<'timing' | 'speed' | 'path'> = ['timing', 'speed', 'path'];
-  
-  while (result.length < 20) {
-    const i = result.length;
-    const pertType = types[i % 3];
-    const isPassing = Math.random() > 0.15; // 15% failure rate
-    
-    result.push({
-      id: `variant_${i.toString().padStart(2, '0')}`,
-      description: `${pertType} perturbation`,
-      perturbations: [{
-        actorId: 1000 + i,
-        type: pertType!,
-        delta: (Math.random() - 0.5) * 0.5,
-      }],
-      result: isPassing ? 'pass' : 'fail',
-      metrics: {
-        minTTC: isPassing ? 1.5 + Math.random() * 3 : 0.5 + Math.random() * 0.8,
-        maxDecel: isPassing ? 2 + Math.random() * 3 : 6 + Math.random() * 2,
-        hadCollision: !isPassing && Math.random() > 0.5,
-      },
-    });
-  }
-  
-  return result;
 }
 
 // Initialize compare mode renderers
@@ -2741,9 +2532,10 @@ function animate(time: number) {
 
   if (compareMode) updateCompareMode();
 
+  if (!isPaused && bevOverlayEnabled) renderBEVHeatmaps(time);
+
   if (!isPaused && time - lastAiViewMs >= 200) {
     lastAiViewMs = time;
-    if (bevOverlayEnabled) renderBEVHeatmaps();
     updateAIView(false);
   }
 
@@ -2774,7 +2566,7 @@ function updateAIView(drawRawScene: boolean) {
     showGroundTruth,
     plannerOutput: state.lastPlannerOutput,
     visionDetections: latestVisionDetections,
-    occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
+    occupancy: currentStack === 'waabi' ? getDisplayedOccupancy(performance.now()) : undefined,
     controlSource: state.controlSource,
     rule: state.lastRule,
   };
@@ -2885,6 +2677,10 @@ async function init() {
   if (shot) applyShot(shot);
   const demo = params.get('demo');
   if (demo) applyDemo(demo);
+  const stackParam = params.get('stack');
+  if (stackParam === 'tesla' || stackParam === 'waymo' || stackParam === 'waabi') {
+    switchStack(stackParam);
+  }
   lastTime = performance.now();
   requestAnimationFrame(animate);
   (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
@@ -2928,6 +2724,9 @@ async function init() {
     },
     applyShot,
     setCameraMode,
+    switchStack,
+    getFps: () => displayFps,
+    f3Work: () => ({ ...f3WorkStats }),
     holdSteer(dir: 'left' | 'right' | 'none') {
       inputState.left = dir === 'left';
       inputState.right = dir === 'right';

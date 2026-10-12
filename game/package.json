@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "simulate": "tsx scripts/simulate.ts"
+    "simulate": "tsx scripts/simulate.ts",
+    "bench:views": "tsx scripts/bench-views.ts"
   },
   "dependencies": {
     "onnxruntime-web": "^1.17.0",
