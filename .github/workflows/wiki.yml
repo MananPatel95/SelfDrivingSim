@@ -1,0 +1,33 @@
+name: wiki
+on:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Lint wiki
+        run: python3 scripts/wiki_lint.py
+      - name: Require wiki updates when sources change
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if echo ",${LABELS}," | grep -q ",no-wiki,"; then
+            echo "no-wiki label present; skipping source/wiki coupling check"
+            exit 0
+          fi
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          changed=$(git diff --name-only "${BASE}"...HEAD || git diff --name-only "${BASE}")
+          echo "$changed"
+          src=$(echo "$changed" | grep -E '^(game/|pipeline/|Makefile$|AGENTS.md$)' || true)
+          wiki=$(echo "$changed" | grep -E '^(wiki/|AGENTS.md$|scripts/wiki_lint.py$)' || true)
+          if [ -n "$src" ] && [ -z "$wiki" ]; then
+            echo "Source files changed but nothing under wiki/ did."
+            echo "Update the wiki (see AGENTS.md) or add the no-wiki label."
+            exit 1
+          fi

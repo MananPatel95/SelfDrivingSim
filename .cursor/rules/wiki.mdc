@@ -1,0 +1,23 @@
+---
+description: Keep the LLM wiki in sync with code changes
+globs:
+  - wiki/**/*.md
+  - game/**/*.ts
+  - game/**/*.rs
+  - pipeline/**/*.py
+  - Makefile
+  - AGENTS.md
+---
+
+The project wiki is `wiki/` (see `AGENTS.md`).
+
+When you change behaviour in `game/` or `pipeline/`:
+
+1. Update the affected pages under `wiki/systems/`, `wiki/concepts/`, or `wiki/entities/`.
+2. Add `wiki/sources/pr-NNN.md` for this PR.
+3. Update `wiki/index.md`.
+4. Append `## [YYYY-MM-DD] ingest | PR #N <title>` to `wiki/log.md`.
+
+Only write facts that are true in the code. Flag contradictions when a newer PR supersedes an older page. Run `python3 scripts/wiki_lint.py` before you finish.
+
+Use the `no-wiki` PR label only when the change has no behaviour or docs meaning (chore-only).
