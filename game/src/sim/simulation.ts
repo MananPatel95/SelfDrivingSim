@@ -11,7 +11,8 @@ import {
   CityConfig, WorldMap, generateCityMap, updateTrafficLights,
   TrafficVehicle, updateTrafficVehicle, Pedestrian, updatePedestrian,
   shouldYieldToPedestrian, type RoadActor,
-  generateRideRequest, entityToRoadUser
+  generateRideRequest, entityToRoadUser, spawnGraphTraffic, egoAsTraffic,
+  isLegitimatelyQueued, nudgeOrRespawn,
 } from './world';
 import { mergeIntoLaneRoute, placeInRightLane, rightLaneRoute } from './rightLane';
 import {
@@ -125,7 +126,7 @@ export class Simulation {
     const worldMap = generateCityMap(this.config.seed, this.config.cityConfig);
     const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
     const ego = createEgoState('car', spawnPoint, Math.PI / 2);
-    const trafficVehicles = this.spawnTrafficVehicles(worldMap, 16);
+    const trafficVehicles = this.spawnTrafficVehicles(worldMap, 20);
     const pedestrians = this.spawnPedestrians(worldMap, 22);
     
     // Generate ride request only for city zones
@@ -161,36 +162,22 @@ export class Simulation {
     return 'city';
   }
   
-  private spawnTrafficVehicles(worldMap: WorldMap, count: number): TrafficVehicle[] {
-    const vehicles: TrafficVehicle[] = [];
-    
-    for (let i = 0; i < count; i++) {
-      const laneIdx = this.rng.nextInt(0, worldMap.lanes.length - 1);
-      const lane = worldMap.lanes[laneIdx]!;
-      if (lane.type !== 'driving' || lane.points.length < 2) continue;
-      
-      const progress = this.rng.nextFloat(0.1, 0.9);
-      const pointIdx = Math.floor(progress * (lane.points.length - 1));
-      const point = lane.points[pointIdx]!;
-      
-      vehicles.push({
-        id: this.entityIdCounter++,
-        classType: this.rng.next() < 0.1 ? 'truck' : 'car',
-        transform: { position: point.position, rotation: point.direction },
-        boundingBox: {
-          center: point.position,
-          size: this.rng.next() < 0.1 ? vec3(8, 2.5, 3) : vec3(4.5, 1.8, 1.5),
-          yaw: point.direction,
-        },
-        velocity: vec3(0, 0, 0),
-        isStatic: false,
-        occlusionLevel: 0,
-        laneId: lane.id,
-        laneProgress: progress,
-        targetSpeed: point.speedLimit * this.rng.nextFloat(0.8, 1.0),
-      });
-    }
-    
+  private spawnTrafficVehicles(_worldMap: WorldMap, count: number): TrafficVehicle[] {
+    const egoSpawn = this.config.cityConfig
+      ? { x: this.config.cityConfig.laneWidth, y: -22 }
+      : { x: 3.5, y: -22 };
+    const vehicles = spawnGraphTraffic(
+      count,
+      this.rng,
+      this.entityIdCounter,
+      {
+        gridSize: this.config.cityConfig.gridSize,
+        blockSize: this.config.cityConfig.blockSize,
+        laneWidth: this.config.cityConfig.laneWidth,
+      },
+      { x: egoSpawn.x, y: egoSpawn.y, radius: 18 },
+    );
+    this.entityIdCounter += vehicles.length;
     return vehicles;
   }
   
@@ -321,19 +308,48 @@ export class Simulation {
       book: this.stopBook,
       now: nowSec,
       others: roadUsers,
+      rng: this.rng,
+      city: {
+        gridSize: this.config.cityConfig.gridSize,
+        blockSize: this.config.cityConfig.blockSize,
+        laneWidth: this.config.cityConfig.laneWidth,
+      },
     };
 
-    // Update traffic vehicles — same stop / yield / ROW rules as ego
+    const movers = [...this.state.trafficVehicles, egoAsTraffic(this.state.ego)];
     for (let i = 0; i < this.state.trafficVehicles.length; i++) {
       this.state.trafficVehicles[i] = updateTrafficVehicle(
         this.state.trafficVehicles[i]!,
         this.state.worldMap.lanes,
         trafficLights,
-        this.state.trafficVehicles,
+        movers,
         dt,
         this.state.pedestrians,
         ruleCtx
       );
+    }
+
+    const egoPos = this.state.ego.transform.position;
+    for (let i = 0; i < this.state.trafficVehicles.length; i++) {
+      const car = this.state.trafficVehicles[i]!;
+      const speed = Math.hypot(car.velocity.x, car.velocity.y);
+      const inBox = this.state.worldMap.controlledIntersections.some(inter => {
+        const dx = car.transform.position.x - inter.center.x;
+        const dy = car.transform.position.y - inter.center.y;
+        return dx * dx + dy * dy < 7 * 7;
+      });
+      const queued = isLegitimatelyQueued(car, movers, ruleCtx);
+      let stuck = car.stuckTime ?? 0;
+      if (speed < 0.3) stuck += dt;
+      else stuck = 0;
+      car.stuckTime = stuck;
+      if (inBox && speed < 0.3 && stuck > 1.6) {
+        this.state.trafficVehicles[i] = nudgeOrRespawn(car, this.rng, ruleCtx.city, egoPos, false);
+      } else if (!queued && stuck > 10) {
+        this.state.trafficVehicles[i] = nudgeOrRespawn(car, this.rng, ruleCtx.city, egoPos, true);
+      } else if (!queued && stuck > 6) {
+        this.state.trafficVehicles[i] = nudgeOrRespawn(car, this.rng, ruleCtx.city, egoPos, false);
+      }
     }
     
     // Collect all entities for sensing
@@ -345,7 +361,6 @@ export class Simulation {
     
     const inBrowser = typeof window !== 'undefined';
     const lidarConfig = inBrowser ? this.lidarConfig : LIDAR_CONFIGS['roofLidar']!;
-    const egoPos = this.state.ego.transform.position;
     const senseEntities = inBrowser
       ? allEntities.filter(e => {
           const dx = e.boundingBox.center.x - egoPos.x;
