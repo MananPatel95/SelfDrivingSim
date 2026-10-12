@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25]
+sources: [1, 20, 22, 24, 25, 26]
 ---
 
 # Wiki log
@@ -69,3 +69,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #25 solid full-width dash fill below the dash line
 
 ## [2026-10-12] merge | origin/main (#24 traffic) into PR #25 cockpit branch
+
+## [2026-10-12] ingest | PR #26 F3 Waabi view: 10 Hz occupancy, skip duplicate lidar
+
+## [2026-10-12] merge | origin/main (#24 traffic, #25 cockpit) into PR #26 F3 view
