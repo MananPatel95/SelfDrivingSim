@@ -45,7 +45,7 @@ function pathColor(severity: DecisionInfo['severity']): number {
 
 export function computeDecision(input: PerceptionVizInput): DecisionInfo {
   if (input.controlSource === 'human') {
-    return { text: 'Manual', severity: 'go' };
+    return { text: 'Manual — press T to re-engage', severity: 'go' };
   }
   if (input.rule && input.rule.severity !== 'go') {
     return { text: input.rule.reason, severity: input.rule.severity };

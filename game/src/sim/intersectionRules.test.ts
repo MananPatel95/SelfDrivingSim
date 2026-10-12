@@ -197,7 +197,8 @@ describe('HUD detections and parked banner', () => {
       visionDetections: [],
       controlSource: 'human',
     });
-    expect(decision.text).toBe('Manual');
+    expect(decision.text).toMatch(/Manual/i);
+    expect(decision.text).toMatch(/T to re-engage/i);
     expect(decision.text).not.toMatch(/Cruising/);
   });
 });

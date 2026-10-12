@@ -8,6 +8,7 @@ import {
   SEDAN_MODEL_URL,
   SILVER_PAINT,
   assembleEgoVisual,
+  applyCameraLayers,
   makePlaceholderSedan,
 } from './egoMesh';
 import { COCKPIT } from './cabinView';
@@ -66,7 +67,13 @@ describe('Kenney sedan-sports mesh', () => {
     expect(visual.steerWheel.position.z).toBeCloseTo(COCKPIT.wheel.z, 5);
     expect(visual.steerWheel.position.x).toBeGreaterThan(COCKPIT.eye.x);
     expect(visual.steerWheel.position.y).toBeLessThan(COCKPIT.eye.y);
-    expect(COCKPIT.wheelRadius).toBeCloseTo(0.18, 5);
+    expect(COCKPIT.wheelRadius).toBeCloseTo(0.185, 5);
+    const hub = named(visual.group, 'wheel-hub');
+    const hubBox = new THREE.Box3().setFromObject(hub);
+    const hubSize = hubBox.getSize(new THREE.Vector3());
+    const hubMajor = Math.max(hubSize.y, hubSize.z);
+    expect(hubMajor).toBeLessThan(COCKPIT.wheelRadius * 0.72);
+    expect(hubSize.x).toBeLessThan(0.025);
   });
 
   it('fits the Kenney stand-in to about 4.7 × 1.85 × 1.45 m', () => {
@@ -115,39 +122,63 @@ describe('Kenney sedan-sports mesh', () => {
     expect(visual.bodyPivot.children.some((c) => c.layers.isEnabled(LAYER_EXTERIOR) || c.layers.isEnabled(LAYER_COCKPIT))).toBe(true);
   });
 
-  it('builds a connected cockpit: dash, hood, pillars, header, screen, column', () => {
+  it('builds an open cockpit: dash, screen, column — no header or A-pillars', () => {
     const visual = buildEgoVisual();
     visual.group.updateWorldMatrix(true, true);
     const dash = named(visual.group, 'dash');
     const hood = named(visual.group, 'hood');
-    const left = named(visual.group, 'pillar-left');
-    const right = named(visual.group, 'pillar-right');
-    const header = named(visual.group, 'header');
     const screen = named(visual.group, 'centre-screen');
     const mount = named(visual.group, 'screen-mount');
     const column = named(visual.group, 'steer-column');
+    expect(visual.group.getObjectByName('header')).toBeFalsy();
+    expect(visual.group.getObjectByName('pillar-left')).toBeFalsy();
+    expect(visual.group.getObjectByName('pillar-right')).toBeFalsy();
     expect(boxesTouch(dash, hood)).toBe(true);
-    expect(boxesTouch(dash, left)).toBe(true);
-    expect(boxesTouch(dash, right)).toBe(true);
     expect(boxesTouch(dash, column, 0.12)).toBe(true);
     expect(boxesTouch(dash, mount, 0.12)).toBe(true);
     expect(boxesTouch(mount, screen, 0.16)).toBe(true);
-    const mountBox = new THREE.Box3().setFromObject(mount);
-    const faceBox = new THREE.Box3().setFromObject(screen);
-    // Mount stays under/behind the tablet — it must not cover the screen face.
-    expect(mountBox.max.y).toBeLessThan(faceBox.max.y - 0.02);
-    expect(boxesTouch(left, header)).toBe(true);
-    expect(boxesTouch(right, header)).toBe(true);
     expect(boxesTouch(column, visual.steerWheel, 0.1)).toBe(true);
-    expect(boxesTouch(dash, visual.steerWheel, 0.08)).toBe(true);
+    const dashBox = new THREE.Box3().setFromObject(dash);
+    const wheelBox = new THREE.Box3().setFromObject(visual.steerWheel);
     const screenBox = new THREE.Box3().setFromObject(screen);
+    // Wheel sits closer to the driver than the far side of the dash fill.
+    expect(visual.steerWheel.position.x).toBeGreaterThan(COCKPIT.eye.x + 0.3);
+    expect(visual.steerWheel.position.x).toBeLessThan(dashBox.max.x);
+    // Screen stays in the dash height band, to the right of the wheel.
+    expect(screenBox.max.y).toBeLessThan(dashBox.max.y + 0.02);
+    expect(screenBox.min.z).toBeGreaterThan(wheelBox.max.z);
     const screenSize = screenBox.getSize(new THREE.Vector3());
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
     expect(COCKPIT.wideFovDeg).toBeGreaterThan(COCKPIT.fovDeg);
-    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.55);
-    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.35);
-    const mark = named(visual.group, 'wheel-mark');
-    expect(mark.position.y).toBeGreaterThan(COCKPIT.wheelRadius * 0.9);
-    expect(Math.abs(mark.position.x)).toBeLessThan(0.02);
+    expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.52);
+    expect(COCKPIT.dashTopNdc).toBeLessThan(-0.38);
+    const dashSize = dashBox.getSize(new THREE.Vector3());
+    // Full-width interior fill from the dash line down to below the frame.
+    expect(dashSize.z).toBeGreaterThan(2.4);
+    expect(dashSize.y).toBeGreaterThan(0.45);
+    expect(dashBox.min.y).toBeLessThan(wheelBox.min.y);
+    named(visual.group, 'wheel-hub');
+    named(visual.group, 'wheel-logo');
+    named(visual.group, 'ambient-strip');
+    expect(visual.eyeAnchor.position.x).toBeCloseTo(COCKPIT.eye.x, 5);
+    expect(visual.lookAnchor.position.x).toBeCloseTo(COCKPIT.look.x, 5);
+  });
+
+  it('hides the exterior layer from a first-person camera', () => {
+    const visual = buildEgoVisual();
+    const cam = new THREE.PerspectiveCamera();
+    applyCameraLayers(cam, true);
+    expect(cam.layers.isEnabled(LAYER_COCKPIT)).toBe(true);
+    expect(cam.layers.isEnabled(LAYER_EXTERIOR)).toBe(false);
+    let exterior = 0;
+    let cockpit = 0;
+    visual.group.traverse((obj) => {
+      const mesh = obj as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (mesh.layers.isEnabled(LAYER_EXTERIOR)) exterior += 1;
+      if (mesh.layers.isEnabled(LAYER_COCKPIT)) cockpit += 1;
+    });
+    expect(exterior).toBeGreaterThan(0);
+    expect(cockpit).toBeGreaterThan(0);
   });
 });

@@ -14,7 +14,7 @@ import {
   generateRideRequest, entityToRoadUser, spawnGraphTraffic, egoAsTraffic,
   isLegitimatelyQueued, nudgeOrRespawn,
 } from './world';
-import { placeInRightLane, rightLaneRoute } from './rightLane';
+import { mergeIntoLaneRoute, placeInRightLane, rightLaneRoute } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
@@ -91,6 +91,8 @@ export class Simulation {
   /** Ids currently overlapping the car, so a curb graze is one collision not one per frame. */
   private contactIds = new Set<number>();
   private stopBook: StopBook = { arrivals: new Map() };
+  /** Last map-trip destination. Null when Just-drive / cruise has no goal. */
+  private tripDestination: Vec3 | null = null;
   
   constructor(config: Partial<SimulationConfig> = {}) {
     const profile = config.profile ?? 'baseline_lidar';
@@ -835,6 +837,7 @@ export class Simulation {
     this.state.route = [];
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'human';
+    this.tripDestination = null;
   }
 
   /** Place the car on a start point and follow a right-hand-lane road route to the end. */
@@ -851,6 +854,28 @@ export class Simulation {
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = mode;
+    this.tripDestination = { x: end.x, y: end.y, z: 0 };
+  }
+
+  getTripDestination(): Vec3 | null {
+    return this.tripDestination;
+  }
+
+  /**
+   * Hand control back to the planner from the current pose.
+   * Rebuilds a right-lane route to the existing destination, or cruises ahead
+   * if there is no trip. Stop / yield rules still apply on the next step.
+   */
+  reengageAutopilot(): { mode: 'trip' | 'cruise'; route: Vec3[] } {
+    const ego = this.state.ego;
+    const from = ego.transform.position;
+    const heading = ego.transform.rotation;
+    const goal = this.tripDestination;
+    const route = mergeIntoLaneRoute(from, heading, goal);
+    this.state.route = route;
+    this.state.plannerState = createPlannerState();
+    this.state.controlSource = 'policy';
+    return { mode: goal ? 'trip' : 'cruise', route };
   }
   
   acceptRide(rideId: number): void {
@@ -905,6 +930,7 @@ export class Simulation {
     this.rng = new SeededRandom(this.config.seed);
     this.recorder.clear();
     this.contactIds.clear();
+    this.tripDestination = null;
     this.state = this.initializeState();
   }
 
@@ -942,6 +968,7 @@ export class Simulation {
     this.rng = new SeededRandom(this.config.seed);
     this.recorder.clear();
     this.contactIds.clear();
+    this.tripDestination = null;
     this.state = this.initializeState();
   }
 }

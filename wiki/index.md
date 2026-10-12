@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-12
-sources: [1, 20, 22, 24]
+sources: [1, 20, 22, 24, 25]
 ---
 
 # Wiki index
@@ -69,6 +69,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #20](sources/pr-20.md) — right-hand lanes and stop/yield mix
 - [PR #22](sources/pr-22.md) — Kenney sedan-sports + Tesla-style cockpit
 - [PR #24](sources/pr-24.md) — traffic random walk, deadlock breaker
+- [PR #25](sources/pr-25.md) — live first-person cockpit, stacked HUD panels, T re-engage
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

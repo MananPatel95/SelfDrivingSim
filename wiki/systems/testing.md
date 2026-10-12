@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [3, 18, 20, 22, 24]
+sources: [3, 18, 20, 22, 24, 25]
 ---
 
 # Testing and screenshots
@@ -17,7 +17,9 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 - `trafficStop.test.ts` — several NPCs at an all-way stop: each full-stops, no overlap, they leave in arrival order
 - `trafficFlow.test.ts` — random-walk exits, full-span reverse lanes, four cars arriving together, 2-minute N-car soak (progress, no reverse, no box camping)
 
-Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png`. Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
+[[pr-25]] added `hudPanels.test.ts` (no overlapping rects at 1280×720 and 1920×1080; collapsed and dragged cards miss the minimap/banner) and `reengage.test.ts` (takeover → re-engage → replan; cruise with no trip; stop/yield still applied).
+
+Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
 
 ## Key files
 
@@ -27,4 +29,6 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/intersectionRules.test.ts`
 - `game/src/sim/trafficStop.test.ts`
 - `game/src/sim/trafficFlow.test.ts`
+- `game/src/ui/hudPanels.test.ts`
+- `game/src/sim/reengage.test.ts`
 - `docs/screenshots/README.md`
