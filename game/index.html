@@ -106,6 +106,7 @@
       color: #ffe08a;
     }
     #drive-badge.hidden,
+    #status-panel.hidden,
     #left-hud-stack.hidden { display: none !important; }
 
     #drive-hint {
@@ -340,6 +341,7 @@
       pointer-events: auto;
     }
     #minimap.hidden { display: none !important; }
+    body[data-shot="on"] .hud { display: none !important; }
 
     #pause-overlay {
       position: absolute;

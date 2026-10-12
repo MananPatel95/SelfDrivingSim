@@ -44,7 +44,7 @@ export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
   },
   hood: {
     title: 'First person',
-    uses: 'Driver’s seat. The wheel is in front of you and turns left with A and right with D. The hood and the road are through the windshield.',
+    uses: 'Left-hand seat, eye height about 1.2 m. A 36 cm wheel sits left of centre in the lower third and turns ~450° each way with A/D. Thin dash, centre screen, thin A-pillars; the road fills the upper ~65% of the view.',
     diff: 'Chase follows from behind and can look around with RMB. BEV is top-down. Orbit is free around the car.',
   },
   bev: {

@@ -1,7 +1,7 @@
 ---
 tags: [overview]
 updated: 2026-10-12
-sources: [1, 2, 3, 19, 20]
+sources: [1, 2, 3, 19, 20, 22]
 ---
 
 # Overview
@@ -10,7 +10,7 @@ AUTONOMY CITY is a browser 3D self-driving city. You watch or drive a sedan whil
 
 It is an educational sim, not a product of the named companies.
 
-## Current state (after PR #20)
+## Current state (after PR #22)
 
 - City only. F1 Tesla-style, F2 Waymo-style, F3 Waabi-style, plus compare mode. F4 Aurora, F5 rail, and F6 maritime were removed in [[pr-3]].
 - Game loop is a fixed **30 Hz** step with render interpolation (`SIM_DT = 1/30` in `main.ts`).
@@ -21,6 +21,7 @@ It is an educational sim, not a product of the named companies.
 - Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner while parked in manual.
 - Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, and BEV occupancy stay in TypeScript. See [[decisions]] and [[lidar-wasm]].
 - Reproducible shots: `?seed=` (default 3) and `?demo=lane|stop|yield|mix|queue`.
+- Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). First person is a connected Tesla-style cockpit ([[ego-mesh]], [[pr-22]]).
 
 ## How to run
 

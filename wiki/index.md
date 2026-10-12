@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-12
-sources: [1, 20]
+sources: [1, 20, 22]
 ---
 
 # Wiki index
@@ -22,6 +22,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled + yield to peds
 - [Pedestrians](systems/pedestrians.md) — sidewalks and crossings
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
+- [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 sedan-sports + cockpit
 - [HUD and menus](systems/hud.md) — start menu, minimap, seed/demo
 - [Data engine](systems/data-engine.md) — Python mine/label/train
 - [Testing](systems/testing.md) — Vitest and screenshots
@@ -65,6 +66,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #18](sources/pr-18.md) — corner turns
 - [PR #19](sources/pr-19.md) — Just drive
 - [PR #20](sources/pr-20.md) — right-hand lanes and stop/yield mix
+- [PR #22](sources/pr-22.md) — Kenney sedan-sports + Tesla-style cockpit
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 
