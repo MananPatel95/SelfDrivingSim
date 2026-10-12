@@ -141,11 +141,11 @@ describe('Kenney sedan-sports mesh', () => {
     const dashBox = new THREE.Box3().setFromObject(dash);
     const wheelBox = new THREE.Box3().setFromObject(visual.steerWheel);
     const screenBox = new THREE.Box3().setFromObject(screen);
-    // Rim sits in open air in front of the dash (smaller +X is toward the driver).
-    expect(wheelBox.max.x).toBeLessThan(dashBox.min.x + 0.08);
-    expect(wheelBox.max.x).toBeGreaterThan(dashBox.min.x - 0.35);
+    // Wheel sits closer to the driver than the far side of the dash fill.
+    expect(visual.steerWheel.position.x).toBeGreaterThan(COCKPIT.eye.x + 0.3);
+    expect(visual.steerWheel.position.x).toBeLessThan(dashBox.max.x);
     // Screen stays in the dash height band, to the right of the wheel.
-    expect(screenBox.max.y).toBeLessThan(dashBox.max.y + 0.01);
+    expect(screenBox.max.y).toBeLessThan(dashBox.max.y + 0.02);
     expect(screenBox.min.z).toBeGreaterThan(wheelBox.max.z);
     const screenSize = screenBox.getSize(new THREE.Vector3());
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);
@@ -153,7 +153,10 @@ describe('Kenney sedan-sports mesh', () => {
     expect(COCKPIT.dashTopNdc).toBeGreaterThan(-0.52);
     expect(COCKPIT.dashTopNdc).toBeLessThan(-0.38);
     const dashSize = dashBox.getSize(new THREE.Vector3());
-    expect(dashSize.y).toBeLessThan(0.14);
+    // Full-width interior fill from the dash line down to below the frame.
+    expect(dashSize.z).toBeGreaterThan(2.4);
+    expect(dashSize.y).toBeGreaterThan(0.45);
+    expect(dashBox.min.y).toBeLessThan(wheelBox.min.y);
     named(visual.group, 'wheel-hub');
     named(visual.group, 'wheel-logo');
     named(visual.group, 'ambient-strip');

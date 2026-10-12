@@ -330,6 +330,48 @@ function rayPoint(cam: THREE.PerspectiveCamera, ndcX: number, ndcY: number, dept
   return new THREE.Vector3(ndcX * depth * tanH, ndcY * depth * tanV, -depth).applyMatrix4(cam.matrixWorld);
 }
 
+/** Solid slab whose front face fills an NDC rectangle at look-axis depths d0..d1. */
+function frustumSlab(
+  cam: THREE.PerspectiveCamera,
+  ndcX0: number,
+  ndcX1: number,
+  ndcY0: number,
+  ndcY1: number,
+  d0: number,
+  d1: number,
+): THREE.BufferGeometry {
+  const p = (x: number, y: number, d: number) => rayPoint(cam, x, y, d);
+  const v = [
+    p(ndcX0, ndcY0, d0),
+    p(ndcX1, ndcY0, d0),
+    p(ndcX0, ndcY1, d0),
+    p(ndcX1, ndcY1, d0),
+    p(ndcX0, ndcY0, d1),
+    p(ndcX1, ndcY0, d1),
+    p(ndcX0, ndcY1, d1),
+    p(ndcX1, ndcY1, d1),
+  ];
+  const idx = [
+    0, 2, 3, 0, 3, 1,
+    5, 7, 6, 5, 6, 4,
+    0, 1, 5, 0, 5, 4,
+    2, 6, 7, 2, 7, 3,
+    0, 4, 6, 0, 6, 2,
+    1, 3, 7, 1, 7, 5,
+  ];
+  const pos = new Float32Array(idx.length * 3);
+  for (let i = 0; i < idx.length; i += 1) {
+    const q = v[idx[i]!]!;
+    pos[i * 3] = q.x;
+    pos[i * 3 + 1] = q.y;
+    pos[i * 3 + 2] = q.z;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function addStrut(
   parent: THREE.Object3D,
   a: THREE.Vector3,
@@ -542,42 +584,34 @@ function buildCockpit(): {
   const wheelDepth = wheelViewOffset().depth;
   const dashNear = wheelDepth + 0.16;
 
-  const dashMat = matte(0x1a1d21);
-  const cowlMat = matte(0x2c3036, { roughness: 0.72 });
+  const dashMat = matte(0x14161a);
+  const cowlMat = matte(0x22262c, { roughness: 0.72 });
   const columnMat = matte(0x2a2e33, { roughness: 0.6 });
   const bezelMat = matte(0x0e1013);
   const stripMat = new THREE.MeshStandardMaterial({
     color: 0xff7a33,
     emissive: 0xff6a22,
-    emissiveIntensity: 0.55,
+    emissiveIntensity: 0.7,
     roughness: 0.4,
     metalness: 0.0,
   });
 
-  // Thin horizontal shelf behind the rim — no roof header and no A-pillars.
-  const front = rayPoint(cam, 0, dashTop, dashNear);
-  const dashLen = 0.50;
-  const dashThick = 0.056;
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(dashLen, dashThick, 1.68), dashMat);
+  // Camera-aligned interior: fills the frame from the dash line to below the
+  // bottom edge, and from far left to far right, so no world shows through.
+  const dash = new THREE.Mesh(
+    frustumSlab(cam, -1.45, 1.45, -1.7, dashTop, dashNear, dashNear + 0.55),
+    dashMat,
+  );
   dash.name = 'dash';
-  dash.position.set(front.x + dashLen * 0.5, front.y - dashThick * 0.55, 0);
   group.add(dash);
 
-  const fasciaH = 0.20;
-  const fascia = new THREE.Mesh(new THREE.BoxGeometry(0.05, fasciaH, 1.68), dashMat);
-  fascia.name = 'dash-drop';
-  fascia.position.set(front.x + 0.03, front.y - fasciaH * 0.52, 0);
-  group.add(fascia);
+  const bevelL = rayPoint(cam, -1.38, dashTop, dashNear + 0.012);
+  const bevelR = rayPoint(cam, 1.38, dashTop, dashNear + 0.012);
+  addStrut(group, bevelL, bevelR, 0.018, 0.018, cowlMat, 'hood');
 
-  const cowl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.024, 1.50), cowlMat);
-  cowl.name = 'hood';
-  cowl.position.set(front.x + dashLen * 0.78, front.y - 0.006, 0);
-  group.add(cowl);
-
-  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.007, 0.005, 1.42), stripMat);
-  strip.name = 'ambient-strip';
-  strip.position.set(front.x + 0.01, front.y - 0.002, 0);
-  group.add(strip);
+  const stripL = rayPoint(cam, -1.4, dashTop, dashNear - 0.006);
+  const stripR = rayPoint(cam, 1.4, dashTop, dashNear - 0.006);
+  addStrut(group, stripL, stripR, 0.0045, 0.0045, stripMat, 'ambient-strip');
 
   const live = makeLiveScreen();
   const screen = new THREE.Group();
@@ -589,19 +623,19 @@ function buildCockpit(): {
   face.rotation.y = -Math.PI / 2;
   face.position.x = -0.005;
   screen.add(bezel, face);
-  // Landscape tablet in the dash band, to the right of the wheel — not above the dash.
-  const screenDepth = dashNear + 0.02;
+  // Landscape tablet inset in the dash band, to the right of the wheel.
+  const screenDepth = dashNear - 0.012;
   const tanV = Math.tan(THREE.MathUtils.degToRad(COCKPIT.fovDeg) / 2);
   const screenNdcH = bezelH / (screenDepth * tanV);
-  const screenNdcY = dashTop - screenNdcH * 0.5 - 0.02;
-  const screenPos = rayPoint(cam, 0.30, screenNdcY, screenDepth);
+  const screenNdcY = dashTop - screenNdcH * 0.5 - 0.04;
+  const screenPos = rayPoint(cam, 0.32, screenNdcY, screenDepth);
   screen.position.copy(screenPos);
-  screen.rotation.y = 0.05;
-  const mountFrom = new THREE.Vector3(dash.position.x - 0.16, screen.position.y, screen.position.z);
+  screen.rotation.y = 0.04;
+  const mountFrom = rayPoint(cam, 0.32, screenNdcY, dashNear + 0.08);
   addStrut(
     group,
     mountFrom,
-    new THREE.Vector3(screen.position.x + 0.01, screen.position.y, screen.position.z),
+    new THREE.Vector3(screen.position.x + 0.006, screen.position.y, screen.position.z),
     0.006,
     0.010,
     bezelMat,
@@ -613,7 +647,7 @@ function buildCockpit(): {
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
   group.add(steerWheel);
 
-  const columnEnd = new THREE.Vector3(dash.position.x - 0.08, COCKPIT.wheel.y - 0.06, COCKPIT.wheel.z);
+  const columnEnd = rayPoint(cam, -0.30, dashTop - 0.22, dashNear + 0.04);
   addStrut(
     group,
     new THREE.Vector3(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z),
