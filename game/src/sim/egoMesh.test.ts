@@ -140,7 +140,11 @@ describe('Kenney sedan-sports mesh', () => {
     expect(boxesTouch(left, header)).toBe(true);
     expect(boxesTouch(right, header)).toBe(true);
     expect(boxesTouch(column, visual.steerWheel, 0.1)).toBe(true);
-    expect(boxesTouch(dash, visual.steerWheel, 0.08)).toBe(true);
+    const dashBox = new THREE.Box3().setFromObject(dash);
+    const wheelBox = new THREE.Box3().setFromObject(visual.steerWheel);
+    // Rim sits in open air in front of the dash (smaller +X is toward the driver).
+    expect(wheelBox.max.x).toBeLessThan(dashBox.min.x + 0.08);
+    expect(wheelBox.max.x).toBeGreaterThan(dashBox.min.x - 0.35);
     const screenBox = new THREE.Box3().setFromObject(screen);
     const screenSize = screenBox.getSize(new THREE.Vector3());
     expect(Math.max(screenSize.x, screenSize.z)).toBeGreaterThan(screenSize.y);

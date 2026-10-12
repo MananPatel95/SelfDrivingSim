@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { COCKPIT } from './cabinView';
+import { COCKPIT, wheelViewOffset } from './cabinView';
 import {
   AXLE_HEIGHT,
   KENNEY_NATIVE_HEIGHT,
@@ -580,47 +580,57 @@ function buildCockpit(): {
   group.name = 'cockpit';
   const dashTop = COCKPIT.dashTopNdc;
   const cam = cabinCamera(COCKPIT.fovDeg);
+  // Camera-aligned dash, but the near face sits behind the rim so the wheel
+  // stays in open air (a slab that starts in front of the wheel swallows it).
+  const dashNear = wheelViewOffset().depth + 0.10;
+  const dashFar = dashNear + 0.58;
 
-  const dashMat = matte(0x1c1f24);
-  const cowlMat = matte(0x2a2e34, { roughness: 0.7 });
-  const pillarMat = matte(0x121417);
+  const dashMat = matte(0x1a1d21);
+  const cowlMat = matte(0x2c3036, { roughness: 0.72 });
+  const pillarMat = matte(0x101214);
   const columnMat = matte(0x2a2e33, { roughness: 0.6 });
-  const bezelMat = matte(0x101214);
-  const skinMat = matte(0x1a1512, { roughness: 0.95, transparent: true, opacity: 0.55 });
+  const bezelMat = matte(0x0e1013);
+  const skinMat = matte(0x1a1512, { roughness: 0.95, transparent: true, opacity: 0.5 });
   const stripMat = new THREE.MeshStandardMaterial({
     color: 0xff7a33,
     emissive: 0xff6a22,
-    emissiveIntensity: 0.65,
+    emissiveIntensity: 0.55,
     roughness: 0.4,
     metalness: 0.0,
   });
 
-  const dash = new THREE.Mesh(frustumSlab(cam, -1.85, 1.85, -1.4, dashTop, 0.22, 1.05), dashMat);
+  const dash = new THREE.Mesh(frustumSlab(cam, -1.85, 1.85, -1.42, dashTop, dashNear, dashFar), dashMat);
   dash.name = 'dash';
   group.add(dash);
 
-  const footwell = new THREE.Mesh(frustumSlab(cam, -1.2, 0.4, -1.45, -0.72, 0.18, 0.55), dashMat);
+  const footwell = new THREE.Mesh(frustumSlab(cam, -0.85, 0.35, -1.48, -0.95, 0.28, dashNear + 0.04), dashMat);
   footwell.name = 'footwell';
   group.add(footwell);
 
-  const cowl = new THREE.Mesh(frustumSlab(cam, -1.6, 1.6, dashTop - 0.02, dashTop + 0.07, 0.95, 1.55), cowlMat);
+  const cowl = new THREE.Mesh(
+    frustumSlab(cam, -1.6, 1.6, dashTop - 0.012, dashTop + 0.06, dashFar - 0.1, dashFar + 0.5),
+    cowlMat,
+  );
   cowl.name = 'hood';
   group.add(cowl);
 
-  const header = new THREE.Mesh(frustumSlab(cam, -1.15, 1.15, 0.78, 1.2, 0.38, 0.62), pillarMat);
+  const strip = new THREE.Mesh(
+    frustumSlab(cam, -1.12, 1.12, dashTop - 0.01, dashTop + 0.008, dashNear + 0.02, dashNear + 0.14),
+    stripMat,
+  );
+  strip.name = 'ambient-strip';
+  group.add(strip);
+
+  const header = new THREE.Mesh(frustumSlab(cam, -1.12, 1.12, 0.82, 1.18, 0.42, 0.62), pillarMat);
   header.name = 'header';
   group.add(header);
 
-  const pillarL0 = rayPoint(cam, -0.98, dashTop, 0.92);
-  const pillarL1 = rayPoint(cam, -0.88, 0.92, 0.44);
-  const pillarR0 = rayPoint(cam, 0.98, dashTop, 0.92);
-  const pillarR1 = rayPoint(cam, 0.88, 0.92, 0.44);
-  addStrut(group, pillarL0, pillarL1, 0.038, 0.022, pillarMat, 'pillar-left');
-  addStrut(group, pillarR0, pillarR1, 0.038, 0.022, pillarMat, 'pillar-right');
-
-  const strip = new THREE.Mesh(frustumSlab(cam, -1.15, 1.15, dashTop - 0.018, dashTop + 0.012, 0.55, 0.72), stripMat);
-  strip.name = 'ambient-strip';
-  group.add(strip);
+  const pillarL0 = rayPoint(cam, -0.96, dashTop, dashNear + 0.06);
+  const pillarL1 = rayPoint(cam, -0.90, 0.92, 0.44);
+  const pillarR0 = rayPoint(cam, 0.96, dashTop, dashNear + 0.06);
+  const pillarR1 = rayPoint(cam, 0.90, 0.92, 0.44);
+  addStrut(group, pillarL0, pillarL1, 0.04, 0.022, pillarMat, 'pillar-left');
+  addStrut(group, pillarR0, pillarR1, 0.04, 0.022, pillarMat, 'pillar-right');
 
   const live = makeLiveScreen();
   const screen = new THREE.Group();
@@ -630,16 +640,16 @@ function buildCockpit(): {
   face.rotation.y = -Math.PI / 2;
   face.position.x = -0.007;
   screen.add(bezel, face);
-  const sit = rayPoint(cam, 0.42, dashTop + 0.02, 0.72);
-  const under = rayPoint(cam, 0.42, dashTop - 0.08, 0.78);
+  const sit = rayPoint(cam, 0.34, dashTop + 0.02, dashNear + 0.04);
   screen.position.set(sit.x, sit.y + 0.11, sit.z);
-  screen.rotation.y = 0.16;
+  screen.rotation.y = 0.14;
+  const under = rayPoint(cam, 0.34, dashTop - 0.02, dashNear + 0.06);
   addStrut(
     group,
     under,
-    new THREE.Vector3(sit.x + 0.02, sit.y + 0.02, sit.z),
-    0.01,
-    0.014,
+    new THREE.Vector3(screen.position.x + 0.01, screen.position.y - 0.06, screen.position.z),
+    0.008,
+    0.012,
     bezelMat,
     'screen-mount',
   );
@@ -649,33 +659,31 @@ function buildCockpit(): {
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);
   group.add(steerWheel);
 
-  const columnEnd = rayPoint(cam, -0.28, -0.85, 0.72);
+  const columnEnd = rayPoint(cam, -0.24, dashTop - 0.22, dashNear + 0.18);
   addStrut(
     group,
     new THREE.Vector3(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z),
     columnEnd,
-    0.028,
-    0.038,
+    0.026,
+    0.036,
     columnMat,
     'steer-column',
   );
 
-  const kneeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, 0.14), skinMat);
+  const kneeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.11, 0.13), skinMat);
   kneeL.name = 'knee-left';
-  const k0 = rayPoint(cam, -0.22, -0.92, 0.55);
-  kneeL.position.copy(k0);
+  kneeL.position.set(COCKPIT.eye.x + 0.28, COCKPIT.wheel.y - 0.34, COCKPIT.wheel.z + 0.08);
   const kneeR = kneeL.clone();
   kneeR.name = 'knee-right';
-  const k1 = rayPoint(cam, 0.04, -0.94, 0.58);
-  kneeR.position.copy(k1);
+  kneeR.position.set(COCKPIT.eye.x + 0.3, COCKPIT.wheel.y - 0.34, COCKPIT.wheel.z - 0.16);
   group.add(kneeL, kneeR);
 
-  const handL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.03, 0.08), skinMat);
+  const handL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.028, 0.07), skinMat);
   handL.name = 'hand-left';
-  handL.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.04, COCKPIT.wheel.z + COCKPIT.wheelRadius * 0.55);
+  handL.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.03, COCKPIT.wheel.z + COCKPIT.wheelRadius * 0.62);
   const handR = handL.clone();
   handR.name = 'hand-right';
-  handR.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.04, COCKPIT.wheel.z - COCKPIT.wheelRadius * 0.22);
+  handR.position.set(COCKPIT.wheel.x - 0.01, COCKPIT.wheel.y - 0.03, COCKPIT.wheel.z - COCKPIT.wheelRadius * 0.18);
   group.add(handL, handR);
 
   setLayerDeep(group, LAYER_COCKPIT);
