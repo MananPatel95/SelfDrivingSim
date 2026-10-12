@@ -144,6 +144,10 @@ let showPhysDebug = false;
 let minimapScale = 1.35;
 /** Ground-level side camera for wheel/sill verification. */
 let debugSideCam: { height: number; side: number; lookY: number } | null = null;
+/** 3/4 hero camera in body-pivot local metres. */
+let debugHeroCam: { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number } | null = null;
+/** Photo-only hand-wheel angle (degrees, left positive). */
+let shotHandDeg: number | null = null;
 let photoMode = false;
 const CHASE_RETURN_DELAY = 1.5;
 const CHASE_DIST_DEFAULT = 9.2;
@@ -232,8 +236,11 @@ function initThreeJS() {
   camera.position.set(0, -10, 8);
   camera.lookAt(0, 0, 0);
   
-  const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+  const ambientLight = new THREE.AmbientLight(0x6a6a6a, 0.7);
   scene.add(ambientLight);
+  const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+  fillLight.position.set(-80, 40, -40);
+  scene.add(fillLight);
   
   sunLight = new THREE.DirectionalLight(0xffffff, 1);
   sunLight.position.set(100, 100, 100);
@@ -959,6 +966,13 @@ function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
 }
 
 function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
+  if (debugHeroCam) {
+    const eye = carLocalToWorld(debugHeroCam.x, debugHeroCam.y, debugHeroCam.z, egoX, egoY, egoYaw);
+    const look = carLocalToWorld(debugHeroCam.lookX, debugHeroCam.lookY, debugHeroCam.lookZ, egoX, egoY, egoYaw);
+    camera.position.set(eye.x, eye.y, eye.z);
+    camera.lookAt(look.x, look.y, look.z);
+    return;
+  }
   if (debugSideCam) {
     const rightX = Math.cos(egoYaw - Math.PI / 2);
     const rightY = Math.sin(egoYaw - Math.PI / 2);
@@ -2404,6 +2418,7 @@ function hideChrome() {
   photoMode = true;
   showAIView = false;
   showGroundTruth = false;
+  document.body.dataset['shot'] = 'on';
   document.getElementById('status-panel')?.classList.add('hidden');
   document.getElementById('left-hud-stack')?.classList.add('hidden');
   document.getElementById('drive-badge')?.classList.add('hidden');
@@ -2414,6 +2429,11 @@ function hideChrome() {
   document.getElementById('bev-overlay')?.classList.remove('visible');
   document.getElementById('minimap')?.classList.add('hidden');
   document.getElementById('start-menu')?.classList.add('hidden');
+  document.getElementById('view-switcher')?.classList.add('hidden');
+  document.getElementById('controls-hint')?.classList.add('hidden');
+  document.getElementById('top-right-stack')?.classList.add('hidden');
+  document.getElementById('gear-btn')?.classList.add('hidden');
+  document.querySelector('.disclaimer')?.classList.add('hidden');
   perceptionViz?.setEnabled(false);
 }
 
@@ -2424,19 +2444,24 @@ function applyShot(kind: string) {
   takeManual(true);
   inputState.left = false;
   inputState.right = false;
+  debugSideCam = null;
+  debugHeroCam = null;
+  shotHandDeg = null;
   if (kind === 'cabin' || kind === 'cabin-a' || kind === 'cabin-d') {
     setCameraMode('hood');
-    if (kind === 'cabin-a') inputState.left = true;
-    if (kind === 'cabin-d') inputState.right = true;
+    if (kind === 'cabin-a') {
+      inputState.left = true;
+      shotHandDeg = 110;
+    }
+    if (kind === 'cabin-d') {
+      inputState.right = true;
+      shotHandDeg = -110;
+    }
   } else if (kind === 'exterior') {
-    debugSideCam = null;
     setCameraMode('orbit');
-    orbitYaw = 0.78;
-    orbitPitch = 0.22;
-    orbitDist = 7.2;
-    camFollowReady = false;
+    debugHeroCam = { x: 4.6, y: 0.58, z: 3.1, lookX: 0.3, lookY: 0.16, lookZ: 0.0 };
   } else if (kind === 'side') {
-    debugSideCam = { height: 0.30, side: 5.2, lookY: 0.36 };
+    debugSideCam = { height: 0.62, side: 5.6, lookY: 0.58 };
   }
 }
 
@@ -2493,7 +2518,9 @@ function animate(time: number) {
   }
   if (egoSteerWheel) {
     // A is +steer (left). The hand wheel turns farther than the road wheels.
-    egoSteerWheel.rotation.x = handWheelRotation(currSteer);
+    egoSteerWheel.rotation.x = shotHandDeg !== null
+      ? -(shotHandDeg * Math.PI) / 180
+      : handWheelRotation(currSteer);
   }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
 

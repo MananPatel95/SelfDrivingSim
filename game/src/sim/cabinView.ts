@@ -21,7 +21,7 @@ export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
 export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
   eye: { x: -0.20, y: 0.80, z: 0.36 } satisfies CabinVec,
-  look: { x: 16, y: 0.70, z: 0.05 } satisfies CabinVec,
+  look: { x: 16, y: 0.74, z: 0.20 } satisfies CabinVec,
   wheel: { x: 0.52, y: 0.57, z: 0.34 } satisfies CabinVec,
   /** Slim ~280 mm rim so it stays under ~20% of the frame height. */
   wheelRadius: 0.14,

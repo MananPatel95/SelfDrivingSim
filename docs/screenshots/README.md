@@ -40,3 +40,20 @@ Night mode with fog showing degraded visibility.
 
 ### 08-dashboard.png
 Status HUD with speed, control, detections, collisions, and FPS.
+
+## Modern cabin and EV body
+
+### 21-cockpit-straight.png
+First person, left-hand seat, slim flat-bottom wheel centred.
+
+### 22-cockpit-steer-left.png
+A held: hand wheel turned counter-clockwise.
+
+### 23-cockpit-steer-right.png
+D held: hand wheel turned clockwise.
+
+### 24-exterior-three-quarter.png
+Front 3/4 of the rounded EV shell.
+
+### 25-exterior-low-side.png
+Low side view: tires inside the arches and on the road.

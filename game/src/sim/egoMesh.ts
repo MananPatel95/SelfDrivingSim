@@ -1,6 +1,7 @@
 /**
- * Modern EV sedan: smooth hull, flush glass, light bars, wheels in the arches.
+ * Modern EV sedan: constant-width tub, fender blisters, flush glass, light bars.
  * Same-material parts are merged so the car is a handful of draw calls.
+ * Wheels sit inside the arches; the cabin is hollow so the driver camera is free.
  */
 
 import * as THREE from 'three';
@@ -8,8 +9,6 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { COCKPIT } from './cabinView';
 import {
   AXLE_HEIGHT,
-  BODY_CENTER_LOCAL_Y,
-  BODY_HALF_WIDTH,
   VISUAL_WHEEL_HALF_WIDTH,
   VISUAL_WHEEL_RADIUS,
   WHEEL_PLAN_OFFSETS,
@@ -38,15 +37,21 @@ function xform(
   scale?: THREE.Vector3,
 ): THREE.BufferGeometry {
   const g = geo.clone();
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  if (rot) q.setFromEuler(rot);
-  m.compose(new THREE.Vector3(x, y, z), q, scale ?? new THREE.Vector3(1, 1, 1));
-  g.applyMatrix4(m);
+  if (rot) g.rotateX(rot.x), g.rotateY(rot.y), g.rotateZ(rot.z);
+  if (scale) g.scale(scale.x, scale.y, scale.z);
+  g.translate(x, y, z);
   return g;
 }
 
-/** Plane in XY (normal +Z), then yaw about Y and rake about Z, then translate. */
+/** Cylinder along +X, then flatten Y and set half-width in Z. */
+function hullTube(length: number, halfH: number, halfW: number, x: number, y: number): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(1, 1, length, 28);
+  g.rotateZ(Math.PI / 2);
+  g.scale(1, halfH, halfW);
+  g.translate(x, y, 0);
+  return g;
+}
+
 function glassPane(w: number, h: number, x: number, y: number, z: number, yaw = 0, rake = 0): THREE.BufferGeometry {
   const g = new THREE.PlaneGeometry(w, h);
   if (yaw) g.rotateY(yaw);
@@ -90,9 +95,8 @@ function buildFlatBottomWheel(): THREE.Group {
   const tube = COCKPIT.wheelTube;
   const leather = new THREE.MeshLambertMaterial({ color: 0x1c1f24, side: THREE.DoubleSide });
   const metal = new THREE.MeshLambertMaterial({ color: 0xc9d0d8, side: THREE.DoubleSide });
-  const mark = new THREE.MeshLambertMaterial({ color: 0xf4ead2, emissive: 0xffd27a, emissiveIntensity: 0.55 });
+  const mark = new THREE.MeshLambertMaterial({ color: 0xf4ead2, emissive: 0xffd27a, emissiveIntensity: 0.7 });
 
-  // D-shape: ~250° of rim with a flat chord at the bottom.
   const arc = Math.PI * 1.42;
   const gap = Math.PI * 2 - arc;
   const leatherParts: THREE.BufferGeometry[] = [
@@ -103,7 +107,7 @@ function buildFlatBottomWheel(): THREE.Group {
   leatherParts.push(xform(new THREE.CylinderGeometry(tube, tube, chord, 10), 0, barY, 0, new THREE.Euler(Math.PI / 2, 0, 0)));
 
   const metalParts: THREE.BufferGeometry[] = [
-    xform(new THREE.CylinderGeometry(0.028, 0.032, 0.034, 16), 0, 0, 0, new THREE.Euler(0, 0, Math.PI / 2)),
+    xform(new THREE.CylinderGeometry(0.026, 0.03, 0.03, 16), 0, 0, 0, new THREE.Euler(0, 0, Math.PI / 2)),
   ];
   for (const ang of [-0.55, 0.55]) {
     metalParts.push(
@@ -120,7 +124,7 @@ function buildFlatBottomWheel(): THREE.Group {
 
   addMerged(group, leatherParts, leather, false);
   addMerged(group, metalParts, metal, false);
-  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.022, 0.02), mark);
+  const notch = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.028, 0.022), mark);
   notch.position.set(-0.016, R * 0.88, 0);
   group.add(notch);
   return group;
@@ -132,19 +136,19 @@ export function buildEgoVisual(): EgoVisual {
   bodyPivot.position.y = AXLE_HEIGHT;
   group.add(bodyPivot);
 
-  const pearl = new THREE.MeshLambertMaterial({ color: 0xd8dee6 });
-  const cladding = new THREE.MeshLambertMaterial({ color: 0x15191f });
+  const pearl = new THREE.MeshLambertMaterial({ color: 0xd5dbe3 });
+  const cladding = new THREE.MeshLambertMaterial({ color: 0x14181e });
   const glass = new THREE.MeshLambertMaterial({
-    color: 0x7aa3b8,
+    color: 0x6f96aa,
     transparent: true,
-    opacity: 0.34,
+    opacity: 0.38,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const lamp = new THREE.MeshLambertMaterial({ color: 0xf4fbff, emissive: 0xc8e8ff, emissiveIntensity: 1.05 });
-  const tail = new THREE.MeshLambertMaterial({ color: 0xff2a44, emissive: 0xff1433, emissiveIntensity: 0.9 });
+  const lamp = new THREE.MeshLambertMaterial({ color: 0xf4fbff, emissive: 0xc8e8ff, emissiveIntensity: 1.1 });
+  const tail = new THREE.MeshLambertMaterial({ color: 0xff2a44, emissive: 0xff1433, emissiveIntensity: 0.95 });
   const dark = new THREE.MeshLambertMaterial({ color: 0x12151a, side: THREE.DoubleSide });
-  const screen = new THREE.MeshLambertMaterial({ color: 0x0b2a30, emissive: 0x1a8a96, emissiveIntensity: 0.55 });
+  const screen = new THREE.MeshLambertMaterial({ color: 0x0b2a30, emissive: 0x1a8a96, emissiveIntensity: 0.6 });
 
   const pearlParts: THREE.BufferGeometry[] = [];
   const glassParts: THREE.BufferGeometry[] = [];
@@ -153,73 +157,69 @@ export function buildEgoVisual(): EgoVisual {
   const tailParts: THREE.BufferGeometry[] = [];
   const dashParts: THREE.BufferGeometry[] = [];
 
-  // Smooth pebble hull — low, long, rounded. No box slabs.
+  // Hood and rear deck only — the cabin stays hollow so the driver can see out.
   pearlParts.push(
-    xform(new THREE.SphereGeometry(1, 28, 18), 0.06, BODY_CENTER_LOCAL_Y - 0.02, 0, undefined, new THREE.Vector3(2.18, 0.34, BODY_HALF_WIDTH)),
-    xform(new THREE.SphereGeometry(1, 20, 14), 1.72, 0.22, 0, new THREE.Euler(0, 0, -0.12), new THREE.Vector3(0.78, 0.26, 0.88)),
-    xform(new THREE.SphereGeometry(1, 20, 14), -1.68, 0.22, 0, new THREE.Euler(0, 0, 0.16), new THREE.Vector3(0.74, 0.26, 0.88)),
+    hullTube(1.55, 0.26, 0.74, 1.42, 0.20),
+    hullTube(1.35, 0.26, 0.74, -1.32, 0.20),
+    xform(new THREE.SphereGeometry(1, 18, 12), 2.12, 0.20, 0, undefined, new THREE.Vector3(0.55, 0.24, 0.76)),
+    xform(new THREE.SphereGeometry(1, 18, 12), -2.00, 0.20, 0, undefined, new THREE.Vector3(0.52, 0.24, 0.76)),
+    xform(new THREE.BoxGeometry(2.1, 0.18, 0.16), 0.0, 0.10, 0.64),
+    xform(new THREE.BoxGeometry(2.1, 0.18, 0.16), 0.0, 0.10, -0.64),
   );
 
-  // Flush glass roof sitting above the cabin, not around the driver's eye.
-  glassParts.push(
-    xform(new THREE.SphereGeometry(1, 20, 12), -0.12, 0.98, 0, undefined, new THREE.Vector3(1.05, 0.11, 0.70)),
-    glassPane(1.36, 0.82, 0.64, 0.80, 0, Math.PI / 2, 0.56),
-    glassPane(0.95, 0.38, -0.08, 0.78, 0.72),
-    glassPane(0.95, 0.38, -0.08, 0.78, -0.72, Math.PI),
-    glassPane(1.05, 0.36, -0.84, 0.80, 0, -Math.PI / 2, -0.42),
-  );
-
-  // Thin A-pillars — keep the windshield open.
-  darkParts.push(
-    xform(new THREE.CylinderGeometry(0.016, 0.014, 0.72, 8), 0.46, 0.78, 0.58, new THREE.Euler(0, 0, 0.58)),
-    xform(new THREE.CylinderGeometry(0.016, 0.014, 0.72, 8), 0.46, 0.78, -0.58, new THREE.Euler(0, 0, 0.58)),
-    xform(new THREE.CylinderGeometry(0.014, 0.012, 0.55, 8), -0.72, 0.82, 0.58, new THREE.Euler(0, 0, -0.4)),
-    xform(new THREE.CylinderGeometry(0.014, 0.012, 0.55, 8), -0.72, 0.82, -0.58, new THREE.Euler(0, 0, -0.4)),
-  );
-
-  // Full-width light bars.
-  lampParts.push(xform(new THREE.BoxGeometry(0.04, 0.035, 1.72), 2.28, 0.40, 0));
-  lampParts.push(xform(new THREE.BoxGeometry(0.03, 0.018, 0.22), 2.26, 0.40, 0.78));
-  lampParts.push(xform(new THREE.BoxGeometry(0.03, 0.018, 0.22), 2.26, 0.40, -0.78));
-  tailParts.push(xform(new THREE.BoxGeometry(0.04, 0.03, 1.72), -2.22, 0.40, 0));
-
-  // Wheel arches + wells: fender sits outboard of the tire.
-  const archR = VISUAL_WHEEL_RADIUS + 0.06;
+  // Fender blisters sit outboard of the tub and over the tires.
   for (const w of WHEEL_PLAN_OFFSETS) {
     const side = Math.sign(w.z) || 1;
-    const wellZ = side * (Math.abs(w.z) + 0.02);
-    darkParts.push(
+    pearlParts.push(
       xform(
-        new THREE.TorusGeometry(archR, 0.07, 8, 16, Math.PI),
+        new THREE.SphereGeometry(1, 16, 12),
         w.x,
-        0,
-        wellZ,
-        new THREE.Euler(0, side > 0 ? 0 : Math.PI, 0),
+        0.10,
+        side * (Math.abs(w.z) - 0.04),
+        undefined,
+        new THREE.Vector3(0.48, 0.34, 0.28),
       ),
     );
     darkParts.push(
       xform(
-        new THREE.CylinderGeometry(archR - 0.02, archR - 0.02, VISUAL_WHEEL_HALF_WIDTH * 2 + 0.06, 16, 1, true),
+        new THREE.TorusGeometry(VISUAL_WHEEL_RADIUS + 0.05, 0.055, 8, 18, Math.PI),
         w.x,
-        0,
-        w.z,
-        new THREE.Euler(Math.PI / 2, 0, 0),
+        0.02,
+        side * (Math.abs(w.z) + 0.04),
+        new THREE.Euler(0, side > 0 ? 0 : Math.PI, 0),
       ),
     );
   }
 
-  // Cabin: low dash, centre stack, left seat — camera sits in the seat.
+  // Flush glass roof (thin slab) + windshield / side / rear panes. Cabin stays hollow.
+  glassParts.push(
+    xform(new THREE.BoxGeometry(1.65, 0.035, 1.28), -0.20, 1.06, 0),
+    glassPane(1.42, 0.62, 0.52, 0.76, 0, Math.PI / 2, 0.48),
+    glassPane(1.35, 0.50, -0.15, 0.80, 0.70),
+    glassPane(1.35, 0.50, -0.15, 0.80, -0.70, Math.PI),
+    glassPane(1.28, 0.48, -0.95, 0.82, 0, -Math.PI / 2, -0.32),
+  );
+
+  darkParts.push(
+    xform(new THREE.CylinderGeometry(0.015, 0.013, 0.70, 8), 0.42, 0.78, 0.60, new THREE.Euler(0, 0, 0.52)),
+    xform(new THREE.CylinderGeometry(0.015, 0.013, 0.70, 8), 0.42, 0.78, -0.60, new THREE.Euler(0, 0, 0.52)),
+    xform(new THREE.CylinderGeometry(0.013, 0.012, 0.52, 8), -0.78, 0.84, 0.60, new THREE.Euler(0, 0, -0.36)),
+    xform(new THREE.CylinderGeometry(0.013, 0.012, 0.52, 8), -0.78, 0.84, -0.60, new THREE.Euler(0, 0, -0.36)),
+  );
+
+  // Full-width bars flush with the nose and tail, not sticks.
+  lampParts.push(xform(new THREE.BoxGeometry(0.06, 0.04, 1.52), 2.22, 0.36, 0));
+  tailParts.push(xform(new THREE.BoxGeometry(0.06, 0.035, 1.52), -2.16, 0.36, 0));
+
+  // Interior: low dash, centre stack to the right of the left-seat wheel, seat behind the eye.
   dashParts.push(
-    xform(new THREE.BoxGeometry(0.42, 0.08, 1.18), 0.62, 0.48, 0),
-    xform(new THREE.BoxGeometry(0.18, 0.04, 0.36), 0.48, 0.54, 0.34),
-    xform(new THREE.BoxGeometry(0.22, 0.16, 0.28), 0.52, 0.52, 0.0),
-    xform(new THREE.BoxGeometry(0.36, 0.42, 0.42), -0.42, 0.42, 0.36),
-    xform(new THREE.BoxGeometry(0.36, 0.08, 0.42), -0.12, 0.28, 0.36),
+    xform(new THREE.BoxGeometry(0.34, 0.06, 1.20), 0.58, 0.46, 0),
+    xform(new THREE.BoxGeometry(0.16, 0.03, 0.32), 0.46, 0.50, 0.34),
+    xform(new THREE.BoxGeometry(0.18, 0.14, 0.22), 0.50, 0.50, -0.02),
+    xform(new THREE.BoxGeometry(0.32, 0.38, 0.40), -0.48, 0.40, 0.36),
+    xform(new THREE.BoxGeometry(0.34, 0.06, 0.40), -0.16, 0.26, 0.36),
   );
-  const screenMesh = new THREE.Mesh(
-    xform(new THREE.BoxGeometry(0.02, 0.13, 0.24), 0.42, 0.58, 0.02),
-    screen,
-  );
+  const screenMesh = new THREE.Mesh(xform(new THREE.BoxGeometry(0.018, 0.11, 0.20), 0.42, 0.56, -0.02), screen);
   screenMesh.castShadow = false;
   bodyPivot.add(screenMesh);
 
@@ -247,7 +247,10 @@ export function buildEgoVisual(): EgoVisual {
   for (const spec of WHEEL_PLAN_OFFSETS) {
     const pivot = new THREE.Group();
     pivot.position.set(spec.x, AXLE_HEIGHT, spec.z);
-    const tire = new THREE.Mesh(wheelGeo ?? new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_HALF_WIDTH * 2, 20), tireMat);
+    const tire = new THREE.Mesh(
+      wheelGeo ?? new THREE.CylinderGeometry(VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_RADIUS, VISUAL_WHEEL_HALF_WIDTH * 2, 20),
+      tireMat,
+    );
     pivot.add(tire);
     group.add(pivot);
     wheels.push({ pivot, mesh: tire, front: spec.front });
