@@ -6,15 +6,31 @@
 import type {
   Entity, Vec3, Lane, Intersection, TrafficLight, RideRequest
 } from './types';
-import { vec3, SeededRandom } from './math';
+import { vec3, SeededRandom, normalizeAngle } from './math';
 import {
   type ControlledIntersection,
   type RoadUser,
   type StopBook,
+  INTERSECTION_BOX,
+  approachingIntersection,
   buildControlledIntersection,
   decideIntersection,
+  distToCenter,
   signPose,
 } from './intersectionRules';
+import {
+  type CityGrid,
+  type GraphCar,
+  DEFAULT_CITY,
+  edgePath,
+  makeGraphTrip,
+  nearestPathS,
+  promoteIfCleared,
+  replanFrom,
+  samplePath,
+  sameDirection,
+  upcomingTurnSlow,
+} from './trafficFlow';
 
 export interface CityConfig {
   gridSize: number; // Number of blocks per side
@@ -158,7 +174,8 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
       for (let j = 0; j <= config.gridSize * 10; j++) {
         const y = -halfSize + (j / 10) * config.blockSize;
         points.push({
-          position: vec3(pos + offset, dir === 0 ? y : totalSize - y - halfSize, 0),
+          // dir=0 northbound y: -half→+half; dir=1 southbound y: +half→−half (not origin).
+          position: vec3(pos + offset, dir === 0 ? y : -y, 0),
           direction: dir === 0 ? Math.PI / 2 : -Math.PI / 2,
           width: config.laneWidth,
           speedLimit: 13.4, // 30 mph
@@ -179,7 +196,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
       for (let j = 0; j <= config.gridSize * 10; j++) {
         const x = -halfSize + (j / 10) * config.blockSize;
         points.push({
-          position: vec3(dir === 0 ? x : totalSize - x - halfSize, pos + offset, 0),
+          position: vec3(dir === 0 ? x : -x, pos + offset, 0),
           direction: dir === 0 ? 0 : Math.PI,
           width: config.laneWidth,
           speedLimit: 13.4,
@@ -409,7 +426,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
 }
 
 // Traffic AI - simple lane following with traffic light obedience
-export interface TrafficVehicle extends Entity {
+export interface TrafficVehicle extends Entity, Partial<GraphCar> {
   laneId: number;
   laneProgress: number;
   targetSpeed: number;
@@ -420,6 +437,8 @@ export interface TrafficRuleContext {
   book: StopBook;
   now: number;
   others: RoadUser[];
+  rng?: SeededRandom;
+  city?: CityGrid;
 }
 
 export function entityToRoadUser(entity: Entity): RoadUser {
@@ -429,6 +448,213 @@ export function entityToRoadUser(entity: Entity): RoadUser {
     y: entity.transform.position.y,
     yaw: entity.transform.rotation,
     speed: Math.hypot(entity.velocity.x, entity.velocity.y),
+  };
+}
+
+export function egoAsTraffic(ego: {
+  transform: { position: { x: number; y: number; z: number }; rotation: number };
+  boundingBox: Entity['boundingBox'];
+  velocity: { x: number; y: number; z: number };
+}): TrafficVehicle {
+  return {
+    id: -1,
+    classType: 'car',
+    transform: ego.transform,
+    boundingBox: ego.boundingBox,
+    velocity: ego.velocity,
+    isStatic: false,
+    occlusionLevel: 0,
+    laneId: -1,
+    laneProgress: 0,
+    targetSpeed: 0,
+  };
+}
+
+function applyPose(vehicle: TrafficVehicle, x: number, y: number, yaw: number, speed: number): TrafficVehicle {
+  const pos = vec3(x, y, 0.8);
+  return {
+    ...vehicle,
+    transform: { position: pos, rotation: yaw },
+    boundingBox: { ...vehicle.boundingBox, center: pos, yaw },
+    velocity: vec3(speed * Math.cos(yaw), speed * Math.sin(yaw), 0),
+  };
+}
+
+function followGraph(
+  vehicle: TrafficVehicle,
+  speed: number,
+  dt: number,
+  rng: SeededRandom,
+  city: CityGrid,
+): TrafficVehicle {
+  if (!vehicle.path || vehicle.path.length < 2 || !vehicle.fromNode || !vehicle.toNode || !vehicle.nextNode) {
+    return vehicle;
+  }
+  const prevYaw = vehicle.transform.rotation;
+  let s = (vehicle.pathS ?? 0) + speed * dt;
+  let sample = samplePath(vehicle.path, s);
+  // Never reverse: skip a segment whose heading would flip ~180°.
+  if (speed > 0.05 && Math.abs(normalizeAngle(sample.yaw - prevYaw)) > 2.4) {
+    s += 2.5;
+    sample = samplePath(vehicle.path, s);
+    if (Math.abs(normalizeAngle(sample.yaw - prevYaw)) > 2.4) {
+      sample = { ...sample, yaw: prevYaw };
+    }
+  }
+  let next: TrafficVehicle = {
+    ...applyPose(vehicle, sample.x, sample.y, sample.yaw, speed),
+    path: vehicle.path,
+    pathS: sample.s,
+    fromNode: vehicle.fromNode,
+    toNode: vehicle.toNode,
+    nextNode: vehicle.nextNode,
+    intersectionsCleared: vehicle.intersectionsCleared ?? 0,
+    stuckTime: vehicle.stuckTime ?? 0,
+  };
+  const graph: GraphCar = {
+    fromNode: next.fromNode,
+    toNode: next.toNode,
+    nextNode: next.nextNode,
+    path: next.path!,
+    pathS: next.pathS ?? 0,
+    stuckTime: next.stuckTime ?? 0,
+    intersectionsCleared: next.intersectionsCleared ?? 0,
+  };
+  const promoted = promoteIfCleared(graph, sample.x, sample.y, rng, city);
+  if (promoted.intersectionsCleared !== graph.intersectionsCleared) {
+    next = {
+      ...next,
+      ...promoted,
+      pathS: nearestPathS(promoted.path, sample.x, sample.y),
+    };
+  }
+  if ((next.path?.length ?? 0) < 2 || (sample.total - (next.pathS ?? 0)) < 6) {
+    const start = vec3(
+      nodeSnapX(next.fromNode!, next.toNode!, next.transform.position.x, next.transform.position.y, city),
+      nodeSnapY(next.fromNode!, next.toNode!, next.transform.position.x, next.transform.position.y, city),
+      0,
+    );
+    const rebuilt = edgePath(next.fromNode!, next.toNode!, next.nextNode!, start, city);
+    next = { ...next, path: rebuilt, pathS: nearestPathS(rebuilt, sample.x, sample.y) };
+  }
+  return next;
+}
+
+function nodeSnapX(from: { i: number }, to: { i: number }, x: number, _y: number, city: CityGrid): number {
+  if (from.i === to.i) return -((city.gridSize * city.blockSize) / 2) + from.i * city.blockSize;
+  return x;
+}
+
+function nodeSnapY(from: { j: number }, to: { j: number }, _x: number, y: number, city: CityGrid): number {
+  if (from.j === to.j) return -((city.gridSize * city.blockSize) / 2) + from.j * city.blockSize;
+  return y;
+}
+
+export function spawnGraphTraffic(
+  count: number,
+  rng: SeededRandom,
+  startId: number,
+  city: CityGrid = DEFAULT_CITY,
+  avoid?: { x: number; y: number; radius: number },
+): TrafficVehicle[] {
+  const vehicles: TrafficVehicle[] = [];
+  for (let n = 0; n < count; n++) {
+    const trip = makeGraphTrip(rng, city, avoid);
+    const pose = samplePath(trip.path, 0);
+    const yaw = pose.yaw;
+    const pos = vec3(pose.x, pose.y, 0.8);
+    const truck = rng.next() < 0.1;
+    vehicles.push({
+      id: startId + n,
+      classType: truck ? 'truck' : 'car',
+      transform: { position: pos, rotation: yaw },
+      boundingBox: {
+        center: pos,
+        size: truck ? vec3(8, 2.5, 3) : vec3(4.5, 1.8, 1.5),
+        yaw,
+      },
+      velocity: vec3(0, 0, 0),
+      isStatic: false,
+      occlusionLevel: 0,
+      laneId: 0,
+      laneProgress: 0,
+      targetSpeed: 13.4 * rng.nextFloat(0.75, 0.95),
+      ...trip,
+    });
+  }
+  return vehicles;
+}
+
+export function isLegitimatelyQueued(
+  vehicle: TrafficVehicle,
+  leaders: ReadonlyArray<{ id: number; transform: { position: { x: number; y: number }; rotation: number }; velocity: { x: number; y: number } }>,
+  rules?: TrafficRuleContext,
+): boolean {
+  const yaw = vehicle.transform.rotation;
+  const fx = Math.cos(yaw);
+  const fy = Math.sin(yaw);
+  for (const other of leaders) {
+    if (other.id === vehicle.id) continue;
+    if (!sameDirection(yaw, other.transform.rotation, 0.7)) continue;
+    const dx = other.transform.position.x - vehicle.transform.position.x;
+    const dy = other.transform.position.y - vehicle.transform.position.y;
+    const ahead = dx * fx + dy * fy;
+    const lat = Math.abs(-dx * fy + dy * fx);
+    const otherSpeed = Math.hypot(other.velocity.x, other.velocity.y);
+    if (ahead > 1 && ahead < 14 && lat < 2.4 && otherSpeed < 3.5) return true;
+  }
+  if (rules) {
+    const self = entityToRoadUser(vehicle);
+    const hit = approachingIntersection(self, rules.intersections);
+    if (
+      hit
+      && hit.distToLine > -1
+      && hit.distToLine < 10
+      && distToCenter(self, hit.inter) > INTERSECTION_BOX
+      && self.speed < 0.5
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function nudgeOrRespawn(
+  vehicle: TrafficVehicle,
+  rng: SeededRandom,
+  city: CityGrid,
+  egoPos: { x: number; y: number },
+  lastResort: boolean,
+): TrafficVehicle {
+  if (!lastResort && vehicle.path && vehicle.fromNode && vehicle.toNode && vehicle.nextNode) {
+    const graph = replanFrom(
+      {
+        fromNode: vehicle.fromNode,
+        toNode: vehicle.toNode,
+        nextNode: vehicle.nextNode,
+        path: vehicle.path,
+        pathS: vehicle.pathS ?? 0,
+        stuckTime: 0,
+        intersectionsCleared: vehicle.intersectionsCleared ?? 0,
+      },
+      vehicle.transform.position.x,
+      vehicle.transform.position.y,
+      rng,
+      city,
+    );
+    const pose = samplePath(graph.path, 0);
+    return {
+      ...applyPose(vehicle, pose.x, pose.y, pose.yaw, 2.4),
+      ...graph,
+      stuckTime: 0,
+    };
+  }
+  const trip = makeGraphTrip(rng, city, { x: egoPos.x, y: egoPos.y, radius: 90 });
+  const pose = samplePath(trip.path, 0);
+  return {
+    ...applyPose(vehicle, pose.x, pose.y, pose.yaw, 3.5),
+    ...trip,
+    stuckTime: 0,
   };
 }
 
@@ -444,10 +670,14 @@ export function updateTrafficVehicle(
   if (vehicle.targetSpeed <= 0 && Math.hypot(vehicle.velocity.x, vehicle.velocity.y) < 0.08) {
     return { ...vehicle, velocity: vec3(0, 0, 0) };
   }
-  const lane = lanes.find(l => l.id === vehicle.laneId);
-  if (!lane || lane.points.length < 2) return vehicle;
-  
-  // Check traffic lights ahead
+  const city = rules?.city ?? DEFAULT_CITY;
+  const yaw = vehicle.transform.rotation;
+  const fx = Math.cos(yaw);
+  const fy = Math.sin(yaw);
+  const inBox = rules
+    ? rules.intersections.some(i => distToCenter({ x: vehicle.transform.position.x, y: vehicle.transform.position.y }, i) < INTERSECTION_BOX)
+    : false;
+
   let shouldStop = false;
   for (const light of trafficLights) {
     const distToLight = Math.sqrt(
@@ -459,22 +689,21 @@ export function updateTrafficVehicle(
       break;
     }
   }
-  
-  // IDM follow + yield: treat the closest in-lane actor (NPC or implied gap) as leader
+
   let leadGap = 40;
   let leadSpeed = vehicle.targetSpeed;
-  const yaw = vehicle.transform.rotation;
-  const fx = Math.cos(yaw);
-  const fy = Math.sin(yaw);
-  for (const other of allVehicles) {
-    if (other.id === vehicle.id) continue;
-    const dx = other.transform.position.x - vehicle.transform.position.x;
-    const dy = other.transform.position.y - vehicle.transform.position.y;
-    const ahead = dx * fx + dy * fy;
-    const lat = Math.abs(-dx * fy + dy * fx);
-    if (ahead > 0.5 && ahead < leadGap && lat < 2.4) {
-      leadGap = ahead;
-      leadSpeed = Math.sqrt(other.velocity.x ** 2 + other.velocity.y ** 2);
+  if (!inBox) {
+    for (const other of allVehicles) {
+      if (other.id === vehicle.id) continue;
+      if (!sameDirection(yaw, other.transform.rotation, 0.7)) continue;
+      const dx = other.transform.position.x - vehicle.transform.position.x;
+      const dy = other.transform.position.y - vehicle.transform.position.y;
+      const ahead = dx * fx + dy * fy;
+      const lat = Math.abs(-dx * fy + dy * fx);
+      if (ahead > 0.5 && ahead < leadGap && lat < 2.4) {
+        leadGap = ahead;
+        leadSpeed = Math.sqrt(other.velocity.x ** 2 + other.velocity.y ** 2);
+      }
     }
   }
 
@@ -487,7 +716,7 @@ export function updateTrafficVehicle(
   const dv = speed - leadSpeed;
   const sStar = s0 + Math.max(0, speed * T + (speed * dv) / (2 * Math.sqrt(aMax * bDecel)));
   let accel = aMax * (1 - (speed / Math.max(0.5, v0)) ** 4 - (sStar / Math.max(1, leadGap - 4.5)) ** 2);
-  const yieldPed = shouldYieldToPedestrian(
+  const yieldPed = !inBox && shouldYieldToPedestrian(
     vehicle.transform.position.x,
     vehicle.transform.position.y,
     yaw,
@@ -500,48 +729,58 @@ export function updateTrafficVehicle(
     const self = entityToRoadUser(vehicle);
     const decision = decideIntersection(
       self,
-      rules.others,
-      pedestrians.map(p => ({ x: p.transform.position.x, y: p.transform.position.y })),
+      rules.others.filter(o => o.id !== self.id),
+      pedestrians.map(p => ({
+        x: p.transform.position.x,
+        y: p.transform.position.y,
+        state: p.state,
+      })),
       rules.intersections,
       rules.book,
       rules.now,
     );
     ruleCap = Math.min(ruleCap, decision.maxSpeed);
-    if (decision.mustStop) shouldStop = true;
+    if (decision.mustStop && !inBox) shouldStop = true;
+  }
+  if (inBox) {
+    shouldStop = false;
+    ruleCap = Math.max(ruleCap, 4.2);
+    accel = Math.max(accel, 1.2);
+  }
+  if (vehicle.path && upcomingTurnSlow(vehicle.path, vehicle.pathS ?? 0)) {
+    ruleCap = Math.min(ruleCap, 4.6);
   }
   if (shouldStop) accel = Math.min(accel, yieldPed ? -6.5 : -4.5);
   speed = Math.max(0, Math.min(Math.min(v0, ruleCap), speed + accel * dt));
-  
-  // Move along lane
-  const progress = vehicle.laneProgress + (speed * dt) / (lane.points.length * 2);
-  
-  if (progress >= 1) {
-    // End of lane - could connect to next lane
-    return {
-      ...vehicle,
-      laneProgress: 0.99,
-      velocity: vec3(0, 0, 0),
-    };
+
+  if (vehicle.path && vehicle.path.length >= 2 && vehicle.fromNode && vehicle.toNode && vehicle.nextNode) {
+    const rng = rules?.rng ?? new SeededRandom(vehicle.id + 17);
+    return followGraph(vehicle, speed, dt, rng, city);
   }
-  
-  // Interpolate position
+
+  const lane = lanes.find(l => l.id === vehicle.laneId);
+  if (!lane || lane.points.length < 2) return vehicle;
+
+  const totalLen = Math.max(1, (lane.points.length - 1) * 10);
+  const progress = vehicle.laneProgress + (speed * dt) / totalLen;
+  if (progress >= 1) {
+    return { ...vehicle, laneProgress: 0.995, velocity: vec3(0, 0, 0) };
+  }
+
   const t = progress * (lane.points.length - 1);
   const idx = Math.floor(t);
   const frac = t - idx;
   const p1 = lane.points[Math.min(idx, lane.points.length - 1)]!;
   const p2 = lane.points[Math.min(idx + 1, lane.points.length - 1)]!;
-  
   const newPos: Vec3 = {
     x: p1.position.x + (p2.position.x - p1.position.x) * frac,
     y: p1.position.y + (p2.position.y - p1.position.y) * frac,
     z: 0.8,
   };
-  
   const direction = Math.atan2(
     p2.position.y - p1.position.y,
     p2.position.x - p1.position.x
   );
-  
   return {
     ...vehicle,
     transform: { position: newPos, rotation: direction },
@@ -608,7 +847,7 @@ export function shouldYieldToPedestrian(
     const lat = Math.abs(-dx * fy + dy * fx);
     if (ahead < 0.5 || ahead > range || lat > 4.0) continue;
     const onAsphalt = pointOnRoad(px, py, PED_CITY, 0.15);
-    if (ped.state === 'crossing' || ped.state === 'waiting' || onAsphalt) return true;
+    if (ped.state === 'crossing' || onAsphalt) return true;
   }
   return false;
 }

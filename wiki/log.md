@@ -55,3 +55,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #22 sedan-sports + connected cockpit
 
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
+
+## [2026-10-12] ingest | cursor/traffic-flow-6c1c AI traffic random walk, deadlock breaker, no reverse
+
+## [2026-10-12] ingest | PR #24 Fix AI traffic deadlock: random walk, deadlock breaker, never reverse

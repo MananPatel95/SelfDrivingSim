@@ -1,7 +1,7 @@
 ---
 tags: [entity]
 updated: 2026-10-12
-sources: [3, 13, 19, 20]
+sources: [3, 13, 19, 20, 24]
 ---
 
 # `simulation.ts`
@@ -9,6 +9,8 @@ sources: [3, 13, 19, 20]
 Owns world map, ego, traffic, pedestrians, lidar/perception, planner, collisions, and recording. `beginTrip` / `beginParked` are the start-menu hooks.
 
 After [[pr-20]] it holds a shared `StopBook`, calls `decideIntersection` each step (stored as `lastRule`), passes `rule` into the planner, and feeds the same `TrafficRuleContext` into every `updateTrafficVehicle`. `beginTrip` places the car with `rightLaneRoute` / `placeInRightLane`. Nearby stop/yield signs are merged into planner detections.
+
+Traffic spawn is a grid random walk (`spawnGraphTraffic`), not a random point on a full-map lane. The ego is inserted as `egoAsTraffic` so NPCs follow it. After each step, cars that have been slow and are not queued are nudged, replanned, or respawned off-screen.
 
 ## Key files
 
