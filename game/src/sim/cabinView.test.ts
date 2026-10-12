@@ -30,7 +30,7 @@ describe('first-person cabin framing', () => {
     expect(view.depth).toBeLessThan(0.7);
     expect(view.ndcY).toBeLessThan(-0.15);
     expect(view.ndcY).toBeGreaterThan(-0.85);
-    expect(view.ndcX).toBeLessThan(0.05);
+    expect(view.ndcX).toBeLessThan(-0.12);
     expect(view.ndcX).toBeGreaterThan(-0.65);
     expect(view.widthFrac).toBeGreaterThan(0.32);
     expect(view.widthFrac).toBeLessThan(0.52);
