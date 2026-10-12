@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [3, 18, 20, 22, 24, 25, 26, 27]
+sources: [3, 18, 20, 22, 24, 25, 27]
 ---
 
 # Testing and screenshots
@@ -19,9 +19,9 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 
 [[pr-25]] added `hudPanels.test.ts` (no overlapping rects at 1280×720 and 1920×1080; collapsed and dragged cards miss the minimap/banner) and `reengage.test.ts` (takeover → re-engage → replan; cruise with no trip; stop/yield still applied).
 
-`npm run bench:views` (`game/scripts/bench-views.ts`) prints F1/F2/F3 subsystem times. Pass `--browser` to also measure rAF FPS in headless Chrome at 1280×720 and 1920×1080 (`?demo=lane&stack=`). `src/render/f3Perf.test.ts` bounds F3 lidar scans (must stay 0 on the overlay path), occupancy allocs after warmup, static-entity walks, and PerceptionVisualizer typed-array allocs.
+`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them.
 
-Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`. F3 occupancy stills: `verify-f3-dense-occupancy.png` and `verify-f3-perf.png` (`?demo=lane&stack=waabi`).
+Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
 
 ## Key files
 
@@ -33,7 +33,7 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/trafficFlow.test.ts`
 - `game/src/ui/hudPanels.test.ts`
 - `game/src/sim/reengage.test.ts`
-- `game/src/render/f3Perf.test.ts`
-- `game/scripts/bench-views.ts`
 - `game/src/sim/vehicle.test.ts`
+- `game/src/sim/poleTurn.test.ts`
+- `game/src/sim/collision.test.ts`
 - `docs/screenshots/README.md`

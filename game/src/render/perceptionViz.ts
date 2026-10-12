@@ -9,21 +9,8 @@ import type { EgoState, Entity, LidarPoint, PlannerOutput, Vec3 } from '../sim/t
 import type { Track } from '../stacks/perception';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
-import { writeOccupancyRgbaAiView } from './occupancyPaint';
 
 export type VizStack = 'tesla' | 'waymo' | 'waabi';
-
-export const vizWorkStats = {
-  predArrayAllocs: 0,
-  planArrayAllocs: 0,
-  occupancyCellsVisited: 0,
-};
-
-export function resetVizWorkStats() {
-  vizWorkStats.predArrayAllocs = 0;
-  vizWorkStats.planArrayAllocs = 0;
-  vizWorkStats.occupancyCellsVisited = 0;
-}
 
 const MAX_POINTS = 5000;
 const MAX_VOXELS = 500;
@@ -71,6 +58,7 @@ export function computeDecision(input: PerceptionVizInput): DecisionInfo {
   let best: { id: number; cls: string; ttc: number; dist: number } | null = null;
   for (const track of input.tracks) {
     if (track.missedFrames > 0) continue;
+    if (track.classType === 'pole' || track.classType === 'tree' || track.classType === 'building') continue;
     const world = egoToWorld(track.box.center, ego.transform.position, heading);
     const dx = world.x - ego.transform.position.x;
     const dy = world.y - ego.transform.position.y;
@@ -157,7 +145,6 @@ export class PerceptionVisualizer {
       vertexColors: true,
       sizeAttenuation: true,
     }));
-    this.points.frustumCulled = false;
     this.group.add(this.points);
 
     const voxelGeom = new THREE.BoxGeometry(0.55, 0.55, 0.55);
@@ -253,6 +240,7 @@ export class PerceptionVisualizer {
     (this.points.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
     (this.points.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
     this.points.geometry.setDrawRange(0, n);
+    this.points.geometry.computeBoundingSphere();
   }
 
   private updateVoxels(input: PerceptionVizInput) {
@@ -296,7 +284,6 @@ export class PerceptionVisualizer {
       const step = gridSize > 70 ? 2 : 1;
       for (let gy = 0; gy < gridSize && count < MAX_VOXELS; gy += step) {
         for (let gx = 0; gx < gridSize && count < MAX_VOXELS; gx += step) {
-          vizWorkStats.occupancyCellsVisited++;
           const v = occ.grid[gy * gridSize + gx] || 0;
           if (v < 0.12) continue;
           const lx = gx * occ.resolution - occ.extent;
@@ -322,15 +309,16 @@ export class PerceptionVisualizer {
       if (used >= this.predLines.length) break;
       if (track.missedFrames > 0) continue;
       const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
-      const line = this.predLines[used++]!;
-      const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const pts = attr.array as Float32Array;
+      const pts = new Float32Array(12 * 3);
       for (let t = 0; t < 12; t++) {
         const s = t * 0.25;
         pts[t * 3] = world.x + track.velocity.x * s;
         pts[t * 3 + 1] = 0.4;
         pts[t * 3 + 2] = -(world.y + track.velocity.y * s);
       }
+      const line = this.predLines[used++]!;
+      const attr = line.geometry.getAttribute('position') as THREE.BufferAttribute;
+      (attr.array as Float32Array).set(pts);
       attr.needsUpdate = true;
       line.visible = true;
     }
@@ -340,8 +328,7 @@ export class PerceptionVisualizer {
   private updatePlan(input: PerceptionVizInput, decision: DecisionInfo) {
     const ego = input.ego;
     const traj = input.plannerOutput?.trajectory?.points ?? [];
-    const attr = this.planLine.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const pts = attr.array as Float32Array;
+    const pts = new Float32Array(48 * 3);
     let n = 0;
     if (traj.length > 1) {
       const step = Math.max(1, Math.floor(traj.length / 40));
@@ -363,6 +350,8 @@ export class PerceptionVisualizer {
       }
       void speed;
     }
+    const attr = this.planLine.geometry.getAttribute('position') as THREE.BufferAttribute;
+    (attr.array as Float32Array).set(pts);
     attr.needsUpdate = true;
     this.planLine.geometry.setDrawRange(0, n);
     (this.planLine.material as THREE.LineBasicMaterial).color.setHex(pathColor(decision.severity));
@@ -463,8 +452,6 @@ export class PerceptionVisualizer {
 
 }
 
-let aiViewImage: ImageData | null = null;
-
 export function renderAIViewCanvas(
   canvas: HTMLCanvasElement,
   input: PerceptionVizInput,
@@ -488,19 +475,21 @@ export function renderAIViewCanvas(
 
   if (input.stack === 'waabi' && input.occupancy) {
     const occ = input.occupancy;
+    const gridSize = Math.sqrt(occ.grid.length);
     const side = Math.min(w - 16, h - 36);
     const x0 = 8;
     const y0 = 24;
-    if (!aiViewImage || aiViewImage.width !== w || aiViewImage.height !== h) {
-      aiViewImage = ctx.createImageData(w, h);
+    const cell = side / gridSize;
+    for (let gy = 0; gy < gridSize; gy++) {
+      for (let gx = 0; gx < gridSize; gx++) {
+        const v = occ.grid[gy * gridSize + gx] || 0;
+        if (v < 0.05) continue;
+        const r = Math.min(255, Math.floor(v * 255 * 1.6));
+        const g = Math.max(0, Math.floor((1 - v) * 180));
+        ctx.fillStyle = `rgb(${r},${g},${40})`;
+        ctx.fillRect(x0 + gx * cell, y0 + (gridSize - gy - 1) * cell, cell + 0.4, cell + 0.4);
+      }
     }
-    const px = aiViewImage.data;
-    px.fill(0);
-    writeOccupancyRgbaAiView(px, w, occ, x0, y0, side, side);
-    ctx.putImageData(aiViewImage, 0, 0);
-    ctx.fillStyle = '#7fd7ff';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(titles[input.stack], 8, 16);
     ctx.fillStyle = '#00ffff';
     ctx.beginPath();
     ctx.arc(x0 + side / 2, y0 + side / 2, 3, 0, Math.PI * 2);

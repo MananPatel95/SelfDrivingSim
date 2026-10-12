@@ -15,7 +15,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Collisions](systems/collisions.md) — OBBs, paint-only curbs
 - [Perception F1 Tesla](systems/perception-tesla.md) — cameras, eight-camera ring
 - [Perception F2 Waymo](systems/perception-waymo.md) — lidar + radar fusion
-- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, 10 Hz overlay
+- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, `runWaabiStack` HUD
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
 - [Planning and autopilot](systems/planning.md) — right-hand route, corners, stop/yield cap
@@ -37,7 +37,6 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 ## Entities / modules
 
 - [main.ts](entities/main-ts.md)
-- [bevOverlay.ts](entities/bev-overlay.md)
 - [simulation.ts](entities/simulation-ts.md)
 - [vehicle.ts](entities/vehicle-ts.md)
 - [planner.ts](entities/planner-ts.md)

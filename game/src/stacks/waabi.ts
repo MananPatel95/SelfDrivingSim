@@ -13,7 +13,7 @@ import type {
   Detection, EgoState, Entity, Trajectory
 } from '../sim/types';
 import { 
-  vec3, vec3Add, vec3Scale, vec3Length,
+  vec3, vec3Add, vec3Sub, vec3Scale, vec3Length,
   SeededRandom
 } from '../sim/math';
 import { Track, runPerception } from './perception';
@@ -90,90 +90,6 @@ export interface OccupancyAgent {
   confidence?: number;
 }
 
-/** F3 overlay grid: 24 m extent / 1.5 m cells = 32×32. Large enough cells to read as a heatmap. */
-export const WAABI_BEV_RESOLUTION = 1.5;
-export const WAABI_BEV_EXTENT = 24;
-export const WAABI_BEV_GRID = Math.ceil((WAABI_BEV_EXTENT * 2) / WAABI_BEV_RESOLUTION);
-export const WAABI_PREDICT_PERIOD_MS = 100;
-const REPLAY_CAP = 24;
-
-/** Per-tick accounting used by the F3 regression test and `npm run bench:views`. */
-export interface F3WorkStats {
-  lidarScans: number;
-  occupancyAllocs: number;
-  gridFills: number;
-  agentsSplat: number;
-  cellsWritten: number;
-  canvasPuts: number;
-  simWorldDomRewrites: number;
-  predictCalls: number;
-  staticEntitiesTouched: number;
-  replayFrameAllocs: number;
-}
-
-export const f3WorkStats: F3WorkStats = {
-  lidarScans: 0,
-  occupancyAllocs: 0,
-  gridFills: 0,
-  agentsSplat: 0,
-  cellsWritten: 0,
-  canvasPuts: 0,
-  simWorldDomRewrites: 0,
-  predictCalls: 0,
-  staticEntitiesTouched: 0,
-  replayFrameAllocs: 0,
-};
-
-export function resetF3WorkStats() {
-  f3WorkStats.lidarScans = 0;
-  f3WorkStats.occupancyAllocs = 0;
-  f3WorkStats.gridFills = 0;
-  f3WorkStats.agentsSplat = 0;
-  f3WorkStats.cellsWritten = 0;
-  f3WorkStats.canvasPuts = 0;
-  f3WorkStats.simWorldDomRewrites = 0;
-  f3WorkStats.predictCalls = 0;
-  f3WorkStats.staticEntitiesTouched = 0;
-  f3WorkStats.replayFrameAllocs = 0;
-}
-
-export function emptyWaabiState(): WaabiStackState {
-  return {
-    tracks: [],
-    occupancy: makeFutureOccupancy(WAABI_BEV_RESOLUTION, WAABI_BEV_EXTENT),
-    candidateTrajectories: [],
-    selectedTrajectoryIndex: 0,
-    simWorld: { replayBuffer: [], variants: [], lastGenerationTime: 0 },
-  };
-}
-
-export function makeBEVOccupancy(
-  resolution: number = WAABI_BEV_RESOLUTION,
-  extent: number = WAABI_BEV_EXTENT,
-): BEVOccupancy {
-  const gridSize = Math.ceil((extent * 2) / resolution);
-  f3WorkStats.occupancyAllocs++;
-  return { grid: new Float32Array(gridSize * gridSize), resolution, extent };
-}
-
-export function makeFutureOccupancy(
-  resolution: number = WAABI_BEV_RESOLUTION,
-  extent: number = WAABI_BEV_EXTENT,
-): FutureOccupancy {
-  return {
-    current: makeBEVOccupancy(resolution, extent),
-    t1s: makeBEVOccupancy(resolution, extent),
-    t2s: makeBEVOccupancy(resolution, extent),
-    t3s: makeBEVOccupancy(resolution, extent),
-  };
-}
-
-export function lerpOccupancyGrid(out: Float32Array, a: Float32Array, b: Float32Array, t: number) {
-  const n = Math.min(out.length, a.length, b.length);
-  const u = 1 - t;
-  for (let i = 0; i < n; i++) out[i] = (a[i] ?? 0) * u + (b[i] ?? 0) * t;
-}
-
 function splatOccupancy(
   grid: Float32Array,
   gridSize: number,
@@ -206,55 +122,23 @@ function splatOccupancy(
       const value = confidence * Math.exp(-0.5 * (nx * nx + ny * ny));
       if (value > 0.04) {
         const idx = cy * gridSize + cx;
-        const prev = grid[idx] || 0;
-        if (value > prev) grid[idx] = value;
-        f3WorkStats.cellsWritten++;
+        grid[idx] = Math.max(grid[idx] || 0, value);
       }
     }
   }
 }
 
-function isStaticOccupancySkip(e: { isStatic?: boolean; classType?: string }): boolean {
-  return !!e.isStatic || e.classType === 'building' || e.classType === 'tree';
-}
-
-const agentScratch: OccupancyAgent[] = [];
-const dynamicScratch: Entity[] = [];
-
-/** Fill `into` with dynamic cars/peds. Does not allocate a combined entity array. */
-export function occupancyAgentsFromEntities(
-  groups: Array<Iterable<Entity>>,
-  into: OccupancyAgent[] = agentScratch,
-): OccupancyAgent[] {
-  let n = 0;
-  for (const group of groups) {
-    for (const e of group) {
-      if (isStaticOccupancySkip(e)) {
-        f3WorkStats.staticEntitiesTouched++;
-        continue;
-      }
-      let a = into[n];
-      if (!a) {
-        a = {
-          position: e.boundingBox.center,
-          size: e.boundingBox.size,
-          yaw: e.boundingBox.yaw,
-          velocity: e.velocity,
-          confidence: 0.92,
-        };
-        into[n] = a;
-      } else {
-        a.position = e.boundingBox.center;
-        a.size = e.boundingBox.size;
-        a.yaw = e.boundingBox.yaw;
-        a.velocity = e.velocity;
-        a.confidence = 0.92;
-      }
-      n++;
-    }
-  }
-  into.length = n;
-  return into;
+function worldToEgoXY(
+  world: { x: number; y: number; z: number },
+  egoState: EgoState
+): { x: number; y: number } {
+  const localPos = vec3Sub(world, egoState.transform.position);
+  const cos = Math.cos(-egoState.transform.rotation);
+  const sin = Math.sin(-egoState.transform.rotation);
+  return {
+    x: localPos.x * cos - localPos.y * sin,
+    y: localPos.x * sin + localPos.y * cos,
+  };
 }
 
 /** Dense BEV occupancy from world-frame agents (cars, peds) plus optional detections. */
@@ -263,45 +147,23 @@ export function createBEVOccupancyFromAgents(
   egoState: EgoState,
   resolution: number = 0.8,
   extent: number = 32,
-  predictSeconds: number = 0,
-  into?: Float32Array,
+  predictSeconds: number = 0
 ): BEVOccupancy {
   const gridSize = Math.ceil(extent * 2 / resolution);
-  const needed = gridSize * gridSize;
-  let grid: Float32Array;
-  if (into && into.length === needed) {
-    grid = into;
-    grid.fill(0);
-  } else {
-    grid = new Float32Array(needed);
-    f3WorkStats.occupancyAllocs++;
-  }
-  f3WorkStats.gridFills++;
-
-  const egoX = egoState.transform.position.x;
-  const egoY = egoState.transform.position.y;
-  const cos = Math.cos(-egoState.transform.rotation);
-  const sin = Math.sin(-egoState.transform.rotation);
-  const range = extent + 8;
+  const grid = new Float32Array(gridSize * gridSize);
 
   for (const agent of agents) {
-    f3WorkStats.agentsSplat++;
-    const vx = agent.velocity?.x ?? 0;
-    const vy = agent.velocity?.y ?? 0;
-    const px = agent.position.x + vx * predictSeconds;
-    const py = agent.position.y + vy * predictSeconds;
-    const lx = px - egoX;
-    const ly = py - egoY;
-    const localX = lx * cos - ly * sin;
-    const localY = lx * sin + ly * cos;
-    if (localX > range || localX < -range || localY > range || localY < -range) continue;
+    const px = agent.position.x + (agent.velocity?.x ?? 0) * predictSeconds;
+    const py = agent.position.y + (agent.velocity?.y ?? 0) * predictSeconds;
+    const local = worldToEgoXY({ x: px, y: py, z: 0 }, egoState);
+    if (Math.abs(local.x) > extent + 8 || Math.abs(local.y) > extent + 8) continue;
     splatOccupancy(
       grid,
       gridSize,
       resolution,
       extent,
-      localX,
-      localY,
+      local.x,
+      local.y,
       agent.size.x,
       agent.size.y,
       agent.confidence ?? 0.9
@@ -315,25 +177,14 @@ export function predictFutureOccupancyFromAgents(
   agents: OccupancyAgent[],
   egoState: EgoState,
   resolution: number = 0.8,
-  extent: number = 32,
-  into?: FutureOccupancy,
+  extent: number = 32
 ): FutureOccupancy {
-  const occ = into ?? makeFutureOccupancy(resolution, extent);
-  if (into) {
-    occ.current.resolution = resolution;
-    occ.current.extent = extent;
-    occ.t1s.resolution = resolution;
-    occ.t1s.extent = extent;
-    occ.t2s.resolution = resolution;
-    occ.t2s.extent = extent;
-    occ.t3s.resolution = resolution;
-    occ.t3s.extent = extent;
-  }
-  createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 0, occ.current.grid);
-  createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 1, occ.t1s.grid);
-  createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 2, occ.t2s.grid);
-  createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 3, occ.t3s.grid);
-  return occ;
+  return {
+    current: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 0),
+    t1s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 1),
+    t2s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 2),
+    t3s: createBEVOccupancyFromAgents(agents, egoState, resolution, extent, 3),
+  };
 }
 
 // Create BEV occupancy from detections (world-frame boxes)
@@ -561,175 +412,6 @@ export function evaluateVariant(
   };
 }
 
-const POINT_DT = 0.2;
-const POINT_HORIZON = 3;
-const POINTS_PER_TRAJ = Math.floor(POINT_HORIZON / POINT_DT) + 1;
-let pooledTrajectories: CandidateTrajectory[] | null = null;
-
-function ensurePooledTrajectories(n: number): CandidateTrajectory[] {
-  if (pooledTrajectories && pooledTrajectories.length === n) return pooledTrajectories;
-  pooledTrajectories = [];
-  for (let i = 0; i < n; i++) {
-    const points: Trajectory['points'] = [];
-    for (let k = 0; k < POINTS_PER_TRAJ; k++) {
-      points.push({ position: vec3(0, 0, 0), velocity: 0, timestamp: k * POINT_DT });
-    }
-    pooledTrajectories.push({
-      points,
-      cost: 0,
-      costBreakdown: { collision: 0, comfort: 0, progress: 0, laneDeviation: 0 },
-    });
-  }
-  return pooledTrajectories;
-}
-
-function generateCandidateTrajectoriesPooled(
-  egoState: EgoState,
-  targetSpeed: number,
-  numCandidates: number = 7,
-): CandidateTrajectory[] {
-  const candidates = ensurePooledTrajectories(numCandidates);
-  const wheelbase = 2.7;
-  const dt = POINT_DT;
-  for (let i = 0; i < numCandidates; i++) {
-    const steeringAngle = ((i - (numCandidates - 1) / 2) / (numCandidates - 1)) * 0.5;
-    const traj = candidates[i]!;
-    let x = egoState.transform.position.x;
-    let y = egoState.transform.position.y;
-    let yaw = egoState.transform.rotation;
-    let v = vec3Length(egoState.velocity);
-    for (let k = 0; k < POINTS_PER_TRAJ; k++) {
-      const pt = traj.points[k]!;
-      pt.position.x = x;
-      pt.position.y = y;
-      pt.position.z = 0;
-      pt.velocity = v;
-      pt.timestamp = k * dt;
-      const yawRate = (v / wheelbase) * Math.tan(steeringAngle);
-      yaw += yawRate * dt;
-      v = Math.min(targetSpeed, v + 0.5 * dt);
-      x += v * Math.cos(yaw) * dt;
-      y += v * Math.sin(yaw) * dt;
-    }
-    traj.cost = 0;
-    traj.costBreakdown.collision = 0;
-    traj.costBreakdown.comfort = 0;
-    traj.costBreakdown.progress = 0;
-    traj.costBreakdown.laneDeviation = 0;
-  }
-  return candidates;
-}
-
-function scoreTrajectoriesInPlace(
-  trajectories: CandidateTrajectory[],
-  occupancy: FutureOccupancy,
-  targetHeading: number,
-): CandidateTrajectory[] {
-  const gridSize = Math.ceil(occupancy.current.extent * 2 / occupancy.current.resolution);
-  for (const traj of trajectories) {
-    let collisionCost = 0;
-    let comfortCost = 0;
-    let progressCost = 0;
-    for (let i = 0; i < traj.points.length; i++) {
-      const point = traj.points[i]!;
-      const occupGrid = i < 5 ? occupancy.current :
-                        i < 10 ? occupancy.t1s :
-                        i < 15 ? occupancy.t2s : occupancy.t3s;
-      const gridX = Math.floor((point.position.x + occupGrid.extent) / occupGrid.resolution);
-      const gridY = Math.floor((point.position.y + occupGrid.extent) / occupGrid.resolution);
-      if (gridX >= 0 && gridX < gridSize && gridY >= 0 && gridY < gridSize) {
-        collisionCost += (occupGrid.grid[gridY * gridSize + gridX] || 0) * 100;
-      }
-      progressCost -= (point.position.x * Math.cos(targetHeading) +
-                       point.position.y * Math.sin(targetHeading)) * 0.1;
-      if (i > 0) {
-        const prev = traj.points[i - 1]!;
-        const dx = point.position.x - prev.position.x;
-        const dy = point.position.y - prev.position.y;
-        comfortCost += Math.abs(Math.atan2(dy, dx)) * 10;
-      }
-    }
-    traj.cost = collisionCost + comfortCost + progressCost;
-    traj.costBreakdown.collision = collisionCost;
-    traj.costBreakdown.comfort = comfortCost;
-    traj.costBreakdown.progress = progressCost;
-    traj.costBreakdown.laneDeviation = 0;
-  }
-  return trajectories;
-}
-
-/**
- * F3 overlay hot path: occupancy + trajectory fan + Sim World, no lidar.
- * Occupancy is already built from world-frame agents; a second roof-lidar scan
- * (the old `runWaabiStack` overlay call) is the F3 frame-time cliff.
- */
-export function tickWaabiView(
-  egoState: EgoState,
-  groups: Array<Iterable<Entity>>,
-  existingState: WaabiStackState,
-  timestamp: number,
-  seed: number,
-  into: FutureOccupancy,
-  targetSpeed: number = 10,
-): {
-  occupancy: FutureOccupancy;
-  trajectories: CandidateTrajectory[];
-  selectedTrajectory: CandidateTrajectory;
-  newState: WaabiStackState;
-} {
-  f3WorkStats.predictCalls++;
-  const agents = occupancyAgentsFromEntities(groups);
-  const occupancy = predictFutureOccupancyFromAgents(
-    agents,
-    egoState,
-    into.current.resolution,
-    into.current.extent,
-    into,
-  );
-
-  const scored = scoreTrajectoriesInPlace(
-    generateCandidateTrajectoriesPooled(egoState, targetSpeed),
-    occupancy,
-    egoState.transform.rotation,
-  );
-  let bestIdx = 0;
-  let bestCost = Infinity;
-  for (let i = 0; i < scored.length; i++) {
-    if (scored[i]!.cost < bestCost) {
-      bestCost = scored[i]!.cost;
-      bestIdx = i;
-    }
-  }
-
-  dynamicScratch.length = 0;
-  for (const group of groups) {
-    for (const e of group) {
-      if (!isStaticOccupancySkip(e)) dynamicScratch.push(e);
-    }
-  }
-  const replay = existingState.simWorld.replayBuffer;
-  replay.push({ timestamp, entities: dynamicScratch, egoState });
-  f3WorkStats.replayFrameAllocs++;
-  if (replay.length > REPLAY_CAP) replay.shift();
-  if (timestamp - existingState.simWorld.lastGenerationTime > 5000) {
-    const rng = new SeededRandom(seed + timestamp);
-    existingState.simWorld.variants = generateAdversarialVariants(replay, rng)
-      .map(v => evaluateVariant(v, replay, egoState));
-    existingState.simWorld.lastGenerationTime = timestamp;
-  }
-
-  existingState.occupancy = occupancy;
-  existingState.candidateTrajectories = scored;
-  existingState.selectedTrajectoryIndex = bestIdx;
-
-  return {
-    occupancy,
-    trajectories: scored,
-    selectedTrajectory: scored[bestIdx]!,
-    newState: existingState,
-  };
-}
-
 // Run full Waabi-style perception and planning
 export function runWaabiStack(
   egoState: EgoState,
@@ -748,8 +430,7 @@ export function runWaabiStack(
 } {
   const rng = new SeededRandom(seed + timestamp);
   
-  // Simulate lidar (headless / API path only — F3 overlay uses tickWaabiView)
-  f3WorkStats.lidarScans++;
+  // Simulate lidar
   const lidarScan = simulateLidarScan(
     LIDAR_CONFIGS['roofLidar']!,
     egoState,
