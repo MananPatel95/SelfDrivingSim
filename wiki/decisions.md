@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-12
-sources: [3, 6, 12]
+sources: [3, 6, 12, 20]
 ---
 
 # Decisions
@@ -34,6 +34,10 @@ These stay in TypeScript:
 - [[pr-13]]: map start/end; both buttons required a full trip. **Supersedes** the compass UI.
 - [[pr-19]]: **Just drive** with no trip; autopilot still needs both map points. **Supersedes** the “manual requires a route” rule from #13.
 
+## Right-hand traffic and stop/yield mix
+
+[[pr-20]] made North-American right-hand lanes (`LANE_OFFSET` 3.5 m) and a seeded ~1/3 mix of all-way stop / minor-road yield / uncontrolled the live intersection control. Ego and every AI traffic car share `decideIntersection`. That **supersedes** cycling traffic lights as what actually governs junctions (the 30 s `updateTrafficLights` helper remains but `generateCityMap` no longer creates lights). Pedestrian yield from [[pr-5]] stays.
+
 ## Key files
 
 - `game/src/sim/vehicle.ts`
@@ -42,3 +46,5 @@ These stay in TypeScript:
 - `game/src/workers/simHotPath.ts`
 - `game/src/stacks/perception.ts`
 - `game/src/stacks/waabi.ts`
+- `game/src/sim/intersectionRules.ts`
+- `game/src/sim/rightLane.ts`

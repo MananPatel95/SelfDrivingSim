@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-12
-sources: [1, 19]
+sources: [1, 20]
 ---
 
 # Wiki index
@@ -18,11 +18,11 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
-- [Planning and autopilot](systems/planning.md) — short look-ahead, corners
-- [Traffic rules](systems/traffic-rules.md) — lights + yield to peds
+- [Planning and autopilot](systems/planning.md) — right-hand route, corners, stop/yield cap
+- [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled + yield to peds
 - [Pedestrians](systems/pedestrians.md) — sidewalks and crossings
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
-- [HUD and menus](systems/hud.md) — start menu, minimap
+- [HUD and menus](systems/hud.md) — start menu, minimap, seed/demo
 - [Data engine](systems/data-engine.md) — Python mine/label/train
 - [Testing](systems/testing.md) — Vitest and screenshots
 
@@ -39,6 +39,8 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [simulation.ts](entities/simulation-ts.md)
 - [vehicle.ts](entities/vehicle-ts.md)
 - [planner.ts](entities/planner-ts.md)
+- [intersectionRules.ts](entities/intersection-rules.md)
+- [rightLane.ts](entities/right-lane.md)
 - [lidar.ts](entities/lidar-ts.md)
 - [autonomy-sim crate](entities/autonomy-sim.md)
 
@@ -62,6 +64,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #17](sources/pr-17.md) — cabin wheel
 - [PR #18](sources/pr-18.md) — corner turns
 - [PR #19](sources/pr-19.md) — Just drive
+- [PR #20](sources/pr-20.md) — right-hand lanes and stop/yield mix
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 
