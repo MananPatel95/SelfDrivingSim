@@ -55,3 +55,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #22 sedan-sports + connected cockpit
 
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
+
+## [2026-10-12] ingest | cursor/ego-brake-tune-d05a dry ABS sedan braking (~1 g, 36–40 m from 100 km/h)

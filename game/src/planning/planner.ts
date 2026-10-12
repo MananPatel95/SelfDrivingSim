@@ -11,13 +11,15 @@ import {
   vec3, vec3Sub, vec3Length, vec3Distance, 
   normalizeAngle, calculateTTC, clamp 
 } from '../sim/math';
-import { VEHICLE_PARAMS } from '../sim/vehicle';
+import { VEHICLE_PARAMS, COMFORT_DECEL, EMERGENCY_DECEL } from '../sim/vehicle';
 
 export interface PlannerConfig {
   targetSpeed: number; // m/s
   minFollowingDistance: number; // m
   timeGap: number; // seconds
-  maxDecel: number; // m/s^2
+  maxDecel: number; // m/s^2 emergency
+  /** Routine speed-matching deceleration (m/s²). Stop-in-time may escalate to maxDecel. */
+  comfortDecel: number;
   maxAccel: number; // m/s^2
   maxLateralAccel: number; // m/s^2
   collisionTimeThreshold: number; // TTC threshold in seconds
@@ -27,7 +29,8 @@ const DEFAULT_CONFIG: PlannerConfig = {
   targetSpeed: 11.2, // 25 mph = 40 km/h
   minFollowingDistance: 5,
   timeGap: 2.0,
-  maxDecel: 4.0,
+  maxDecel: EMERGENCY_DECEL,
+  comfortDecel: COMFORT_DECEL,
   maxAccel: 2.0,
   maxLateralAccel: 3.0,
   collisionTimeThreshold: 3.0,
@@ -153,12 +156,12 @@ export function planTrajectory(
   if (emergencyBrake) {
     acceleration = -config.maxDecel;
   } else if (stoppingDistance < speed * speed / (2 * config.maxDecel)) {
-    // Need to brake to stop in time
+    // Need to brake to stop in time; escalate from comfort toward emergency
     acceleration = -Math.min(config.maxDecel, speed * speed / (2 * Math.max(1, stoppingDistance)));
   } else if (speed < desiredSpeed) {
     acceleration = Math.min(config.maxAccel, (desiredSpeed - speed) * 0.5);
   } else if (speed > desiredSpeed) {
-    acceleration = -Math.min(config.maxDecel, (speed - desiredSpeed) * 0.5);
+    acceleration = -Math.min(config.comfortDecel, (speed - desiredSpeed) * 0.5);
   } else {
     acceleration = 0;
   }
@@ -424,7 +427,7 @@ export function oracleSupervisor(
       return {
         takeover: true,
         reason: 'perception_miss',
-        accel: -VEHICLE_PARAMS[ego.vehicleType].maxDecel,
+        accel: -Math.min(VEHICLE_PARAMS[ego.vehicleType].maxDecel, EMERGENCY_DECEL),
         steering: currentSteering,
       };
     }
@@ -434,7 +437,7 @@ export function oracleSupervisor(
       return {
         takeover: true,
         reason: 'planning_unsafe',
-        accel: -VEHICLE_PARAMS[ego.vehicleType].maxDecel,
+        accel: -Math.min(VEHICLE_PARAMS[ego.vehicleType].maxDecel, EMERGENCY_DECEL),
         steering: currentSteering,
       };
     }
