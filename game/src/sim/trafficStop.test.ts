@@ -181,12 +181,12 @@ describe('several traffic cars at an all-way stop', () => {
       isStatic: false,
       occlusionLevel: 0,
       laneId: lane.id,
-      laneProgress: 0.36,
+      laneProgress: ( -28 - (-300) ) / 600,
       targetSpeed: 10,
     };
     const book: StopBook = { arrivals: new Map() };
     let sawStop = false;
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 400; i++) {
       vehicle = updateTrafficVehicle(vehicle, map.lanes, [], [vehicle], 1 / 30, [], {
         intersections: [inter],
         book,

@@ -99,9 +99,59 @@ describe('intersection right-of-way', () => {
     const right = user(2, 16, 0, Math.PI, 7);
     const yieldRight = decideIntersection(self, [right], [], [open], book(), 1);
     expect(yieldRight.reason).toMatch(/car on right/i);
-    const ped = decideIntersection(self, [], [{ x: 1, y: 1 }], [open], book(), 1);
+    const ped = decideIntersection(self, [], [{ x: 1, y: 1, state: 'crossing' }], [open], book(), 1);
     expect(ped.mustStop).toBe(true);
     expect(ped.reason).toMatch(/pedestrian/i);
+  });
+
+  it('never stops a car that is already inside the intersection box', () => {
+    const inter = stopAtOrigin();
+    const inside = user(1, 1.2, 0.4, Math.PI / 2, 0.05);
+    const d = decideIntersection(inside, [], [], [inter], book(), 1);
+    expect(d.mustStop).toBe(false);
+    expect(d.maxSpeed).toBeGreaterThan(3);
+    expect(d.reason).toMatch(/clearing/i);
+  });
+
+  it('releases the earliest arrival after 3s when four stop-sign cars deadlock', () => {
+    const inter = stopAtOrigin();
+    const arrivals = book();
+    const cars = [
+      user(1, 0, -8.2, Math.PI / 2, 0.05),
+      user(2, 8.2, 0, Math.PI, 0.05),
+      user(3, 0, 8.2, -Math.PI / 2, 0.05),
+      user(4, -8.2, 0, 0, 0.05),
+    ];
+    arrivals.arrivals.set(1, { intersectionId: 1, arrivedAt: 1.00 });
+    arrivals.arrivals.set(2, { intersectionId: 1, arrivedAt: 1.00 });
+    arrivals.arrivals.set(3, { intersectionId: 1, arrivedAt: 1.00 });
+    arrivals.arrivals.set(4, { intersectionId: 1, arrivedAt: 1.00 });
+    const early = decideIntersection(cars[0]!, cars, [], [inter], arrivals, 2.0);
+    expect(early.mustStop).toBe(true);
+    const released = decideIntersection(cars[0]!, cars, [], [inter], arrivals, 1 + 3.05);
+    expect(released.mustStop).toBe(false);
+    expect(released.reason).toMatch(/deadlock/i);
+    const stillHeld = decideIntersection(cars[2]!, cars, [], [inter], arrivals, 1 + 3.05);
+    expect(stillHeld.mustStop).toBe(true);
+  });
+
+  it('holds a go decision so stop/go does not flicker', () => {
+    const open = buildControlledIntersection(3, 0, 0, vec3(0, 0, 0), 2);
+    const self = user(1, 0, -10, Math.PI / 2, 4);
+    const arrivals = book();
+    const first = decideIntersection(self, [], [], [open], arrivals, 1);
+    expect(first.mustStop).toBe(false);
+    const right = user(2, 16, 0, Math.PI, 7);
+    const held = decideIntersection(self, [right], [], [open], arrivals, 1.3);
+    expect(held.mustStop).toBe(false);
+    expect(held.reason).toMatch(/committed|clearing|uncontrolled/i);
+  });
+
+  it('does not freeze the junction for a pedestrian waiting on the sidewalk', () => {
+    const open = buildControlledIntersection(3, 0, 0, vec3(0, 0, 0), 2);
+    const self = user(1, 0, -16, Math.PI / 2, 6);
+    const d = decideIntersection(self, [], [{ x: 8.8, y: -8.8, state: 'waiting' }], [open], book(), 1);
+    expect(d.reason).not.toMatch(/pedestrian/i);
   });
 });
 
@@ -147,7 +197,8 @@ describe('HUD detections and parked banner', () => {
       visionDetections: [],
       controlSource: 'human',
     });
-    expect(decision.text).toBe('Manual');
+    expect(decision.text).toMatch(/Manual/i);
+    expect(decision.text).toMatch(/T to re-engage/i);
     expect(decision.text).not.toMatch(/Cruising/);
   });
 });

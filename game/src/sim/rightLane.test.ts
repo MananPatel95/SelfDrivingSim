@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateCityMap } from './world';
+import { generateCityMap, nearestGridLine } from './world';
 import { vec3 } from './math';
 import { createPlannerState, planTrajectory } from '../planning/planner';
 import { createEgoState, updateVehicle } from './vehicle';
@@ -7,6 +7,7 @@ import {
   LANE_OFFSET,
   inRightLane,
   lateralFromCenter,
+  mergeIntoLaneRoute,
   placeInRightLane,
   rightLaneRoute,
   straddlesCenter,
@@ -89,5 +90,25 @@ describe('right-hand traffic lanes', () => {
     expect(leftLane).toBe(false);
     expect(turned).toBe(true);
     expect(lateralFromCenter(ego.transform.position.x, ego.transform.position.y, ego.transform.rotation)).toBeGreaterThan(1.2);
+  });
+
+  it('merges from an off-lane pose into a right-hand trip', () => {
+    const from = vec3(0.2, -70, 0);
+    const route = mergeIntoLaneRoute(from, Math.PI / 2, vec3(90, 0, 0));
+    expect(route.length).toBeGreaterThan(10);
+    expect(Math.hypot(route[0]!.x - from.x, route[0]!.y - from.y)).toBeLessThan(1);
+    const tail = route[route.length - 1]!;
+    expect(tail.x).toBeGreaterThan(70);
+    const settled = route.slice(9).filter((p) => {
+      const nearCorner = Math.abs(p.x - nearestGridLine(p.x)) < 12 && Math.abs(p.y - nearestGridLine(p.y)) < 12;
+      return !nearCorner;
+    });
+    expect(settled.length).toBeGreaterThan(3);
+    for (const p of settled) {
+      const heading = Math.abs(p.x - nearestGridLine(p.x)) <= Math.abs(p.y - nearestGridLine(p.y))
+        ? Math.PI / 2
+        : 0;
+      expect(inRightLane(p.x, p.y, heading)).toBe(true);
+    }
   });
 });

@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 26]
+sources: [1, 20, 22, 24, 25, 26]
 ---
 
 # Wiki log
@@ -56,4 +56,20 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-12] ingest | PR #22 silver hood/doors, rim mark, 450° lock shots
 
+## [2026-10-12] ingest | cursor/traffic-flow-6c1c AI traffic random walk, deadlock breaker, no reverse
+
+## [2026-10-12] ingest | PR #24 Fix AI traffic deadlock: random walk, deadlock breaker, never reverse
+
+## [2026-10-12] ingest | PR #25 Tesla FP cockpit, HUD panels, autopilot re-engage
+
+## [2026-10-12] ingest | PR #25 retune live cockpit to Tesla photo (0.6 m wheel, 7° pitch, thin dash)
+
+## [2026-10-12] ingest | PR #25 open windshield: 88° FOV, dash ~72% down, no A-pillars/header
+
+## [2026-10-12] ingest | PR #25 solid full-width dash fill below the dash line
+
+## [2026-10-12] merge | origin/main (#24 traffic) into PR #25 cockpit branch
+
 ## [2026-10-12] ingest | PR #26 F3 Waabi view: 10 Hz occupancy, skip duplicate lidar
+
+## [2026-10-12] merge | origin/main (#24 traffic, #25 cockpit) into PR #26 F3 view

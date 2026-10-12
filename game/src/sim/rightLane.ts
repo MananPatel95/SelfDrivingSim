@@ -130,3 +130,47 @@ export function turnKind(fromHeading: number, toHeading: number): 'left' | 'righ
   if (d < -0.4) return 'right';
   return 'straight';
 }
+
+/** Snap heading onto the nearest cardinal so cruise stays on the grid. */
+export function snapHeadingToGrid(heading: number): number {
+  const n = Math.round(heading / (Math.PI / 2));
+  return n * (Math.PI / 2);
+}
+
+function axisPoint(x: number, y: number, heading: number): Vec3 {
+  const ns = Math.abs(Math.sin(heading)) >= Math.abs(Math.cos(heading));
+  if (ns) return vec3(nearestGridLine(x), y, 0);
+  return vec3(x, nearestGridLine(y), 0);
+}
+
+/** Destination a few hundred metres ahead on the current road axis. */
+export function cruiseDestination(x: number, y: number, heading: number, dist = 260): Vec3 {
+  const yaw = snapHeadingToGrid(heading);
+  return axisPoint(x + Math.cos(yaw) * dist, y + Math.sin(yaw) * dist, yaw);
+}
+
+/**
+ * Replan from the car's pose: ease into the right-hand lane, then follow a
+ * Manhattan right-lane path to `goal` (or cruise ahead if goal is omitted).
+ */
+export function mergeIntoLaneRoute(
+  from: Vec3,
+  heading: number,
+  goal?: Vec3 | null,
+  offset = LANE_OFFSET,
+): Vec3[] {
+  const yaw = snapHeadingToGrid(heading);
+  const axisFrom = axisPoint(from.x, from.y, yaw);
+  const dest = goal
+    ? axisPoint(goal.x, goal.y, Math.abs(goal.x - nearestGridLine(goal.x)) <= Math.abs(goal.y - nearestGridLine(goal.y)) ? Math.PI / 2 : 0)
+    : cruiseDestination(from.x, from.y, yaw);
+  const rest = rightLaneRoute(axisFrom, dest, offset);
+  const merge = rest[0] ?? placeInRightLane(from.x, from.y, yaw, offset);
+  const lead: Vec3[] = [];
+  const steps = 8;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    lead.push(vec3(from.x * (1 - t) + merge.x * t, from.y * (1 - t) + merge.y * t, 0));
+  }
+  return [...lead, ...rest.slice(1)];
+}

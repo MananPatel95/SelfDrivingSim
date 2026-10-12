@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-12
-sources: [3, 6, 12, 20]
+sources: [3, 6, 12, 20, 24]
 ---
 
 # Decisions
@@ -33,10 +33,13 @@ These stay in TypeScript:
 - [[pr-10]]: parked start + pick a compass direction.
 - [[pr-13]]: map start/end; both buttons required a full trip. **Supersedes** the compass UI.
 - [[pr-19]]: **Just drive** with no trip; autopilot still needs both map points. **Supersedes** the “manual requires a route” rule from #13.
+- [[pr-25]]: **T** / the Manual banner re-engages from the current pose (replan to the trip destination, or cruise with no trip). WASD still takes over on a new press. **Supersedes** “once you take over there is no Auto”.
 
 ## Right-hand traffic and stop/yield mix
 
 [[pr-20]] made North-American right-hand lanes (`LANE_OFFSET` 3.5 m) and a seeded ~1/3 mix of all-way stop / minor-road yield / uncontrolled the live intersection control. Ego and every AI traffic car share `decideIntersection`. That **supersedes** cycling traffic lights as what actually governs junctions (the 30 s `updateTrafficLights` helper remains but `generateCityMap` no longer creates lights). Pedestrian yield from [[pr-5]] stays.
+
+AI traffic now random-walks the grid (`trafficFlow.ts`) instead of riding one full-map lane until `laneProgress >= 1` froze it. Reverse-direction lanes also span the whole map (`y → -y`) rather than ending at the origin. Deadlock breaker, go hysteresis, and “never stop in the box” live in `decideIntersection`. `updateVehicle`, `removeGround`, and `createBEVOccupancyFromAgents` stay in TypeScript; `simHotPath.ts` is still unused.
 
 ## Key files
 
@@ -48,3 +51,4 @@ These stay in TypeScript:
 - `game/src/stacks/waabi.ts`
 - `game/src/sim/intersectionRules.ts`
 - `game/src/sim/rightLane.ts`
+- `game/src/sim/trafficFlow.ts`

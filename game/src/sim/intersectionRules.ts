@@ -32,7 +32,15 @@ export interface RoadUser {
 
 export interface StopBook {
   arrivals: Map<number, { intersectionId: number; arrivedAt: number }>;
+  /** Once released, keep going so stop/go does not flicker. */
+  goHold?: Map<number, { intersectionId: number; until: number }>;
+  /** First time this car was held at the junction (deadlock breaker). */
+  waitSince?: Map<number, { intersectionId: number; since: number }>;
 }
+
+export const DEADLOCK_WAIT = 3;
+export const GO_HOLD = 0.8;
+export const CLEARING_SPEED = 5.2;
 
 export interface RuleDecision {
   maxSpeed: number;
@@ -116,14 +124,21 @@ function headingIs(list: number[], yaw: number): boolean {
 }
 
 function someoneInBox(inter: ControlledIntersection, users: RoadUser[], selfId: number): boolean {
-  return users.some(u => u.id !== selfId && distToCenter(u, inter) < INTERSECTION_BOX && u.speed > 0.4);
+  // Only a car actually moving through the box blocks others. Creepers and
+  // stalled occupants are cleared by the in-box "always go" rule instead.
+  return users.some(u => u.id !== selfId && distToCenter(u, inter) < INTERSECTION_BOX && u.speed > 1.2);
 }
 
 function pedInCrosswalk(
   inter: ControlledIntersection,
-  peds: ReadonlyArray<{ x: number; y: number }>,
+  peds: ReadonlyArray<{ x: number; y: number; state?: string }>,
 ): boolean {
-  return peds.some(p => Math.hypot(p.x - inter.center.x, p.y - inter.center.y) < 12);
+  // Asphalt is ~7 m from centre. Sidewalk waiters at ~8.8 m must not freeze the junction.
+  return peds.some(p => {
+    if (Math.hypot(p.x - inter.center.x, p.y - inter.center.y) > 7.4) return false;
+    if (p.state && p.state !== 'crossing') return false;
+    return true;
+  });
 }
 
 function majorTrafficClose(
@@ -161,34 +176,106 @@ function rightTrafficClose(
   return null;
 }
 
+function waitingHere(
+  book: StopBook,
+  users: RoadUser[],
+  inter: ControlledIntersection,
+): Array<{ o: RoadUser; arrivedAt: number }> {
+  return users
+    .map(o => ({ o, rec: book.arrivals.get(o.id) }))
+    .filter((x): x is { o: RoadUser; rec: { intersectionId: number; arrivedAt: number } } =>
+      !!x.rec && x.rec.intersectionId === inter.id
+      && distToCenter(x.o, inter) < INTERSECTION_BOX + 12)
+    .map(x => ({ o: x.o, arrivedAt: x.rec.arrivedAt }));
+}
+
+function earliestArrivalId(waiting: Array<{ o: RoadUser; arrivedAt: number }>): number | null {
+  if (waiting.length === 0) return null;
+  waiting.sort((a, b) => a.arrivedAt - b.arrivedAt || a.o.id - b.o.id);
+  return waiting[0]!.o.id;
+}
+
 function canLeaveStop(
   self: RoadUser,
   inter: ControlledIntersection,
   others: RoadUser[],
   book: StopBook,
+  now: number,
 ): { ok: boolean; reason: string } {
-  if (someoneInBox(inter, others, self.id)) {
-    return { ok: false, reason: 'Stopping: intersection occupied' };
-  }
   const mine = book.arrivals.get(self.id);
   if (!mine || mine.intersectionId !== inter.id) {
     return { ok: false, reason: 'Stopping: stop sign' };
   }
-  const waiting = others
-    .map(o => ({ o, rec: book.arrivals.get(o.id) }))
-    .filter((x): x is { o: RoadUser; rec: { intersectionId: number; arrivedAt: number } } =>
-      !!x.rec && x.rec.intersectionId === inter.id && x.o.id !== self.id
-      && distToCenter(x.o, inter) < INTERSECTION_BOX + 12);
-
-  for (const { o, rec } of waiting) {
-    if (rec.arrivedAt < mine.arrivedAt - 0.12) {
+  const waiting = waitingHere(book, [self, ...others], inter);
+  const allWaited = waiting.length > 0
+    && waiting.every(w => now - w.arrivedAt >= DEADLOCK_WAIT);
+  if (allWaited && earliestArrivalId(waiting) === self.id) {
+    return { ok: true, reason: 'Clearing: deadlock breaker' };
+  }
+  if (someoneInBox(inter, others, self.id)) {
+    return { ok: false, reason: 'Stopping: intersection occupied' };
+  }
+  for (const { o, arrivedAt } of waiting) {
+    if (o.id === self.id) continue;
+    if (arrivedAt < mine.arrivedAt - 0.12) {
       return { ok: false, reason: 'Stopping: first come, first served' };
     }
-    if (Math.abs(rec.arrivedAt - mine.arrivedAt) <= 0.12 && isOnRight(self.yaw, o.yaw)) {
+    if (Math.abs(arrivedAt - mine.arrivedAt) <= 0.12 && isOnRight(self.yaw, o.yaw)) {
       return { ok: false, reason: 'Yielding to car on right' };
     }
   }
   return { ok: true, reason: 'Clearing: stop sign' };
+}
+
+function goHoldMap(book: StopBook): Map<number, { intersectionId: number; until: number }> {
+  if (!book.goHold) book.goHold = new Map();
+  return book.goHold;
+}
+
+function waitMap(book: StopBook): Map<number, { intersectionId: number; since: number }> {
+  if (!book.waitSince) book.waitSince = new Map();
+  return book.waitSince;
+}
+
+function markWait(book: StopBook, userId: number, interId: number, now: number): void {
+  const rec = waitMap(book).get(userId);
+  if (!rec || rec.intersectionId !== interId) {
+    waitMap(book).set(userId, { intersectionId: interId, since: now });
+  }
+}
+
+function clearWait(book: StopBook, userId: number): void {
+  book.waitSince?.delete(userId);
+}
+
+function markGoHold(book: StopBook, userId: number, interId: number, now: number): void {
+  goHoldMap(book).set(userId, { intersectionId: interId, until: now + GO_HOLD });
+  clearWait(book, userId);
+}
+
+function holdActive(book: StopBook, userId: number, interId: number, now: number): boolean {
+  const rec = book.goHold?.get(userId);
+  return !!rec && rec.intersectionId === interId && rec.until > now;
+}
+
+/** Uncontrolled / yield four-way: if everyone nearby has been held > 3 s, earliest waiter goes. */
+function deadlockGo(
+  self: RoadUser,
+  inter: ControlledIntersection,
+  others: RoadUser[],
+  book: StopBook,
+  now: number,
+): boolean {
+  const nearby = [self, ...others].filter(u => distToCenter(u, inter) < INTERSECTION_BOX + 16);
+  if (nearby.length === 0) return false;
+  const waits = nearby
+    .map(u => ({ u, rec: book.waitSince?.get(u.id) }))
+    .filter((x): x is { u: RoadUser; rec: { intersectionId: number; since: number } } =>
+      !!x.rec && x.rec.intersectionId === inter.id);
+  if (waits.length < 2) return false;
+  if (!waits.every(w => now - w.rec.since >= DEADLOCK_WAIT)) return false;
+  waits.sort((a, b) => a.rec.since - b.rec.since || a.u.id - b.u.id);
+  return waits[0]!.u.id === self.id;
 }
 
 export function markArrival(book: StopBook, user: RoadUser, inter: ControlledIntersection, now: number): void {
@@ -204,13 +291,14 @@ export function clearArrival(book: StopBook, userId: number, inter: ControlledIn
 export function decideIntersection(
   self: RoadUser,
   others: RoadUser[],
-  peds: ReadonlyArray<{ x: number; y: number }>,
+  peds: ReadonlyArray<{ x: number; y: number; state?: string }>,
   intersections: readonly ControlledIntersection[],
   book: StopBook,
   now: number,
 ): RuleDecision {
   const hit = approachingIntersection(self, intersections);
   if (!hit) {
+    clearWait(book, self.id);
     return { maxSpeed: 99, mustStop: false, reason: 'Cruising: lane clear', severity: 'go' };
   }
   const { inter, distToLine } = hit;
@@ -223,7 +311,25 @@ export function decideIntersection(
     if (!who || distToCenter(who, inter) > INTERSECTION_BOX + 12) book.arrivals.delete(id);
   }
 
-  if (pedInCrosswalk(inter, peds) && distToLine > -2 && distToLine < 18) {
+  const distC = distToCenter(self, inter);
+
+  // Never stop inside the box — once a car enters, it clears.
+  if (distC < INTERSECTION_BOX) {
+    markGoHold(book, self.id, inter.id, now);
+    return {
+      maxSpeed: Math.max(CLEARING_SPEED, self.speed, 4.2),
+      mustStop: false,
+      reason: 'Clearing: intersection',
+      severity: 'go',
+    };
+  }
+
+  if (holdActive(book, self.id, inter.id, now) && distToLine < 8) {
+    return { maxSpeed: CLEARING_SPEED, mustStop: false, reason: 'Clearing: committed', severity: 'go' };
+  }
+
+  if (pedInCrosswalk(inter, peds) && distToLine > 0 && distToLine < 18) {
+    markWait(book, self.id, inter.id, now);
     return { maxSpeed: 0, mustStop: true, reason: 'Yielding to pedestrian', severity: 'brake' };
   }
 
@@ -237,6 +343,7 @@ export function decideIntersection(
     const completed = rec?.intersectionId === inter.id;
     if (!completed) {
       const creep = distToLine < 8 ? 1.15 : Math.max(1.2, distToLine * 0.35);
+      markWait(book, self.id, inter.id, now);
       return {
         maxSpeed: atLine ? 0 : creep,
         mustStop: atLine,
@@ -244,25 +351,39 @@ export function decideIntersection(
         severity: 'brake',
       };
     }
-    const leave = canLeaveStop(self, inter, others, book);
+    const leave = canLeaveStop(self, inter, others, book, now);
     if (!leave.ok) {
+      markWait(book, self.id, inter.id, now);
       return { maxSpeed: 0, mustStop: true, reason: leave.reason, severity: 'brake' };
     }
+    markGoHold(book, self.id, inter.id, now);
     return { maxSpeed: 4.5, mustStop: false, reason: leave.reason, severity: 'go' };
   }
 
   if (inter.control === 'yield' && signed && distToLine > -2 && distToLine < 24) {
+    if (deadlockGo(self, inter, others, book, now)) {
+      markGoHold(book, self.id, inter.id, now);
+      return { maxSpeed: 6.2, mustStop: false, reason: 'Clearing: deadlock breaker', severity: 'go' };
+    }
     if (majorTrafficClose(inter, self, others)) {
+      markWait(book, self.id, inter.id, now);
       return { maxSpeed: distToLine < 4 ? 0 : 3.2, mustStop: distToLine < 3, reason: 'Yielding to cross traffic', severity: 'slow' };
     }
+    markGoHold(book, self.id, inter.id, now);
     return { maxSpeed: 6.2, mustStop: false, reason: 'Yielding: clear to go', severity: 'go' };
   }
 
   if (inter.control === 'none' && distToLine > -2 && distToLine < 22) {
+    if (deadlockGo(self, inter, others, book, now)) {
+      markGoHold(book, self.id, inter.id, now);
+      return { maxSpeed: 5.5, mustStop: false, reason: 'Clearing: deadlock breaker', severity: 'go' };
+    }
     const right = rightTrafficClose(inter, self, others);
     if (right) {
+      markWait(book, self.id, inter.id, now);
       return { maxSpeed: distToLine < 4 ? 1.2 : 3.5, mustStop: false, reason: 'Yielding to car on right', severity: 'slow' };
     }
+    markGoHold(book, self.id, inter.id, now);
     return { maxSpeed: 5.5, mustStop: false, reason: 'Uncontrolled: slowing', severity: 'slow' };
   }
 
