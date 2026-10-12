@@ -12,6 +12,8 @@ Asphalt grip is `μ · g`. Lateral tyre force (`tireLateralForce`) pulls sidesli
 
 F5/F6 rail and ship integrators were removed; the comment in `vehicle.ts` says city vehicles stay on this bicycle model. See [[decisions]].
 
+World collisions run **after** `updateVehicle` (`applyCollisionMotion` writes the impulse into world / body velocities and yaw rate). The bicycle step itself is not replaced.
+
 ## Key files
 
 - `game/src/sim/vehicle.ts`

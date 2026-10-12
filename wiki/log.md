@@ -69,3 +69,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #25 solid full-width dash fill below the dash line
 
 ## [2026-10-12] merge | origin/main (#24 traffic) into PR #25 cockpit branch
+
+## [2026-10-12] ingest | collision-physics impulse collisions, snap, tumble

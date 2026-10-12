@@ -242,6 +242,14 @@ const entityMeshes = new Map<number, THREE.Mesh>();
 const detectionMeshes: THREE.Mesh[] = [];
 let groundMesh: THREE.Mesh;
 let bevOverlayEnabled = false;
+let collisionShotHold = false;
+let collisionShotAt = 0;
+let collisionCam: { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number } | null = null;
+let poleInstanced: THREE.InstancedMesh | null = null;
+let poleEntityIds: number[] = [];
+const signMeshes = new Map<number, THREE.Object3D>();
+const furnitureVisuals = new Map<number, THREE.Object3D>();
+const poleDummy = new THREE.Object3D();
 
 // Initialize Three.js
 function initThreeJS() {
@@ -725,11 +733,15 @@ function isMobileClass(classType: string): boolean {
 }
 
 function rebuildStaticCity() {
+  clearFurnitureVisuals();
   for (const mesh of staticCityMeshes) {
     scene.remove(mesh);
     disposeObject(mesh);
   }
   staticCityMeshes = [];
+  poleInstanced = null;
+  poleEntityIds = [];
+  signMeshes.clear();
   const statics = simulation.getState().worldMap.staticEntities;
   const dummy = new THREE.Object3D();
 
@@ -785,6 +797,9 @@ function rebuildStaticCity() {
     staticCityMeshes.push(trunks, foliage);
   }
 
+  poleInstanced = null;
+  poleEntityIds = [];
+  signMeshes.clear();
   const poles = statics.filter(e => e.classType === 'pole');
   if (poles.length > 0) {
     const mesh = new THREE.InstancedMesh(
@@ -802,6 +817,8 @@ function rebuildStaticCity() {
     mesh.instanceMatrix.needsUpdate = true;
     scene.add(mesh);
     staticCityMeshes.push(mesh);
+    poleInstanced = mesh;
+    poleEntityIds = poles.map(p => p.id);
   }
 
   const signs = statics.filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign');
@@ -809,8 +826,10 @@ function rebuildStaticCity() {
     const mesh = createEntityMesh(sign.classType) as THREE.Mesh;
     mesh.position.set(sign.transform.position.x, 0, -sign.transform.position.y);
     mesh.rotation.y = meshYawForHeading(sign.transform.rotation);
+    mesh.userData.entityId = sign.id;
     scene.add(mesh);
     staticCityMeshes.push(mesh);
+    signMeshes.set(sign.id, mesh);
   }
 
   const stopLines: Array<{ x: number; y: number; z: number; ry?: number }> = [];
@@ -871,26 +890,122 @@ function updateEntityMeshes() {
     const isVehicle = entity.classType === 'car' || entity.classType === 'truck'
       || entity.classType === 'bus' || entity.classType === 'motorcycle';
     const face = entity.transform.rotation;
+    const tumbling = entity.classType === 'pedestrian' && 'state' in entity
+      && (entity as { state?: string }).state === 'tumbling';
     if (isVehicle) mesh.rotation.y = meshYawForHeading(face);
     else if (entity.classType === 'pedestrian') {
       // Body faces along the sidewalk. The step cycle is applied below so the feet
       // move in that same direction (not a moonwalk toward the camera).
+      mesh.rotation.order = 'YXZ';
       mesh.rotation.y = Math.atan2(-Math.cos(face), Math.sin(face));
+      if (tumbling) {
+        const ped = entity as {
+          tumbleHeight?: number; tumblePitch?: number; tumbleRoll?: number;
+        };
+        mesh.position.y = ped.tumbleHeight ?? 0.12;
+        mesh.rotation.x = ped.tumblePitch ?? 0;
+        mesh.rotation.z = ped.tumbleRoll ?? 0;
+      } else {
+        mesh.rotation.x = 0;
+        mesh.rotation.z = 0;
+      }
     } else mesh.rotation.y = -face;
     const walk = mesh.userData.walk as {
       leftLeg: THREE.Group; rightLeg: THREE.Group; leftArm: THREE.Group; rightArm: THREE.Group;
     } | undefined;
     if (walk) {
-      const spd = Math.hypot(entity.velocity.x, entity.velocity.y);
-      const phase = spd > 0.15 ? (entity.transform.position.x + entity.transform.position.y) * 2.4 : 0;
-      const swing = Math.sin(phase) * Math.min(0.65, 0.25 + spd * 0.28);
-      // Positive X rotation steps the foot toward local -Z, which is behind the facing.
-      // Negate it so a pedestrian walking away steps away, not back toward the camera.
-      walk.leftLeg.rotation.x = -swing;
-      walk.rightLeg.rotation.x = swing;
-      walk.leftArm.rotation.x = swing * 0.85;
-      walk.rightArm.rotation.x = -swing * 0.85;
+      if (tumbling) {
+        const t = simulation.getState().timestamp / 1000;
+        const flap = Math.sin(t * 14) * 0.85;
+        walk.leftLeg.rotation.x = flap;
+        walk.rightLeg.rotation.x = -flap;
+        walk.leftArm.rotation.x = -flap * 1.1;
+        walk.rightArm.rotation.x = flap * 1.1;
+      } else {
+        const spd = Math.hypot(entity.velocity.x, entity.velocity.y);
+        const phase = spd > 0.15 ? (entity.transform.position.x + entity.transform.position.y) * 2.4 : 0;
+        const swing = Math.sin(phase) * Math.min(0.65, 0.25 + spd * 0.28);
+        // Positive X rotation steps the foot toward local -Z, which is behind the facing.
+        // Negate it so a pedestrian walking away steps away, not back toward the camera.
+        walk.leftLeg.rotation.x = -swing;
+        walk.rightLeg.rotation.x = swing;
+        walk.leftArm.rotation.x = swing * 0.85;
+        walk.rightArm.rotation.x = -swing * 0.85;
+      }
     }
+  }
+  updateFurnitureVisuals();
+}
+
+function clearFurnitureVisuals() {
+  for (const mesh of furnitureVisuals.values()) {
+    scene.remove(mesh);
+    disposeObject(mesh);
+  }
+  furnitureVisuals.clear();
+}
+
+function updateFurnitureVisuals() {
+  const broken = simulation.getState().brokenFurniture;
+  const live = new Set(broken.map(b => b.id));
+  for (const [id, mesh] of furnitureVisuals) {
+    if (live.has(id)) continue;
+    scene.remove(mesh);
+    disposeObject(mesh);
+    furnitureVisuals.delete(id);
+  }
+
+  if (poleInstanced) {
+    for (let i = 0; i < poleEntityIds.length; i++) {
+      const id = poleEntityIds[i]!;
+      const po = simulation.getState().worldMap.staticEntities.find(e => e.id === id);
+      if (!po) continue;
+      const snapped = broken.find(b => b.id === id);
+      poleDummy.position.set(po.transform.position.x, 4, -po.transform.position.y);
+      poleDummy.rotation.set(0, 0, 0);
+      poleDummy.scale.set(snapped ? 0 : 1, snapped ? 0 : 1, snapped ? 0 : 1);
+      poleDummy.updateMatrix();
+      poleInstanced.setMatrixAt(i, poleDummy.matrix);
+    }
+    poleInstanced.instanceMatrix.needsUpdate = true;
+  }
+
+  for (const b of broken) {
+    if (b.classType === 'stop_sign' || b.classType === 'yield_sign') {
+      const mesh = signMeshes.get(b.id);
+      if (mesh) {
+        const t = Math.min(1, b.fallAngle / (Math.PI / 2));
+        const along = 1.35 * t;
+        mesh.position.set(b.x + b.fallDirX * along, 0.02, -(b.y + b.fallDirY * along));
+        mesh.rotation.order = 'YXZ';
+        mesh.rotation.y = meshYawForHeading(b.yaw);
+        mesh.rotation.x = b.fallDirY * b.fallAngle;
+        mesh.rotation.z = -b.fallDirX * b.fallAngle;
+      }
+      continue;
+    }
+    let mesh = furnitureVisuals.get(b.id);
+    if (!mesh) {
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.13, 0.13, 8, 8),
+        new THREE.MeshLambertMaterial({ color: 0x6d6d6d }),
+      );
+      pole.castShadow = true;
+      mesh = pole;
+      scene.add(mesh);
+      furnitureVisuals.set(b.id, mesh);
+    }
+    const upright = new THREE.Vector3(0, 1, 0);
+    const fallen = new THREE.Vector3(b.fallDirX || 0, 0, -(b.fallDirY || 1)).normalize();
+    const dir = upright.clone().lerp(fallen, Math.min(1, b.fallAngle / (Math.PI / 2))).normalize();
+    mesh.quaternion.setFromUnitVectors(upright, dir);
+    const lift = 4 * Math.cos(b.fallAngle) + 0.13 * Math.sin(b.fallAngle);
+    const along = 4 * Math.sin(b.fallAngle);
+    mesh.position.set(
+      b.x + (b.fallDirX || 0) * along,
+      Math.max(0.13, lift),
+      -(b.y + (b.fallDirY || 1) * along),
+    );
   }
 }
 
@@ -958,7 +1073,7 @@ function updateDetectionMeshes() {
     recycleBox(mesh as unknown as THREE.LineSegments);
   }
   detectionMeshes.length = 0;
-  if (photoMode) return;
+  if (photoMode || collisionShotHold) return;
 
   const state = simulation.getState();
   const detections = state.perceptionTracks.filter(t => t.missedFrames === 0 && t.confidence >= 0.4);
@@ -1108,6 +1223,11 @@ function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
       -(egoY + rightY * debugSideCam.side)
     );
     camera.lookAt(egoX, debugSideCam.lookY, -egoY);
+    return;
+  }
+  if (collisionCam) {
+    camera.position.set(collisionCam.x, collisionCam.y, collisionCam.z);
+    camera.lookAt(collisionCam.lookX, collisionCam.lookY, collisionCam.lookZ);
     return;
   }
   if (cameraMode === 'chase' && !rmbOrbiting && lastMouseCamMs > 0
@@ -1303,6 +1423,7 @@ function restartSim() {
     disposeObject(mesh);
   }
   entityMeshes.clear();
+  clearFurnitureVisuals();
   for (const mesh of detectionMeshes) {
     recycleBox(mesh as unknown as THREE.LineSegments);
   }
@@ -2792,7 +2913,7 @@ function applyShot(kind: string) {
   }
 }
 
-/** Intersection / lane demos from PR #20: ?demo=lane|stop|yield|mix|queue */
+/** Intersection / lane demos from PR #20, plus collision shots: hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
   showAIView = true;
   document.getElementById('ai-view-panel')?.classList.add('visible');
@@ -2867,6 +2988,34 @@ function applyDemo(kind: string) {
     orbitPitch = 0.42;
     orbitDist = 32;
     camFollowReady = true;
+    return;
+  }
+  if (kind === 'hit-car' || kind === 'hit-pole' || kind === 'hit-sign' || kind === 'hit-ped') {
+    const hit = kind === 'hit-car' ? 'car'
+      : kind === 'hit-pole' ? 'pole'
+        : kind === 'hit-sign' ? 'sign'
+          : 'pedestrian';
+    beginGame('manual');
+    simulation.setupHitDemo(hit);
+    if (hit === 'pole' || hit === 'sign') rebuildStaticCity();
+    collisionShotHold = true;
+    collisionShotAt = 0;
+    showAIView = false;
+    showGroundTruth = false;
+    document.getElementById('ai-view-panel')?.classList.remove('visible');
+    document.getElementById('view-explainer')?.classList.add('hidden');
+    document.getElementById('info-card')?.classList.add('hidden');
+    document.getElementById('top-right-stack')?.classList.add('hidden');
+    for (const id of ['ai-view-panel', 'view-explainer', 'info-card', 'top-right-stack']) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    }
+    perceptionViz?.setEnabled(false);
+    setCameraMode('orbit');
+    orbitYaw = -2.35;
+    orbitPitch = 0.42;
+    orbitDist = 9;
+    camFollowReady = true;
   }
 }
 
@@ -2902,7 +3051,37 @@ function animate(time: number) {
       updateEntityMeshes();
       updateDetectionMeshes();
       simAccumulator -= SIM_DT;
+      if (collisionShotHold && simulation.getState().collisionCount > 0 && collisionShotAt === 0) {
+        collisionShotAt = time;
+        const st = simulation.getState();
+        let lookX = st.ego.transform.position.x;
+        let lookY = st.ego.transform.position.y;
+        const ev = st.lastCollision;
+        if (ev) {
+          const other = [...st.trafficVehicles, ...st.pedestrians, ...st.worldMap.staticEntities]
+            .find(e => e.id === ev.otherId);
+          if (other) {
+            lookX = (lookX + other.transform.position.x) * 0.5;
+            lookY = (lookY + other.transform.position.y) * 0.5;
+          }
+        }
+        collisionCam = {
+          x: lookX + 6.4,
+          y: 4.6,
+          z: -(lookY - 5.6),
+          lookX,
+          lookY: 0.55,
+          lookZ: -lookY,
+        };
+        syncDriveBadge();
+      }
     }
+  }
+
+  if (collisionShotHold && collisionShotAt > 0 && time - collisionShotAt > 700 && !isPaused) {
+    isPaused = true;
+    syncDriveBadge();
+    updateHUD();
   }
 
   const alpha = isPaused ? 1 : simAccumulator / SIM_DT;

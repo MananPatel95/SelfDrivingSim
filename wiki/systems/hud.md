@@ -6,7 +6,7 @@ sources: [3, 10, 13, 15, 16, 19, 20]
 
 # HUD and menus
 
-Left: speed, stopping distance, control source, detections, collisions, weather, FPS. Top-left minimap is ego-up; scroll over it zooms the map ([[pr-15]]); autopilot paints the remaining route purple ([[pr-16]]). After [[pr-20]] the minimap also marks junctions: stop (red square), yield (yellow triangle), uncontrolled (grey dot). Escape / gear opens pause (quality, camera, shadows).
+Left: speed, stopping distance, control source, detections, collisions, weather, FPS. A counted world collision increments **Collisions**, flashes **COLLISION**, and drops autopilot to **Manual** (`takeover('collision')`). Top-left minimap is ego-up; scroll over it zooms the map ([[pr-15]]); autopilot paints the remaining route purple ([[pr-16]]). After [[pr-20]] the minimap also marks junctions: stop (red square), yield (yellow triangle), uncontrolled (grey dot). Escape / gear opens pause (quality, camera, shadows).
 
 Tesla **Detections** counts vision boxes (`hudDetectionCount`), including `stop_sign` / `yield_sign`, matching AI View — not leftover lidar tracks ([[pr-20]]). Other stacks still count lidar tracks.
 
@@ -16,7 +16,7 @@ Right-side cards (stack explainer, AI View, info) are one column: each has colla
 
 Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
 
-Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|stop|yield|mix|queue` skip the menu for reproducible shots.
+Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|stop|yield|mix|queue|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots.
 
 ## Key files
 

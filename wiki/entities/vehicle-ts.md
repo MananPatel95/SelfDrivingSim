@@ -6,7 +6,7 @@ sources: [4, 6, 7]
 
 # `vehicle.ts`
 
-Bicycle model, tyre lateral force, gears, reverse gate. See [[vehicle-physics]].
+Bicycle model, tyre lateral force, gears, reverse gate. `applyCollisionMotion` writes post-impulse world velocity and yaw rate without replacing `updateVehicle`. See [[vehicle-physics]].
 
 ## Key files
 

@@ -33,6 +33,18 @@ MANUAL badge after WASD / T takeover.
 ### 11-collision.png
 Ego stopped against an NPC with COLLISION flash (no interpenetration).
 
+### 24-hit-car.png
+Impulse car-to-car: both cars separated, traffic car shoved/spun, HUD collisions ≥ 1, Manual after autopilot drop. `?demo=hit-car`.
+
+### 25-hit-pole.png
+Fast pole snap: pole lying on the ground, ego slowed, no pass-through. `?demo=hit-pole`.
+
+### 26-hit-sign.png
+Fast stop-sign fall, ego slowed, HUD collision counted. `?demo=hit-sign`.
+
+### 27-hit-ped.png
+Pedestrian knocked into a tumble, hit logged. `?demo=hit-ped`.
+
 ## First-person cockpit (live driving)
 
 Live hood-camera stills (not `?shot=cabin` rigs). Compare with a real Model 3/Y interior.

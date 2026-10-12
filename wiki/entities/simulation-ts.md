@@ -12,6 +12,8 @@ After [[pr-20]] it holds a shared `StopBook`, calls `decideIntersection` each st
 
 Traffic spawn is a grid random walk (`spawnGraphTraffic`), not a random point on a full-map lane. The ego is inserted as `egoAsTraffic` so NPCs follow it. After each step, cars that have been slow and are not queued are nudged, replanned, or respawned off-screen.
 
+After `updateVehicle`, `resolveWorldCollisions` runs the impulse solver (spatial hash + swept thin props). New contacts increment `collisionCount` / `collisionLog` and call `takeover('collision')`. Traffic cars with `impactCooldown` slide instead of following the graph. `setupHitDemo('car'|'pole'|'sign'|'pedestrian')` is the screenshot / unit-test rig.
+
 ## Key files
 
 - `game/src/sim/simulation.ts`

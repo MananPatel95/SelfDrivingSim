@@ -24,6 +24,8 @@ These stay in TypeScript:
 
 `game/src/workers/simHotPath.ts` describes worker messages for cast / occupancy / step / filter but **nothing imports it**. Treat it as unused.
 
+World collision response is also TypeScript (`collision.ts`): SAT / capsule overlap, spatial hash, and a 2D impulse. It runs after `updateVehicle` and does not go through WASM.
+
 ## Curb walls are paint only
 
 [[pr-12]] made mid-block curb OBBs non-colliding so a car can leave the asphalt and return without a collision spam. Buildings, poles, trees, and other vehicles still collide.
