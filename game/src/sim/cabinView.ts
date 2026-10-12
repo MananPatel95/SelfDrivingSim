@@ -1,7 +1,7 @@
 /**
  * Driver’s-eye framing for first person.
  * Coordinates are body-pivot local: +X nose, +Y up, +Z left.
- * Left-hand seat, ~1.2 m eye height, 36 cm wheel in the lower-left third.
+ * Driver's seat on screen-left (~1.2 m eye), 36 cm wheel in the lower-left third.
  */
 
 import { VEHICLE_PARAMS } from './vehicle';
@@ -20,9 +20,9 @@ export const ROAD_STEER_LOCK = VEHICLE_PARAMS.car.maxSteeringAngle;
 
 export const COCKPIT = {
   /** Pivot-local. World eye height is AXLE_HEIGHT + eye.y ≈ 1.2 m. */
-  eye: { x: -0.18, y: 1.2 - AXLE_HEIGHT, z: 0.38 } satisfies CabinVec,
-  look: { x: 20, y: 1.2 - AXLE_HEIGHT - 0.04, z: 0.08 } satisfies CabinVec,
-  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.33, z: 0.41 } satisfies CabinVec,
+  eye: { x: -0.18, y: 1.2 - AXLE_HEIGHT, z: -0.38 } satisfies CabinVec,
+  look: { x: 20, y: 1.2 - AXLE_HEIGHT - 0.04, z: -0.02 } satisfies CabinVec,
+  wheel: { x: 0.50, y: 1.2 - AXLE_HEIGHT - 0.33, z: -0.42 } satisfies CabinVec,
   /** ~36 cm rim, left of centre in the lower third. */
   wheelRadius: 0.18,
   /** Rim tube radius (slim modern wheel). */

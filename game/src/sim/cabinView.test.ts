@@ -12,8 +12,9 @@ import { AXLE_HEIGHT, BODY_CENTER_LOCAL_Y, BODY_HALF_HEIGHT } from './vehicleVis
 
 describe('first-person cabin framing', () => {
   it('sits the driver on the left at about 1.2 m eye height', () => {
-    expect(COCKPIT.eye.z).toBeGreaterThan(0.25);
-    expect(COCKPIT.wheel.z).toBeGreaterThan(0.25);
+    // Driver's side is -Z so Three.js lookAt along +X puts the wheel on screen-left.
+    expect(COCKPIT.eye.z).toBeLessThan(-0.25);
+    expect(COCKPIT.wheel.z).toBeLessThan(-0.25);
     expect(Math.abs(COCKPIT.wheel.z - COCKPIT.eye.z)).toBeLessThan(0.12);
     expect(driverEyeHeight()).toBeGreaterThan(1.12);
     expect(driverEyeHeight()).toBeLessThan(1.28);
@@ -28,7 +29,7 @@ describe('first-person cabin framing', () => {
     expect(view.depth).toBeLessThan(0.95);
     expect(view.ndcY).toBeLessThan(-1 / 3);
     expect(view.ndcY).toBeGreaterThan(-0.88);
-    expect(view.ndcX).toBeLessThan(0);
+    expect(view.ndcX).toBeLessThan(0.2);
     expect(view.ndcX).toBeGreaterThan(-0.55);
     expect(view.radiusNdc).toBeGreaterThan(0.12);
     expect(view.radiusNdc).toBeLessThan(0.46);

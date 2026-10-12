@@ -105,6 +105,43 @@ export function applyCameraLayers(camera: THREE.Camera, hood: boolean): void {
   }
 }
 
+function silverizeMap(tex: THREE.Texture): THREE.Texture {
+  const img = tex.image as { width: number; height: number } | undefined;
+  const canDraw = typeof document !== 'undefined' && img && (img as HTMLCanvasElement).width;
+  if (!canDraw) return tex;
+  try {
+    const src = img as CanvasImageSource;
+    const canvas = document.createElement('canvas');
+    canvas.width = (img as HTMLCanvasElement).width;
+    canvas.height = (img as HTMLCanvasElement).height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return tex;
+    ctx.drawImage(src, 0, 0);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const p = data.data;
+    for (let i = 0; i < p.length; i += 4) {
+      const r = p[i]!, g = p[i + 1]!, b = p[i + 2]!;
+      const mx = Math.max(r, g, b);
+      const sat = mx - Math.min(r, g, b);
+      if (mx < 88 && sat < 45) continue; // glass / cladding
+      if (r > 220 && g > 180 && b < 90) continue; // headlights
+      if (r > 200 && g < 90 && b < 90) continue; // tail lights
+      const lum = 0.25 * r + 0.5 * g + 0.25 * b;
+      p[i] = Math.round(158 + lum * 0.28);
+      p[i + 1] = Math.round(162 + lum * 0.27);
+      p[i + 2] = Math.round(168 + lum * 0.25);
+    }
+    ctx.putImageData(data, 0, 0);
+    const next = new THREE.CanvasTexture(canvas);
+    next.flipY = tex.flipY;
+    next.colorSpace = tex.colorSpace;
+    next.needsUpdate = true;
+    return next;
+  } catch {
+    return tex;
+  }
+}
+
 function paintSilver(root: THREE.Object3D): void {
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
@@ -113,9 +150,11 @@ function paintSilver(root: THREE.Object3D): void {
     const list = Array.isArray(src) ? src : [src];
     const next = list.map((mat) => {
       const mapped = (mat as THREE.MeshStandardMaterial).map ?? null;
+      const processed = mapped ? silverizeMap(mapped) : null;
+      const map = processed && processed !== mapped ? processed : null;
       return new THREE.MeshLambertMaterial({
-        color: SILVER_PAINT,
-        map: mapped,
+        color: map ? 0xffffff : SILVER_PAINT,
+        map,
         transparent: false,
       });
     });
@@ -189,7 +228,6 @@ function buildHandWheel(): THREE.Group {
 
 function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
   const group = new THREE.Group();
-  const dashMat = new THREE.MeshLambertMaterial({ color: 0x16191e });
   const pillarMat = new THREE.MeshLambertMaterial({ color: 0x2c3036 });
   const screenMat = new THREE.MeshLambertMaterial({
     color: 0x07181c,
@@ -197,23 +235,25 @@ function buildCockpit(): { group: THREE.Group; steerWheel: THREE.Group } {
     emissiveIntensity: 0.55,
   });
 
-  // Thin dash strip only — no hood slab, no roof plane.
-  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 1.18), dashMat);
-  dash.position.set(0.55, COCKPIT.wheel.y - 0.08, 0.02);
+  // Thin dash strip only — no hood slab, no roof plane. Mid-grey so it reads on asphalt.
+  const dashMatVisible = new THREE.MeshLambertMaterial({ color: 0x3c4148 });
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.035, 1.22), dashMatVisible);
+  dash.position.set(0.56, COCKPIT.wheel.y - 0.07, 0);
   group.add(dash);
 
+  // Portrait centre screen, inboard of the wheel (toward z=0 / screen-right).
   const screen = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.2, 0.14), screenMat);
-  screen.position.set(0.48, COCKPIT.wheel.y + 0.02, -0.06);
+  screen.position.set(0.50, COCKPIT.wheel.y + 0.04, 0.04);
   group.add(screen);
 
-  const pillarGeo = new THREE.CylinderGeometry(0.01, 0.009, 0.62, 8);
-  const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
-  leftPillar.position.set(0.88, 0.86, 0.86);
-  leftPillar.rotation.z = 0.28;
-  const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
-  rightPillar.position.set(0.88, 0.86, -0.86);
-  rightPillar.rotation.z = 0.28;
-  group.add(leftPillar, rightPillar);
+  const pillarGeo = new THREE.CylinderGeometry(0.009, 0.008, 0.58, 8);
+  const nearPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  nearPillar.position.set(0.92, 0.88, -0.88);
+  nearPillar.rotation.z = 0.22;
+  const farPillar = new THREE.Mesh(pillarGeo, pillarMat);
+  farPillar.position.set(0.92, 0.88, 0.88);
+  farPillar.rotation.z = 0.22;
+  group.add(nearPillar, farPillar);
 
   const steerWheel = buildHandWheel();
   steerWheel.position.set(COCKPIT.wheel.x, COCKPIT.wheel.y, COCKPIT.wheel.z);

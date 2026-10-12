@@ -2462,12 +2462,12 @@ function applyShot(kind: string) {
     }
   } else if (kind === 'exterior') {
     setCameraMode('orbit');
-    debugHeroCam = { x: 5.2, y: 1.15, z: 3.4, lookX: 0.2, lookY: 0.55, lookZ: 0.0 };
+    debugHeroCam = { x: 4.6, y: 1.4, z: -3.4, lookX: 0.15, lookY: 0.58, lookZ: 0.0 };
   } else if (kind === 'side') {
     debugSideCam = { height: 0.55, side: 6.2, lookY: 0.62 };
   } else if (kind === 'wheel') {
     setCameraMode('orbit');
-    debugHeroCam = { x: 1.35, y: 0.28, z: 1.55, lookX: 1.22, lookY: 0.22, lookZ: 0.52 };
+    debugHeroCam = { x: 1.22, y: 0.32, z: -1.55, lookX: 1.22, lookY: 0.22, lookZ: -0.52 };
   }
 }
 

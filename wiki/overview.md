@@ -19,6 +19,7 @@ It is an educational sim, not a product of the named companies.
 - Pedestrians walk sidewalks, wait, and cross; cars yield to anyone in the lane.
 - Intersections still use cycling **traffic lights**. There is no stop/yield mix on `main` as of #19.
 - Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, and BEV occupancy stay in TypeScript. See [[decisions]] and [[lidar-wasm]].
+- Ego exterior is Kenney’s CC0 sedan GLB (silver, wheels in the arches). First person is a thin Tesla-style cockpit ([[ego-mesh]], [[pr-22]]).
 
 ## How to run
 
