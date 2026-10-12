@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [2, 3, 14, 20, 25]
+sources: [2, 3, 14, 20, 25, 28]
 ---
 
 # AI View

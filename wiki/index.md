@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 26, 27]
+sources: [1, 20, 22, 24, 25, 26, 27, 28]
 ---
 
 # Wiki index
@@ -72,6 +72,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #25](sources/pr-25.md) — live first-person cockpit, stacked HUD panels, T re-engage
 - [PR #26](sources/pr-26.md) — F3 Waabi view: 10 Hz occupancy, no second lidar
 - [PR #27](sources/pr-27.md) — dry ABS sedan braking (~1 g)
+- [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 26, 27]
+sources: [1, 20, 22, 24, 25, 26, 27, 28]
 ---
 
 # Wiki log
@@ -78,4 +78,4 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-12] merge | PR #26 F3 view into PR #27 braking
 
-## [2026-10-12] ingest | cursor/revert-f3-poles-d05a revert PR #26 F3 overlay; skip roadside poles in hazard brake
+## [2026-10-12] ingest | PR #28 revert PR #26 F3 overlay; skip roadside poles in hazard brake
