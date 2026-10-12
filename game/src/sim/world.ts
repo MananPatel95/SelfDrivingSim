@@ -441,6 +441,9 @@ export function updateTrafficVehicle(
   pedestrians: Pedestrian[] = [],
   rules?: TrafficRuleContext,
 ): TrafficVehicle {
+  if (vehicle.targetSpeed <= 0 && Math.hypot(vehicle.velocity.x, vehicle.velocity.y) < 0.08) {
+    return { ...vehicle, velocity: vec3(0, 0, 0) };
+  }
   const lane = lanes.find(l => l.id === vehicle.laneId);
   if (!lane || lane.points.length < 2) return vehicle;
   

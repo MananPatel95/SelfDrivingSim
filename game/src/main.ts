@@ -565,26 +565,22 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     case 'stop_sign': {
       const group = new THREE.Group();
       const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.06, 2.55, 8),
+        new THREE.CylinderGeometry(0.06, 0.07, 2.7, 8),
         new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
       );
-      pole.position.y = 1.28;
+      pole.position.y = 1.35;
       group.add(pole);
       const rim = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.48, 0.48, 0.05, 8),
+        new THREE.BoxGeometry(0.16, 1.15, 1.15),
         new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }),
       );
-      rim.rotation.x = Math.PI / 2;
-      rim.rotation.z = Math.PI / 8;
-      rim.position.y = 2.52;
+      rim.position.y = 2.62;
       group.add(rim);
       const face = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.4, 0.06, 8),
+        new THREE.BoxGeometry(0.18, 0.92, 0.92),
         new THREE.MeshLambertMaterial({ color: 0xc81e1e }),
       );
-      face.rotation.x = Math.PI / 2;
-      face.rotation.z = Math.PI / 8;
-      face.position.y = 2.53;
+      face.position.y = 2.62;
       group.add(face);
       return group as unknown as THREE.Mesh;
     }
@@ -592,33 +588,25 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
     case 'yield_sign': {
       const group = new THREE.Group();
       const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.05, 0.06, 2.35, 8),
+        new THREE.CylinderGeometry(0.06, 0.07, 2.5, 8),
         new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
       );
-      pole.position.y = 1.18;
+      pole.position.y = 1.25;
       group.add(pole);
-      const shape = new THREE.Shape();
-      shape.moveTo(0, -0.42);
-      shape.lineTo(0.46, 0.36);
-      shape.lineTo(-0.46, 0.36);
-      shape.closePath();
-      const face = new THREE.Mesh(
-        new THREE.ShapeGeometry(shape),
-        new THREE.MeshLambertMaterial({ color: 0xf4f4f4, side: THREE.DoubleSide }),
+      const board = new THREE.Mesh(
+        new THREE.ConeGeometry(0.7, 1.15, 3),
+        new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }),
       );
-      face.position.y = 2.42;
-      group.add(face);
-      const inner = new THREE.Shape();
-      inner.moveTo(0, -0.22);
-      inner.lineTo(0.28, 0.24);
-      inner.lineTo(-0.28, 0.24);
-      inner.closePath();
-      const red = new THREE.Mesh(
-        new THREE.ShapeGeometry(inner),
-        new THREE.MeshLambertMaterial({ color: 0xc81e1e, side: THREE.DoubleSide }),
+      board.position.y = 2.55;
+      board.rotation.z = Math.PI;
+      group.add(board);
+      const inner = new THREE.Mesh(
+        new THREE.ConeGeometry(0.42, 0.7, 3),
+        new THREE.MeshLambertMaterial({ color: 0xc81e1e }),
       );
-      red.position.set(0, 2.42, 0.01);
-      group.add(red);
+      inner.position.y = 2.5;
+      inner.rotation.z = Math.PI;
+      group.add(inner);
       return group as unknown as THREE.Mesh;
     }
     
@@ -778,7 +766,7 @@ function rebuildStaticCity() {
   for (const sign of signs) {
     const mesh = createEntityMesh(sign.classType) as THREE.Mesh;
     mesh.position.set(sign.transform.position.x, 0, -sign.transform.position.y);
-    mesh.rotation.y = -sign.transform.rotation;
+    mesh.rotation.y = meshYawForHeading(sign.transform.rotation);
     scene.add(mesh);
     staticCityMeshes.push(mesh);
   }
@@ -2529,6 +2517,84 @@ function beginGame(mode: 'manual' | 'autopilot') {
   if (mode === 'manual') showDriveHintOnce();
 }
 
+function applyDemo(kind: string) {
+  showAIView = true;
+  document.getElementById('ai-view-panel')?.classList.add('visible');
+  document.getElementById('decision-banner')?.classList.add('visible');
+  perceptionViz?.setEnabled(true);
+
+  if (kind === 'lane') {
+    tripStart = { x: 0, y: -90 };
+    tripEnd = { x: 0, y: 160 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = -0.7;
+    orbitPitch = 0.32;
+    orbitDist = 16;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'stop') {
+    simulation.getState().pedestrians = [];
+    tripStart = { x: 0, y: -20 };
+    tripEnd = { x: 0, y: 80 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = -0.85;
+    orbitPitch = 0.22;
+    orbitDist = 14;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'yield') {
+    simulation.getState().pedestrians = [];
+    beginGame('manual');
+    simulation.beginParked({ x: -109, y: -3.5, z: 0 }, 0);
+    setCameraMode('orbit');
+    orbitYaw = -0.95;
+    orbitPitch = 0.2;
+    orbitDist = 13;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'mix') {
+    beginGame('manual');
+    setCameraMode('bev');
+    minimapScale = 0.42;
+    return;
+  }
+  if (kind === 'queue') {
+    beginGame('manual');
+    const state = simulation.getState();
+    const yawAt = (x: number, y: number, yaw: number, id: number) => ({
+      id,
+      classType: 'car' as const,
+      transform: { position: { x, y, z: 0.8 }, rotation: yaw },
+      boundingBox: { center: { x, y, z: 0.8 }, size: { x: 4.5, y: 1.8, z: 1.5 }, yaw },
+      velocity: { x: 0, y: 0, z: 0 },
+      isStatic: false,
+      occlusionLevel: 0 as const,
+      laneId: 0,
+      laneProgress: 0.4,
+      targetSpeed: 0,
+    });
+    state.pedestrians = [];
+    state.trafficVehicles = [
+      yawAt(3.5, -12, Math.PI / 2, 501),
+      yawAt(12, 3.5, Math.PI, 502),
+      yawAt(-3.5, 12, -Math.PI / 2, 503),
+      yawAt(-12, -3.5, 0, 504),
+    ];
+    simulation.beginParked({ x: 22, y: -22, z: 0 }, (3 * Math.PI) / 4);
+    setCameraMode('orbit');
+    orbitYaw = 0.95;
+    orbitPitch = 0.42;
+    orbitDist = 32;
+    camFollowReady = true;
+    return;
+  }
+}
+
 let lastTime = 0;
 let displayFps = 0;
 let fpsFrames = 0;
@@ -2838,6 +2904,8 @@ async function init() {
   syncDriveBadge();
 
   document.getElementById('loading')!.classList.add('hidden');
+  const demo = new URLSearchParams(window.location.search).get('demo');
+  if (demo) applyDemo(demo);
   lastTime = performance.now();
   requestAnimationFrame(animate);
   (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
