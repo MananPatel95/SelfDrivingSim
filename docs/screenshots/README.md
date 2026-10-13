@@ -115,7 +115,7 @@ F2, `?seed=3&demo=stop`. Ego AUTOPILOT has fully stopped then is moving through 
 ## Pink roadside destination
 
 ### 24-destination-marker-road.png
-`?seed=3&demo=arrive`. Orbit on the mid-block northbound trip. The hot-pink pad and teardrop pin sit on the right-hand curb ahead of the sedan.
+`?seed=3&demo=arrive`. Short mid-block northbound trip. The hot-pink pad and teardrop pin sit on the right-hand curb ahead of the sedan.
 
 ### 25-destination-minimap.png
 Same trip. Minimap shows the purple remaining route and the pink destination pin (not a ped dot).

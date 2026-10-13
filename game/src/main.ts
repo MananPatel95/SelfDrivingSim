@@ -3014,13 +3014,13 @@ function applyDemo(kind: string) {
   perceptionViz?.setEnabled(true);
 
   if (kind === 'arrive') {
-    tripStart = { x: 0, y: 50 };
+    tripStart = { x: 0, y: 64 };
     tripEnd = { x: 0, y: 78 };
     beginGame('autopilot');
     setCameraMode('orbit');
-    orbitYaw = 0.95;
-    orbitPitch = 0.36;
-    orbitDist = 26;
+    orbitYaw = 0.2;
+    orbitPitch = 0.34;
+    orbitDist = 20;
     camFollowReady = true;
     return;
   }
