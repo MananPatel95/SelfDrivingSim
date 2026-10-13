@@ -235,6 +235,20 @@ export function syncBodyVelocity(state: EgoState, vx: number, vy: number, yawRat
   };
 }
 
+/** Write world velocity and yaw rate after an impulse, keeping body-frame speeds in sync. */
+export function applyCollisionMotion(state: EgoState, vx: number, vy: number, yawRate: number): EgoState {
+  const yaw = state.transform.rotation;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return {
+    ...state,
+    velocity: vec3(vx, vy, 0),
+    bodyVx: vx * c + vy * s,
+    bodyVy: -vx * s + vy * c,
+    yawRate,
+  };
+}
+
 function defaultPhysics(state: EgoState) {
   const yaw = state.transform.rotation;
   const c = Math.cos(yaw);

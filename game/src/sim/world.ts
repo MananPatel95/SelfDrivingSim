@@ -238,7 +238,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
           transform: { position: vec3(pose.x, pose.y, 1.6), rotation: pose.yaw },
           boundingBox: {
             center: vec3(pose.x, pose.y, 1.6),
-            size: vec3(0.9, 0.18, 3.2),
+            size: vec3(0.24, 1.04, 3.2),
             yaw: pose.yaw,
           },
           velocity: vec3(0, 0, 0),
@@ -362,7 +362,7 @@ export function generateCityMap(seed: number, config: CityConfig): WorldMap {
           transform: { position: vec3(px, py, 4), rotation: 0 },
           boundingBox: {
             center: vec3(px, py, 4),
-            size: vec3(0.3, 0.3, 8),
+            size: vec3(0.24, 0.24, 8),
             yaw: 0,
           },
           velocity: vec3(0, 0, 0),
@@ -430,6 +430,10 @@ export interface TrafficVehicle extends Entity, Partial<GraphCar> {
   laneId: number;
   laneProgress: number;
   targetSpeed: number;
+  /** Spin from an off-centre hit. Integrated while `impactCooldown` is live. */
+  yawRate?: number;
+  /** Seconds of free-body shove before graph follow resumes. */
+  impactCooldown?: number;
 }
 
 export interface TrafficRuleContext {
@@ -667,6 +671,9 @@ export function updateTrafficVehicle(
   pedestrians: Pedestrian[] = [],
   rules?: TrafficRuleContext,
 ): TrafficVehicle {
+  if ((vehicle.impactCooldown ?? 0) > 0) {
+    return integrateShovedVehicle(vehicle, dt);
+  }
   if (vehicle.targetSpeed <= 0 && Math.hypot(vehicle.velocity.x, vehicle.velocity.y) < 0.08) {
     return { ...vehicle, velocity: vec3(0, 0, 0) };
   }
@@ -790,6 +797,48 @@ export function updateTrafficVehicle(
   };
 }
 
+/** Free-body slide after an impulse: friction damps linear and yaw rate. */
+export function integrateShovedVehicle(vehicle: TrafficVehicle, dt: number): TrafficVehicle {
+  const yaw = normalizeAngle(vehicle.transform.rotation + (vehicle.yawRate ?? 0) * dt);
+  const damp = Math.exp(-2.6 * dt);
+  const vx = vehicle.velocity.x * damp;
+  const vy = vehicle.velocity.y * damp;
+  const yawRate = (vehicle.yawRate ?? 0) * Math.exp(-2.1 * dt);
+  const pos = vec3(
+    vehicle.transform.position.x + vx * dt,
+    vehicle.transform.position.y + vy * dt,
+    0.8,
+  );
+  return {
+    ...vehicle,
+    transform: { position: pos, rotation: yaw },
+    boundingBox: { ...vehicle.boundingBox, center: pos, yaw },
+    velocity: vec3(vx, vy, 0),
+    yawRate,
+    impactCooldown: Math.max(0, (vehicle.impactCooldown ?? 0) - dt),
+  };
+}
+
+export function applyTrafficImpulse(
+  vehicle: TrafficVehicle,
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+  yawRate: number,
+  yaw: number,
+): TrafficVehicle {
+  const pos = vec3(x, y, 0.8);
+  return {
+    ...vehicle,
+    transform: { position: pos, rotation: yaw },
+    boundingBox: { ...vehicle.boundingBox, center: pos, yaw },
+    velocity: vec3(vx, vy, 0),
+    yawRate,
+    impactCooldown: Math.max(vehicle.impactCooldown ?? 0, 1.6),
+  };
+}
+
 // Pedestrian AI — sidewalk walking, crosswalk crossings, yield to cars.
 const PED_CITY = { laneWidth: 3.5, gridSize: 6, blockSize: 100 };
 const PED_HALF = (PED_CITY.gridSize * PED_CITY.blockSize) / 2;
@@ -798,13 +847,19 @@ const WALK_SPEED = 1.35;
 
 export interface Pedestrian extends Entity {
   targetPosition: Vec3;
-  state: 'walking' | 'waiting' | 'crossing';
+  state: 'walking' | 'waiting' | 'crossing' | 'tumbling';
   waitTime: number;
   roadAxis?: 'x' | 'y';
   roadLine?: number;
   sideSign?: number;
   crossCooldown?: number;
   walkDir?: number;
+  tumbleHeight?: number;
+  tumblePitch?: number;
+  tumbleRoll?: number;
+  tumbleOmegaP?: number;
+  tumbleOmegaR?: number;
+  tumbleVz?: number;
 }
 
 export interface RoadActor {
@@ -847,6 +902,7 @@ export function shouldYieldToPedestrian(
     const lat = Math.abs(-dx * fy + dy * fx);
     if (ahead < 0.5 || ahead > range || lat > 4.0) continue;
     const onAsphalt = pointOnRoad(px, py, PED_CITY, 0.15);
+    if (ped.state === 'tumbling') continue;
     if (ped.state === 'crossing' || onAsphalt) return true;
   }
   return false;
@@ -888,6 +944,81 @@ function bindSidewalk(ped: Pedestrian): { axis: 'x' | 'y'; roadLine: number; sid
   return { axis: 'x', roadLine, sideSign: Math.sign(y - roadLine) || 1 };
 }
 
+export function knockPedestrian(
+  ped: Pedestrian,
+  nx: number,
+  ny: number,
+  closing: number,
+  x: number,
+  y: number,
+  vx: number,
+  vy: number,
+): Pedestrian {
+  const speed = Math.max(4.8, closing * 1.15 + 3.2);
+  const kvx = vx * 0.35 + nx * speed;
+  const kvy = vy * 0.35 + ny * speed;
+  const yaw = Math.atan2(kvy, kvx);
+  return {
+    ...ped,
+    state: 'tumbling',
+    transform: { position: vec3(x, y, 0.9), rotation: yaw },
+    boundingBox: { ...ped.boundingBox, center: vec3(x, y, 0.9), yaw },
+    velocity: vec3(kvx, kvy, 0),
+    tumbleHeight: 0.35 + Math.min(0.7, closing * 0.04),
+    tumblePitch: 0,
+    tumbleRoll: 0,
+    tumbleOmegaP: 7 + closing * 0.45,
+    tumbleOmegaR: (ny > 0 ? 1 : -1) * (4 + closing * 0.2),
+    tumbleVz: 2.2 + Math.min(3.5, closing * 0.12),
+    isStatic: true,
+  };
+}
+
+export function integrateTumblingPedestrian(ped: Pedestrian, dt: number): Pedestrian {
+  let vx = ped.velocity.x * Math.exp(-1.8 * dt);
+  let vy = ped.velocity.y * Math.exp(-1.8 * dt);
+  let height = ped.tumbleHeight ?? 0.2;
+  let vz = (ped.tumbleVz ?? 0) - 18 * dt;
+  height += vz * dt;
+  let pitch = (ped.tumblePitch ?? 0) + (ped.tumbleOmegaP ?? 0) * dt;
+  let roll = (ped.tumbleRoll ?? 0) + (ped.tumbleOmegaR ?? 0) * dt;
+  let omegaP = ped.tumbleOmegaP ?? 0;
+  let omegaR = ped.tumbleOmegaR ?? 0;
+  if (height <= 0.12) {
+    height = 0.12;
+    vz = 0;
+    pitch = clampAngleToward(pitch, Math.PI / 2, 8 * dt);
+    roll = clampAngleToward(roll, roll > 0 ? 0.35 : -0.35, 6 * dt);
+    omegaP *= Math.exp(-6 * dt);
+    omegaR *= Math.exp(-6 * dt);
+    vx *= Math.exp(-5 * dt);
+    vy *= Math.exp(-5 * dt);
+  }
+  const x = ped.transform.position.x + vx * dt;
+  const y = ped.transform.position.y + vy * dt;
+  const yaw = ped.transform.rotation + omegaR * dt * 0.25;
+  return {
+    ...ped,
+    state: 'tumbling',
+    transform: { position: vec3(x, y, 0.9), rotation: yaw },
+    boundingBox: { ...ped.boundingBox, center: vec3(x, y, 0.9), yaw },
+    velocity: vec3(vx, vy, 0),
+    tumbleHeight: height,
+    tumblePitch: pitch,
+    tumbleRoll: roll,
+    tumbleOmegaP: omegaP,
+    tumbleOmegaR: omegaR,
+    tumbleVz: vz,
+    isStatic: true,
+  };
+}
+
+function clampAngleToward(current: number, target: number, maxStep: number): number {
+  const d = target - current;
+  if (Math.abs(d) <= maxStep) return target;
+  return current + Math.sign(d) * maxStep;
+}
+
 export function updatePedestrian(
   ped: Pedestrian,
   _trafficLights: TrafficLight[],
@@ -895,6 +1026,8 @@ export function updatePedestrian(
   rng: SeededRandom,
   actors: RoadActor[] = []
 ): Pedestrian {
+  if (ped.state === 'tumbling') return integrateTumblingPedestrian(ped, dt);
+
   const x = ped.transform.position.x;
   const y = ped.transform.position.y;
 

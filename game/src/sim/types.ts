@@ -172,6 +172,7 @@ export type TakeoverReason =
   | 'perception_miss'
   | 'planning_too_cautious'
   | 'planning_unsafe'
+  | 'collision'
   | 'other';
 
 export interface TakeoverEvent {

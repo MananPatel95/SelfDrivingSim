@@ -10,7 +10,9 @@ sources: [5, 7, 8, 20, 24]
 
 Bodies face the walk direction ([[pr-7]]). The walk cycle steps **forward** along that heading ([[pr-8]] superseded the moonwalk).
 
-Cars still yield via `shouldYieldToPedestrian` ([[pr-5]]) to anyone **crossing or on the asphalt**, not to sidewalk waiters. `decideIntersection` only stops for a pedestrian inside the ~7.4 m roadway (reason `Yielding to pedestrian`). That **supersedes** the 12 m box from [[pr-20]], which froze junctions because waiters stand at ~8.8 m.
+Cars still yield via `shouldYieldToPedestrian` ([[pr-5]]) to anyone **crossing or on the asphalt**, not to sidewalk waiters. Tumbling pedestrians are ignored by yield. `decideIntersection` only stops for a pedestrian inside the ~7.4 m roadway (reason `Yielding to pedestrian`). That **supersedes** the 12 m box from [[pr-20]], which froze junctions because waiters stand at ~8.8 m.
+
+A car hit calls `knockPedestrian`: the body is thrown along the contact normal, `state` becomes `tumbling`, and the mesh pitches/rolls onto the road with a short limb flail. The hit is appended to `collisionLog` and counted on the HUD.
 
 ## Key files
 

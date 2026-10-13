@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-12
-sources: [3, 18, 20, 22, 24, 25, 27, 28]
+updated: 2026-10-13
+sources: [3, 18, 20, 22, 24, 25, 27, 28, 29]
 ---
 
 # Testing and screenshots
@@ -18,6 +18,8 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 - `trafficFlow.test.ts` — random-walk exits, full-span reverse lanes, four cars arriving together, 2-minute N-car soak (progress, no reverse, no box camping)
 
 [[pr-25]] added `hudPanels.test.ts` (no overlapping rects at 1280×720 and 1920×1080; collapsed and dragged cards miss the minimap/banner) and `reengage.test.ts` (takeover → re-engage → replan; cruise with no trip; stop/yield still applied).
+
+Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
 `poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them.
 
@@ -36,4 +38,5 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`
 - `game/src/sim/collision.test.ts`
+- `game/src/sim/collisionSim.test.ts`
 - `docs/screenshots/README.md`

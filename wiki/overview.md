@@ -1,7 +1,7 @@
 ---
 tags: [overview]
-updated: 2026-10-12
-sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28]
+updated: 2026-10-13
+sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28, 29]
 ---
 
 # Overview
@@ -19,9 +19,10 @@ It is an educational sim, not a product of the named companies.
 - Pedestrians walk sidewalks, wait, and cross; cars yield to anyone **on the asphalt or crossing** ([[pr-5]]) and also at junctions ([[pr-20]]). Sidewalk waiters do not freeze a junction.
 - Intersections are a seeded mix of all-way **STOP**, **YIELD** (minor road), and **uncontrolled** — about a third each. Ego and every AI traffic car share `decideIntersection`. This **supersedes** cycling traffic lights as the live control (true through [[pr-19]]). AI traffic random-walks the grid, never reverses, never camps the box, and a 3 s deadlock breaker releases the earliest arrival. The ego is treated as traffic by NPC follow.
 - Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner reads **Manual — press T to re-engage**; T or the banner replans Auto from the current pose ([[pr-25]]).
-- Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, and BEV occupancy stay in TypeScript. See [[decisions]] and [[lidar-wasm]]. The live F3 HUD calls `runWaabiStack` again (the [[pr-26]] 10 Hz overlay was reverted).
-- Autopilot does not full-brake for roadside poles off the asphalt, so left turns at corner poles complete.
-- Reproducible shots: `?seed=` (default 3) and `?demo=lane|left|right|stop|yield|mix|queue`.
+- Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, BEV occupancy, and the impulse collision solver stay in TypeScript. See [[decisions]] and [[lidar-wasm]]. The live F3 HUD calls `runWaabiStack` again (the [[pr-26]] 10 Hz overlay was reverted).
+- Ego vs cars / poles / signs / pedestrians uses mesh-matched OBBs and capsules, a spatial hash, and an impulse that can spin and shove traffic, snap street furniture above ~22 km/h, and tumble pedestrians. A counted hit increments the HUD and drops autopilot to manual.
+- Autopilot does not full-brake for roadside poles, trees, signs, or buildings off the asphalt, so left turns at corner poles complete. Contact with a pole still collides.
+- Reproducible shots: `?seed=` (default 3) and `?demo=lane|left|right|stop|yield|mix|queue|hit-car|hit-pole|hit-sign|hit-ped`.
 - Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). Live first person is a locked left-seat Tesla-style cockpit; the GLB and debug rays are hidden ([[ego-mesh]], [[pr-25]]). Right-side HUD cards stack, collapse, close, and drag.
 
 ## How to run

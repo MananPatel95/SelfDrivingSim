@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-12
-sources: [13, 18, 20, 25, 27]
+updated: 2026-10-13
+sources: [13, 18, 20, 25, 27, 28, 29]
 ---
 
 # Planning and autopilot
@@ -10,11 +10,11 @@ sources: [13, 18, 20, 25, 27]
 
 Map clicks still snap to the road axis (`snapToRoad`, [[pr-13]]). Ego trips then follow `rightLaneRoute` so the polyline stays in the right-hand lane: right turns cut the near corner, left turns go wide ([[pr-20]], which **supersedes** driving the centerline `roadRoute` for `beginTrip`). The last metres drop desired speed to 0 so the trip ends parked.
 
-`input.rule` from `decideIntersection` caps `desiredSpeed` and forces a stop when `mustStop` ([[traffic-rules]]).
+`input.rule` from `decideIntersection` caps `desiredSpeed` and forces a stop when `mustStop` ([[traffic-rules]]). `obstacleAhead` and `findClosestObstacleAhead` skip roadside statics (poles, trees, signs, buildings), so a corner pole does not full-brake a turn ([[pr-28]]). Contact with those objects still collides ([[collisions]]).
 
 `oracleSupervisor` can take over for imminent VRU collisions when `useOracle` is on (headless).
 
-After a human takeover, **T** / the Manual banner calls `Simulation.reengageAutopilot()` ([[pr-25]]). That rebuilds `mergeIntoLaneRoute` from the current pose and heading: ease into the right-hand lane, then a Manhattan right-lane path to the stored trip destination, or a cruise-ahead path if there was no trip. `plannerState` resets; stop/yield still apply on the next step. Held WASD does not immediately steal control.
+A counted collision while the stack is on policy/oracle calls `takeover('collision')` and leaves the car in manual. After a human takeover, **T** / the Manual banner calls `Simulation.reengageAutopilot()` ([[pr-25]]). That rebuilds `mergeIntoLaneRoute` from the current pose and heading: ease into the right-hand lane, then a Manhattan right-lane path to the stored trip destination, or a cruise-ahead path if there was no trip. `plannerState` resets; stop/yield still apply on the next step. Held WASD does not immediately steal control.
 
 ## Key files
 

@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-12
-sources: [3, 6, 12, 20, 24]
+sources: [3, 6, 12, 20, 24, 29]
 ---
 
 # Decisions
@@ -23,6 +23,8 @@ These stay in TypeScript:
 - `createBEVOccupancyFromAgents` in `game/src/stacks/waabi.ts`
 
 `game/src/workers/simHotPath.ts` describes worker messages for cast / occupancy / step / filter but **nothing imports it**. Treat it as unused.
+
+World collision response is also TypeScript (`collision.ts`): SAT / capsule overlap, spatial hash, and a 2D impulse. It runs after `updateVehicle` and does not go through WASM.
 
 ## Curb walls are paint only
 
