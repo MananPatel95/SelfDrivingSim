@@ -1,7 +1,7 @@
 ---
 tags: [index]
-updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 29]
+updated: 2026-10-13
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29]
 ---
 
 # Wiki index
@@ -15,7 +15,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Collisions](systems/collisions.md) — impulse solver, capsules, snap / tumble
 - [Perception F1 Tesla](systems/perception-tesla.md) — cameras, eight-camera ring
 - [Perception F2 Waymo](systems/perception-waymo.md) — lidar + radar fusion
-- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy
+- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, `runWaabiStack` HUD
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
 - [Planning and autopilot](systems/planning.md) — right-hand route, corners, stop/yield cap
@@ -70,6 +70,9 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #22](sources/pr-22.md) — Kenney sedan-sports + Tesla-style cockpit
 - [PR #24](sources/pr-24.md) — traffic random walk, deadlock breaker
 - [PR #25](sources/pr-25.md) — live first-person cockpit, stacked HUD panels, T re-engage
+- [PR #26](sources/pr-26.md) — F3 Waabi view: 10 Hz occupancy, no second lidar
+- [PR #27](sources/pr-27.md) — dry ABS sedan braking (~1 g)
+- [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 - [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).

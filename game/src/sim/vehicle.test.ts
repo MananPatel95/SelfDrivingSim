@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { createEgoState, updateVehicle, tireLateralForce } from './vehicle';
+import {
+  createEgoState,
+  updateVehicle,
+  tireLateralForce,
+  brakePedalForDecel,
+} from './vehicle';
 import { vec3Length } from './math';
 
 const DT = 1 / 30;
@@ -39,8 +44,8 @@ describe('dynamic bicycle sedan', () => {
     }
     const dist = Math.abs(ego.transform.position.x - startX);
     expect(Math.abs(ego.bodyVx ?? 1)).toBeLessThan(0.8);
-    expect(dist).toBeGreaterThan(28);
-    expect(dist).toBeLessThan(60);
+    expect(dist).toBeGreaterThan(36);
+    expect(dist).toBeLessThan(40);
   });
 
   it('W+left curves left along the nose, not 45° to the right', () => {
@@ -175,5 +180,121 @@ describe('dynamic bicycle sedan', () => {
     const rearDeg = Math.abs(ego.slipAngleRear ?? 0) * 180 / Math.PI;
     expect(rearDeg).toBeGreaterThan(15);
     expect(Math.abs(ego.slipAngleRear ?? 0)).toBeGreaterThan(Math.abs(ego.slipAngleFront ?? 0) * 0.7);
+  });
+});
+
+describe('sedan braking (dry ABS)', () => {
+  const DT_B = 1 / 120;
+
+  function stopFrom(kmh: number) {
+    const v = kmh / 3.6;
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: v, velocity: { x: v, y: 0, z: 0 } };
+    const startX = ego.transform.position.x;
+    let t = 0;
+    let peakDecel = 0;
+    let tPeak = 0;
+    let latMax = 0;
+    const hudAtStart = (() => {
+      const probe = updateVehicle(ego, { throttle: 0, steering: 0, brake: 0 }, DT_B);
+      return probe.stoppingDistance;
+    })();
+    while (t < 12 && Math.abs(ego.bodyVx ?? 0) > 0.15) {
+      ego = updateVehicle(ego, { throttle: 0, steering: 0, brake: 1 }, DT_B);
+      t += DT_B;
+      const a = -(ego.acceleration.x ?? 0);
+      if (a > peakDecel) {
+        peakDecel = a;
+        tPeak = t;
+      }
+      latMax = Math.max(latMax, Math.abs(ego.bodyVy ?? 0), Math.abs(ego.transform.position.y));
+    }
+    return {
+      dist: Math.abs(ego.transform.position.x - startX),
+      t,
+      peakDecel,
+      tPeak,
+      latMax,
+      hudAtStart,
+      ego,
+    };
+  }
+
+  it('stops from 50 km/h in about 10–12 m', () => {
+    const s = stopFrom(50);
+    expect(s.dist).toBeGreaterThanOrEqual(10);
+    expect(s.dist).toBeLessThanOrEqual(12);
+    expect(s.hudAtStart).toBeGreaterThanOrEqual(10);
+    expect(s.hudAtStart).toBeLessThanOrEqual(12);
+  });
+
+  it('stops from 100 km/h in about 36–40 m at ~1 g', () => {
+    const s = stopFrom(100);
+    expect(s.dist).toBeGreaterThanOrEqual(36);
+    expect(s.dist).toBeLessThanOrEqual(40);
+    expect(s.peakDecel / 9.81).toBeGreaterThan(0.9);
+    expect(s.peakDecel / 9.81).toBeLessThan(1.2);
+    expect(s.hudAtStart).toBeGreaterThanOrEqual(36);
+    expect(s.hudAtStart).toBeLessThanOrEqual(40);
+  });
+
+  it('ramps brake pressure to peak decel in 0.1–0.15 s', () => {
+    const s = stopFrom(100);
+    expect(s.tPeak).toBeGreaterThanOrEqual(0.08);
+    expect(s.tPeak).toBeLessThanOrEqual(0.16);
+  });
+
+  it('does not drift laterally when braking in a straight line', () => {
+    const s = stopFrom(100);
+    expect(s.latMax).toBeLessThan(0.05);
+  });
+
+  it('holds at a standstill with no creep or reverse', () => {
+    let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+    ego = { ...ego, bodyVx: 8, velocity: { x: 8, y: 0, z: 0 } };
+    for (let t = 0; t < 4; t += DT_B) {
+      ego = updateVehicle(ego, { throttle: 0, steering: 0, brake: 1, gtaReverse: true }, DT_B);
+      if (Math.abs(ego.bodyVx ?? 0) < 0.12) break;
+    }
+    expect(Math.abs(ego.bodyVx ?? 1)).toBeLessThan(0.2);
+    expect(ego.inReverse).toBe(false);
+    const xHold = ego.transform.position.x;
+    // Release S after the stop: hold still, no creep, no reverse.
+    for (let t = 0; t < 1.5; t += DT_B) {
+      ego = updateVehicle(ego, { throttle: 0, steering: 0, brake: 0, gtaReverse: true }, DT_B);
+    }
+    expect(ego.inReverse).toBe(false);
+    expect(Math.abs(ego.bodyVx ?? 1)).toBeLessThan(0.12);
+    expect(Math.abs(ego.transform.position.x - xHold)).toBeLessThan(0.25);
+    // A short S tap at rest is still a brake, not reverse.
+    for (let t = 0; t < 0.18; t += DT_B) {
+      ego = updateVehicle(ego, { throttle: 0, steering: 0, brake: 1, gtaReverse: true }, DT_B);
+    }
+    expect(ego.inReverse).toBe(false);
+    expect(Math.abs(ego.bodyVx ?? 1)).toBeLessThan(0.12);
+  });
+
+  it('autopilot comfort and emergency decel use the same brake model', () => {
+    function peakFor(req: number) {
+      const v = 22;
+      let ego = createEgoState('car', { x: 0, y: 0, z: 0 }, 0);
+      ego = { ...ego, bodyVx: v, velocity: { x: v, y: 0, z: 0 } };
+      let peak = 0;
+      for (let t = 0; t < 0.55; t += DT_B) {
+        ego = updateVehicle(ego, {
+          throttle: 0,
+          steering: 0,
+          brake: brakePedalForDecel(req),
+        }, DT_B);
+        peak = Math.max(peak, -(ego.acceleration.x ?? 0));
+      }
+      return peak;
+    }
+    const comfort = peakFor(3);
+    const emergency = peakFor(9);
+    expect(comfort).toBeGreaterThan(2.2);
+    expect(comfort).toBeLessThan(4.2);
+    expect(emergency).toBeGreaterThan(7.5);
+    expect(emergency).toBeLessThan(11);
   });
 });

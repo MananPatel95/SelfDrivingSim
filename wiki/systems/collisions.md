@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-12
-sources: [3, 5, 12, 29]
+updated: 2026-10-13
+sources: [3, 5, 12, 28, 29]
 ---
 
 # Collisions
@@ -18,6 +18,8 @@ Ego vs world is a 2D impulse solver on mesh-matched colliders (`collision.ts`). 
 
 A swept circle along the last ego step catches thin poles that a 30 Hz step would otherwise tunnel through. `updateVehicle`, `removeGround`, and `createBEVOccupancyFromAgents` are unchanged; nothing imports `simHotPath.ts`.
 
+`obstacleAhead` (the autopilot hazard brake) skips roadside statics — poles, trees, buildings, signs. A corner pole ~7 m ahead is not an in-lane obstacle. Contact with a pole still collides. The planner already skipped those classes in `findClosestObstacleAhead`; the sim hazard path now matches.
+
 ## Response
 
 Car-to-car (and parked cars) uses mass, inertia, and restitution. The impulse conserves linear momentum, applies Coulomb friction, and adds yaw rate from an off-centre contact so both cars spin. The traffic car is shoved (`impactCooldown` free-body slide) instead of only being position-separated.
@@ -33,6 +35,7 @@ A contact-id set plus a 450 ms hold counts **one collision per object**, not one
 - `game/src/sim/collision.ts`
 - `game/src/sim/collision.test.ts`
 - `game/src/sim/collisionSim.test.ts`
+- `game/src/sim/poleTurn.test.ts`
 - `game/src/sim/simulation.ts`
 - `game/src/sim/world.ts`
 - `game/src/main.ts`

@@ -205,6 +205,18 @@ export function separateEntities(
   };
 }
 
+/** Street furniture / buildings sit off the asphalt. Do not treat them as in-lane hazards. */
+export function isRoadsideStatic(classType: string): boolean {
+  return classType === 'pole'
+    || classType === 'tree'
+    || classType === 'building'
+    || classType === 'traffic_sign'
+    || classType === 'traffic_light'
+    || classType === 'stop_sign'
+    || classType === 'yield_sign'
+    || classType === 'barrier';
+}
+
 export function obstacleAhead(
   ego: EgoState,
   entities: Entity[],
@@ -215,6 +227,10 @@ export function obstacleAhead(
   const fy = Math.sin(ego.transform.rotation);
   let best: { entity: Entity; dist: number } | null = null;
   for (const e of entities) {
+    // Corner poles sit ~1–2 m past the curb. During a left/right turn the
+    // heading sweeps onto them (~7 m ahead, ~2 m lateral) and a full-brake
+    // hazard would pin the car in the box. Planner already skips these classes.
+    if (isRoadsideStatic(e.classType)) continue;
     const dx = e.boundingBox.center.x - ego.transform.position.x;
     const dy = e.boundingBox.center.y - ego.transform.position.y;
     const ahead = dx * fx + dy * fy;

@@ -66,6 +66,30 @@ describe('obstacleAhead', () => {
     expect(hit?.entity.id).toBe(1);
     expect(hit?.dist).toBeCloseTo(12, 0);
   });
+
+  it('does not treat a corner pole 7 m ahead as an in-lane hazard', () => {
+    const ego = {
+      vehicleType: 'car',
+      transform: { position: vec3(0, 0, 0), rotation: Math.PI / 2 },
+      velocity: vec3(0, 8, 0),
+      acceleration: vec3(0, 0, 0),
+      steering: 0, throttle: 0, brake: 0, mass: 1500, stoppingDistance: 10,
+    } as EgoState;
+    const pole: Entity = {
+      id: 23, classType: 'pole',
+      transform: { position: vec3(2, 7, 4), rotation: 0 },
+      boundingBox: { center: vec3(2, 7, 4), size: vec3(0.3, 0.3, 8), yaw: 0 },
+      velocity: vec3(0, 0, 0), isStatic: true, occlusionLevel: 0,
+    };
+    const car: Entity = {
+      id: 8, classType: 'car',
+      transform: { position: vec3(0, 9, 0.8), rotation: Math.PI / 2 },
+      boundingBox: { center: vec3(0, 9, 0.8), size: vec3(4.5, 1.8, 1.5), yaw: Math.PI / 2 },
+      velocity: vec3(0, 0, 0), isStatic: false, occlusionLevel: 0,
+    };
+    expect(obstacleAhead(ego, [pole], 45, 2.4)).toBeNull();
+    expect(obstacleAhead(ego, [pole, car], 45, 2.4)?.entity.id).toBe(8);
+  });
 });
 
 describe('resolveEgoCollision', () => {

@@ -58,6 +58,7 @@ export function computeDecision(input: PerceptionVizInput): DecisionInfo {
   let best: { id: number; cls: string; ttc: number; dist: number } | null = null;
   for (const track of input.tracks) {
     if (track.missedFrames > 0) continue;
+    if (track.classType === 'pole' || track.classType === 'tree' || track.classType === 'building') continue;
     const world = egoToWorld(track.box.center, ego.transform.position, heading);
     const dx = world.x - ego.transform.position.x;
     const dy = world.y - ego.transform.position.y;

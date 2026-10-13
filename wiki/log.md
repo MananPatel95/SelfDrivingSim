@@ -1,7 +1,7 @@
 ---
 tags: [log]
-updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 29]
+updated: 2026-10-13
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29]
 ---
 
 # Wiki log
@@ -70,4 +70,16 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-12] merge | origin/main (#24 traffic) into PR #25 cockpit branch
 
+## [2026-10-12] ingest | PR #26 F3 Waabi view: 10 Hz occupancy, skip duplicate lidar
+
+## [2026-10-12] merge | origin/main (#24 traffic, #25 cockpit) into PR #26 F3 view
+
+## [2026-10-12] ingest | PR #27 dry ABS sedan braking (~1 g, 36–40 m from 100 km/h)
+
+## [2026-10-12] merge | PR #26 F3 view into PR #27 braking
+
+## [2026-10-12] ingest | PR #28 revert PR #26 F3 overlay; skip roadside poles in hazard brake
+
 ## [2026-10-12] ingest | PR #29 impulse collisions, snap, tumble
+
+## [2026-10-13] merge | origin/main (#28 roadside skip + revert) into PR #29 collisions
