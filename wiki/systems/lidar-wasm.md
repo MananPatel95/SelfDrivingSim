@@ -1,12 +1,12 @@
 ---
 tags: [system]
 updated: 2026-10-12
-sources: [2, 3, 26]
+sources: [2, 3]
 ---
 
 # Lidar and Rust/WASM
 
-Browser lidar is a thinned `simulateLidarScan`. When WASM loads, `cast_rays` in `game/crates/autonomy-sim` traces rays against yaw-aligned AABBs and returns `(t, entity_index)` pairs. The F3 overlay does **not** recast rays; occupancy is agent-splat in TypeScript ([[perception-waabi]]).
+Browser lidar is a thinned `simulateLidarScan`. When WASM loads, `cast_rays` in `game/crates/autonomy-sim` traces rays against yaw-aligned AABBs and returns `(t, entity_index)` pairs. Occupancy is a TypeScript agent splat ([[perception-waabi]]). The live F3 HUD may run an extra `runWaabiStack` roof scan; `cast_rays` stays the Rust kernel.
 
 `make wasm` runs `wasm-pack` into `game/crates/autonomy-sim/pkg/` (committed so `npm run dev` works without Rust).
 

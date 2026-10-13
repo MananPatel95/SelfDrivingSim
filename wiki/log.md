@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-12
-sources: [1, 20, 22, 24, 25, 26, 27]
+sources: [1, 20, 22, 24, 25, 26, 27, 28]
 ---
 
 # Wiki log
@@ -77,3 +77,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #27 dry ABS sedan braking (~1 g, 36–40 m from 100 km/h)
 
 ## [2026-10-12] merge | PR #26 F3 view into PR #27 braking
+
+## [2026-10-12] ingest | PR #28 revert PR #26 F3 overlay; skip roadside poles in hazard brake
