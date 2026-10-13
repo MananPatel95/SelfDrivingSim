@@ -1,0 +1,39 @@
+---
+tags: [source]
+updated: 2026-10-13
+sources: []
+---
+
+# Pink roadside destination + pull-over (this branch)
+
+Draft source page for `cursor/pink-destination-be8e`. Replace with `pr-NNN.md` once the GitHub number exists.
+
+## What changed
+
+Map trips end at a **hot-pink roadside pad** (`#ff2d8a`), not in the driving-lane center.
+
+- `tripRoute` = `rightLaneRoute` + a ~22 m ease onto `PULL_OVER_OFFSET` (5.8 m). Pads that land in a junction slide backward off the box. Same-road start/end no longer detour through the next crossing.
+- `beginTrip` stores that pad as `tripDestination`. Re-engage still plans to it (cruise still has no pad).
+- The planner uses `remainingRouteDistance` (slow by 32 m, stop by 8 m) so the sedan pulls over, then parks.
+- 3D: pink asphalt disc + white stem + teardrop pin. Minimap: the same pin whenever a trip exists, including manual. Start-map end dot is the same pink.
+- `?demo=arrive` is a mid-block northbound trip for shots.
+
+## Why
+
+The purple route already showed where the stack was going, but there was no destination object on the road, and arrival stopped in the travel lane.
+
+## Pages touched
+
+planning, hud, testing, right-lane, planner-ts, simulation-ts, main-ts, overview
+
+## Key files
+
+- `game/src/sim/rightLane.ts`
+- `game/src/planning/planner.ts`
+- `game/src/sim/simulation.ts`
+- `game/src/ui/minimapRoute.ts`
+- `game/src/main.ts`
+- `game/src/sim/destination.test.ts`
+- `docs/screenshots/24-destination-marker-road.png`
+- `docs/screenshots/25-destination-minimap.png`
+- `docs/screenshots/26-destination-pullover-stop.png`

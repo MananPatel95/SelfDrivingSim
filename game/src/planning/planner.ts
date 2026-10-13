@@ -97,10 +97,18 @@ export function planTrajectory(
     }
   }
 
-  const goal = route.length > 0 ? route[route.length - 1] : null;
-  if (goal && vec3Distance(egoState.transform.position, goal) < 12) {
-    desiredSpeed = 0;
-    stoppingDistance = Math.min(stoppingDistance, vec3Distance(egoState.transform.position, goal));
+  const remaining = remainingRouteDistance(egoState, route);
+  if (Number.isFinite(remaining) && remaining < 32) {
+    if (remaining < 4) {
+      desiredSpeed = 0;
+      stoppingDistance = Math.min(stoppingDistance, Math.max(1.0, remaining));
+    } else if (remaining < 12) {
+      desiredSpeed = Math.min(desiredSpeed, 2.4);
+    } else if (remaining < 22) {
+      desiredSpeed = Math.min(desiredSpeed, 4.2);
+    } else {
+      desiredSpeed = Math.min(desiredSpeed, 5.8);
+    }
   }
 
   const rule = input.rule;
@@ -221,6 +229,11 @@ function findTargetPoint(
   if (corner && corner.turn > 0.65) {
     lookAhead = Math.min(lookAhead, corner.distance + 4);
   }
+  const dest = route[route.length - 1];
+  if (dest) {
+    const toDest = vec3Distance(ego.transform.position, dest);
+    if (toDest < 28) lookAhead = Math.min(lookAhead, Math.max(3.5, toDest));
+  }
   
   // Find target point at look-ahead distance
   let targetIdx = closestIdx;
@@ -235,6 +248,17 @@ function findTargetPoint(
     point: route[Math.min(targetIdx, route.length - 1)]!,
     progress: targetIdx / route.length,
   };
+}
+
+/** Metres of polyline still ahead of the car, including the current offset to the closest sample. */
+export function remainingRouteDistance(ego: EgoState, route: Vec3[]): number {
+  if (route.length === 0) return Infinity;
+  const idx = closestRouteIndex(ego, route);
+  let d = vec3Distance(ego.transform.position, route[idx]!);
+  for (let i = idx; i < route.length - 1; i++) {
+    d += vec3Distance(route[i]!, route[i + 1]!);
+  }
+  return d;
 }
 
 function closestRouteIndex(ego: EgoState, route: Vec3[]): number {

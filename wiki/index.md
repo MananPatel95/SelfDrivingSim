@@ -18,12 +18,12 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, `runWaabiStack` HUD
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
-- [Planning and autopilot](systems/planning.md) — right-hand route, corners, stop/yield cap
+- [Planning and autopilot](systems/planning.md) — right-hand route, corners, pink roadside pad, stop/yield cap
 - [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled, random walk, deadlock breaker
 - [Pedestrians](systems/pedestrians.md) — sidewalks, crossings, tumble on hit
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
 - [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 sedan-sports + cockpit
-- [HUD and menus](systems/hud.md) — start menu, minimap, seed/demo, collision count
+- [HUD and menus](systems/hud.md) — start menu, minimap, pink dest pin, seed/demo, collision count
 - [Data engine](systems/data-engine.md) — Python mine/label/train
 - [Testing](systems/testing.md) — Vitest and screenshots
 
@@ -74,6 +74,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #27](sources/pr-27.md) — dry ABS sedan braking (~1 g)
 - [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 - [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
+- [Pink destination (this branch)](sources/pr-pink-destination.md) — roadside pad, pull-over, pink pin
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

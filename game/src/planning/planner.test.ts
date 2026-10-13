@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createPlannerState, planTrajectory } from './planner';
+import { createPlannerState, planTrajectory, remainingRouteDistance } from './planner';
 import { createEgoState, updateVehicle, vehicleInputFromAccel } from '../sim/vehicle';
 import { vec3 } from '../sim/math';
 
@@ -48,5 +48,31 @@ describe('autopilot grid corners', () => {
     expect(maxNorth).toBeLessThan(9);
     expect(passedCorner).toBe(true);
     expect(direction * ego.transform.position.x).toBeGreaterThan(20);
+  });
+});
+
+describe('arrival slowing', () => {
+  it('measures remaining polyline distance and stops in the last metres', () => {
+    const route = [];
+    for (let y = 20; y <= 80; y += 6) route.push(vec3(3.5, y, 0));
+    const ego = createEgoState('car', vec3(3.5, 22, 0), Math.PI / 2);
+    expect(remainingRouteDistance(ego, route)).toBeGreaterThan(50);
+    const near = createEgoState('car', vec3(3.5, 78, 0), Math.PI / 2);
+    expect(remainingRouteDistance(near, route)).toBeLessThan(8);
+
+    let car = { ...near, bodyVx: 6, velocity: { x: 0, y: 6, z: 0 } };
+    let planner = createPlannerState();
+    const dt = 1 / 30;
+    for (let i = 0; i < 30 * 8; i++) {
+      const { output, newState } = planTrajectory({
+        egoState: car,
+        detections: [],
+        route,
+        trafficLightStates: new Map(),
+      }, planner);
+      planner = newState;
+      car = updateVehicle(car, vehicleInputFromAccel(output.acceleration, output.steering), dt);
+    }
+    expect(Math.hypot(car.velocity.x, car.velocity.y)).toBeLessThan(0.5);
   });
 });

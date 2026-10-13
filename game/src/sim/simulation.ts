@@ -15,7 +15,7 @@ import {
   isLegitimatelyQueued, nudgeOrRespawn,
   applyTrafficImpulse, knockPedestrian,
 } from './world';
-import { mergeIntoLaneRoute, placeInRightLane, rightLaneRoute } from './rightLane';
+import { mergeIntoLaneRoute, placeInRightLane, tripRoute } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
@@ -845,9 +845,9 @@ export class Simulation {
     this.prevEgoY = this.state.ego.transform.position.y;
   }
 
-  /** Place the car on a start point and follow a right-hand-lane road route to the end. */
+  /** Place the car on a start point and follow a right-hand-lane road route to a roadside pad. */
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
-    const route = rightLaneRoute(start, end);
+    const route = tripRoute(start, end);
     const next = route[Math.min(1, route.length - 1)] ?? end;
     const placed = route[0] ?? placeInRightLane(start.x, start.y, 0);
     const yaw = Math.atan2(next.y - placed.y, next.x - placed.x);
@@ -859,7 +859,8 @@ export class Simulation {
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = mode;
-    this.tripDestination = { x: end.x, y: end.y, z: 0 };
+    const pad = route[route.length - 1] ?? { x: end.x, y: end.y, z: 0 };
+    this.tripDestination = { x: pad.x, y: pad.y, z: 0 };
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }

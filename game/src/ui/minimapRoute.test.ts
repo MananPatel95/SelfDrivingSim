@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   ROUTE_CORE,
+  ROUTE_DEST,
   autopilotRouteOnMinimap,
+  destinationOnMinimap,
+  destPinRadius,
   projectToMinimap,
   routeStrokeWidths,
 } from './minimapRoute';
@@ -52,5 +55,16 @@ describe('autopilot route on the minimap', () => {
     expect(pts![0]!.y).toBeCloseTo(kept.y);
     expect(pts![0]!.y).not.toBeCloseTo(start.y);
     expect(pts![pts!.length - 1]!.y).toBeCloseTo(projectToMinimap(100, 0, 40, 0, 0, 105, 105, 1).y);
+  });
+
+  it('paints the destination as a hot-pink pin even in manual', () => {
+    expect(ROUTE_DEST.toLowerCase()).toBe('#ff2d8a');
+    expect(destPinRadius(1.35)).toBeGreaterThan(5);
+    const dest = destinationOnMinimap({ x: 80, y: 0 }, ego, canvas, 1.35);
+    expect(dest).not.toBeNull();
+    expect(dest!.y).toBeLessThan(105);
+    expect(destinationOnMinimap(null, ego, canvas, 1)).toBeNull();
+    const whileManual = destinationOnMinimap({ x: 40, y: 0 }, ego, canvas, 1);
+    expect(whileManual).not.toBeNull();
   });
 });

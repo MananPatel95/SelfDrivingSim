@@ -83,3 +83,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-12] ingest | PR #29 impulse collisions, snap, tumble
 
 ## [2026-10-13] merge | origin/main (#28 roadside skip + revert) into PR #29 collisions
+
+## [2026-10-13] ingest | cursor/pink-destination-be8e pink roadside destination + pull-over on arrival
