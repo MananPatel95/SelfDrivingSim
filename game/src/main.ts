@@ -8,6 +8,7 @@ import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
+import { destinationPinWorld } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
   applyCameraLayers,
@@ -467,36 +468,32 @@ function createDestinationMarker(): THREE.Group {
   });
   const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-  const pad = new THREE.Mesh(new THREE.CircleGeometry(1.15, 28), pinkPad);
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), pinkPad);
   pad.rotation.x = -Math.PI / 2;
   pad.position.y = 0.035;
   pad.receiveShadow = true;
   group.add(pad);
 
-  const ring = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.35, 28), pink);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.04;
-  group.add(ring);
-
+  const pin = new THREE.Group();
+  pin.name = 'dest-pin';
+  pin.position.set(3.15, 0, 1.1);
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.85, 8), white);
   stem.position.y = 0.95;
   stem.castShadow = true;
-  group.add(stem);
-
+  pin.add(stem);
   const cone = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.62, 14), pink);
   cone.position.y = 1.58;
   cone.rotation.x = Math.PI;
   cone.castShadow = true;
-  group.add(cone);
-
+  pin.add(cone);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), pink);
   head.position.y = 2.02;
   head.castShadow = true;
-  group.add(head);
-
+  pin.add(head);
   const bead = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), white);
   bead.position.y = 2.02;
-  group.add(bead);
+  pin.add(bead);
+  group.add(pin);
 
   group.visible = false;
   group.traverse((obj) => { obj.layers.set(LAYER_WORLD); });
@@ -512,6 +509,9 @@ function syncDestinationMarker(): void {
   }
   destinationMarker.visible = true;
   destinationMarker.position.set(dest.x, 0, -dest.y);
+  destinationMarker.rotation.y = meshYawForHeading(simulation.getTripHeading());
+  const pin = destinationMarker.getObjectByName('dest-pin');
+  if (pin) pin.visible = !simulation.hasArrived();
 }
 
 function drawDestinationPin(
@@ -1443,13 +1443,15 @@ function syncDriveBadge() {
   const badge = document.getElementById('drive-badge');
   const control = document.getElementById('control-source');
   const manual = isManual();
+  const arrived = simulation.hasArrived();
+  const label = arrived && !manual ? 'ARRIVED' : manual ? 'MANUAL' : 'AUTOPILOT';
   if (badge) {
-    badge.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    badge.textContent = label;
     badge.classList.toggle('manual', manual);
   }
   document.getElementById('takeover-btn')?.classList.toggle('hidden', !gameStarted || manual);
   if (control) {
-    control.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    control.textContent = label;
     control.className = 'status-value' + (manual ? ' status-warning' : '');
   }
 }
@@ -2551,8 +2553,12 @@ function updateMinimap() {
     ctx.fill();
   }
 
+  const dest = simulation.getTripDestination();
+  const destMark = dest
+    ? destinationPinWorld(dest, simulation.getTripHeading())
+    : null;
   const destPt = destinationOnMinimap(
-    simulation.getTripDestination(),
+    destMark,
     { x: egoX, y: egoY, yaw },
     { w, h },
     scale,
@@ -3014,7 +3020,7 @@ function applyDemo(kind: string) {
   perceptionViz?.setEnabled(true);
 
   if (kind === 'arrive') {
-    tripStart = { x: 0, y: 64 };
+    tripStart = { x: 0, y: 50 };
     tripEnd = { x: 0, y: 78 };
     beginGame('autopilot');
     setCameraMode('orbit');
@@ -3444,6 +3450,8 @@ async function init() {
     setCameraMode,
     switchStack,
     getTripDestination: () => simulation.getTripDestination(),
+    hasArrived: () => simulation.hasArrived(),
+    getTripHeading: () => simulation.getTripHeading(),
     getEgo: () => {
       const e = simulation.getState().ego;
       return {

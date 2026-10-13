@@ -11,12 +11,16 @@ export const LANE_OFFSET = 3.5;
 /** Keep the tyres off the yellow line and out of the oncoming lane. */
 export const LANE_INNER = 1.6;
 export const LANE_OUTER = 5.8;
-/** Parked offset: right of the driving lane, still on the 14 m asphalt (curb at 7 m). */
-export const PULL_OVER_OFFSET = 5.8;
-/** Ease from the driving lane onto the roadside pad over this many metres. */
-export const PULL_OVER_LENGTH = 22;
+/** Parked offset: right of the driving lane. Sedan half-width 0.925 → right edge ~6.3 m, curb at 7 m. */
+export const PULL_OVER_OFFSET = 5.4;
+/** Ease laterally onto the pad over this many metres. */
+export const PULL_OVER_LENGTH = 16;
+/** Straight, road-parallel tail so the nose matches the curb at the stop. */
+export const PULL_OVER_STRAIGHT = 10;
 /** Keep the pad out of the intersection box. */
 export const DEST_INTERSECTION_CLEAR = 16;
+/** Asphalt half-width of the 14 m roads. */
+export const ROAD_HALF = 7;
 
 export function headingRight(yaw: number): { x: number; y: number } {
   return { x: Math.sin(yaw), y: -Math.cos(yaw) };
@@ -201,39 +205,85 @@ export function roadsideDestination(end: Vec3, approachHeading: number): Vec3 {
   return slideOffIntersection(pad, yaw);
 }
 
-/** Replace the last metres of a lane route with a curve onto `dest`. */
-export function appendPullOver(route: Vec3[], dest: Vec3): Vec3[] {
-  if (route.length === 0) return [dest];
-  const fx = dest.x - route[0]!.x;
-  const fy = dest.y - route[0]!.y;
-  const heading = lastHeading(route, Math.atan2(fy, fx));
-  const ux = Math.cos(heading);
-  const uy = Math.sin(heading);
-  const destAlong = dest.x * ux + dest.y * uy;
-  const kept: Vec3[] = [];
-  for (const p of route) {
-    if (p.x * ux + p.y * uy <= destAlong + 0.4) kept.push(p);
-  }
-  const base = kept.length > 0 ? kept : route;
-  let acc = 0;
-  let cut = 0;
-  for (let i = base.length - 1; i > 0; i--) {
-    acc += Math.hypot(base[i]!.x - base[i - 1]!.x, base[i]!.y - base[i - 1]!.y);
-    if (acc >= PULL_OVER_LENGTH) {
-      cut = i - 1;
-      break;
+function alongLat(p: Vec3, ux: number, uy: number, rx: number, ry: number): { along: number; lat: number } {
+  return { along: p.x * ux + p.y * uy, lat: p.x * rx + p.y * ry };
+}
+
+function fromAlongLat(along: number, lat: number, ux: number, uy: number, rx: number, ry: number): Vec3 {
+  return vec3(along * ux + lat * rx, along * uy + lat * ry, 0);
+}
+
+/** Pin at the front-right of the pad, ahead of the bumper and outside the body. */
+export function destinationPinWorld(dest: Vec3, heading: number): Vec3 {
+  const yaw = snapHeadingToGrid(heading);
+  const ux = Math.cos(yaw);
+  const uy = Math.sin(yaw);
+  const r = headingRight(yaw);
+  return vec3(dest.x + ux * 3.15 + r.x * 1.1, dest.y + uy * 3.15 + r.y * 1.1, 0);
+}
+
+/** Body-plan corners of the fitted sedan (4.7 × 1.85 m). */
+export function sedanCorners(x: number, y: number, yaw: number): Array<{ x: number; y: number }> {
+  const ux = Math.cos(yaw);
+  const uy = Math.sin(yaw);
+  const r = headingRight(yaw);
+  const hl = 2.35;
+  const hw = 0.925;
+  const out: Array<{ x: number; y: number }> = [];
+  for (const s of [-1, 1]) {
+    for (const t of [-1, 1]) {
+      out.push({ x: x + ux * s * hl + r.x * t * hw, y: y + uy * s * hl + r.y * t * hw });
     }
   }
-  const from = base[cut]!;
-  const steps = Math.max(4, Math.ceil(PULL_OVER_LENGTH / 4));
-  const blended: Vec3[] = [];
-  for (let s = 1; s <= steps; s++) {
-    const t = s / steps;
-    const e = t * t * (3 - 2 * t);
-    blended.push(vec3(from.x + (dest.x - from.x) * e, from.y + (dest.y - from.y) * e, 0));
+  return out;
+}
+
+export function pointOnAsphalt(x: number, y: number, half = ROAD_HALF): boolean {
+  return Math.abs(x - nearestGridLine(x)) <= half || Math.abs(y - nearestGridLine(y)) <= half;
+}
+
+/** Replace the last metres of a lane route with an ease, then a road-parallel tail onto `dest`. */
+export function appendPullOver(route: Vec3[], dest: Vec3): Vec3[] {
+  if (route.length === 0) return [dest];
+  const heading = snapHeadingToGrid(
+    lastHeading(route, Math.atan2(dest.y - route[0]!.y, dest.x - route[0]!.x)),
+  );
+  const ux = Math.cos(heading);
+  const uy = Math.sin(heading);
+  const r = headingRight(heading);
+  const destAL = alongLat(dest, ux, uy, r.x, r.y);
+  const easeEndAlong = destAL.along - PULL_OVER_STRAIGHT;
+  const easeStartAlong = easeEndAlong - PULL_OVER_LENGTH;
+
+  const kept: Vec3[] = [];
+  for (const p of route) {
+    if (alongLat(p, ux, uy, r.x, r.y).along <= easeStartAlong + 0.35) kept.push(p);
   }
-  blended[blended.length - 1] = dest;
-  return [...base.slice(0, cut + 1), ...blended];
+  const from = kept[kept.length - 1] ?? route[0]!;
+  const fromAL = alongLat(from, ux, uy, r.x, r.y);
+  const out = kept.length > 0 ? kept.slice() : [from];
+
+  const easeSteps = 8;
+  for (let s = 1; s <= easeSteps; s++) {
+    const t = s / easeSteps;
+    const e = t * t * (3 - 2 * t);
+    out.push(fromAlongLat(
+      fromAL.along + (easeEndAlong - fromAL.along) * t,
+      fromAL.lat + (destAL.lat - fromAL.lat) * e,
+      ux, uy, r.x, r.y,
+    ));
+  }
+  const straightSteps = 6;
+  for (let s = 1; s <= straightSteps; s++) {
+    const t = s / straightSteps;
+    out.push(fromAlongLat(
+      easeEndAlong + (destAL.along - easeEndAlong) * t,
+      destAL.lat,
+      ux, uy, r.x, r.y,
+    ));
+  }
+  out[out.length - 1] = dest;
+  return out;
 }
 
 /** Right-hand-lane Manhattan trip that ends pulled over at a roadside pad. */
