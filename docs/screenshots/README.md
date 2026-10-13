@@ -112,6 +112,17 @@ High orbit on the origin junction. An NPC is in the intersection with a fused bo
 ### 23-ego-autopilot-intersection.png
 F2, `?seed=3&demo=stop`. Ego AUTOPILOT has fully stopped then is moving through the all-way stop at ~8–10 km/h (`Cruising: lane clear`), not stuck at 0 km/h behind a deadlocked NPC.
 
+## Pink roadside destination
+
+### 24-destination-marker-road.png
+`?seed=3&demo=arrive`. Short mid-block northbound trip. The hot-pink pad and teardrop pin sit on the right-hand curb ahead of the sedan.
+
+### 25-destination-minimap.png
+Same trip. Minimap shows the purple remaining route and the pink destination pin (not a ped dot).
+
+### 26-destination-pullover-stop.png
+Arrival: ego pulled over onto the pad and stopped. Speed ~0, nose in the right-hand roadside, pin beside the car.
+
 ## Modern cabin and Kenney sedan-sports
 
 ### cabin3_cockpit_straight.png

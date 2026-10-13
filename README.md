@@ -16,6 +16,7 @@ A browser-based, GTA-style 3D simulation where you supervise autonomous vehicles
   - WASD / arrows drive a dynamic-bicycle sedan (W throttle, S brake then reverse, Space handbrake)
   - Right-mouse hold + drag orbits the chase camera; scroll zooms; left click stays free for UI
   - T toggles AUTOPILOT / MANUAL (a drive key takes over automatically)
+  - Map trips drop a pink roadside destination pin; autopilot pulls over onto it and stops
   - Escape (or the gear icon) opens a pause / settings menu
   - Scenario injection (jaywalker, occluded pedestrian, cut-in)
   - Day/night and weather effects

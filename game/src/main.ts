@@ -8,6 +8,7 @@ import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
 import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
+import { destinationPinWorld } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
   applyCameraLayers,
@@ -37,11 +38,14 @@ import {
 } from './sim/vehicleVisual';
 import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
 import {
+  DEST_PIN_COLOR,
   ROUTE_CORE,
   ROUTE_DEST,
   ROUTE_DEST_RING,
   ROUTE_HALO,
   autopilotRouteOnMinimap,
+  destinationOnMinimap,
+  destPinRadius,
   projectToMinimap,
   routeStrokeWidths,
 } from './ui/minimapRoute';
@@ -329,6 +333,7 @@ function initThreeJS() {
 
 // City road infrastructure meshes
 let cityRoadMeshes: THREE.Object3D[] = [];
+let destinationMarker: THREE.Group | null = null;
 
 function addInstanced(
   geom: THREE.BufferGeometry,
@@ -444,6 +449,91 @@ function buildCityRoads() {
   addInstanced(new THREE.BoxGeometry(0.4, 0.15, 0.4), glowMat, lamps);
 
   console.log(`Built city roads: ${cityRoadMeshes.length} objects (instanced markings)`);
+}
+
+/** Pink roadside pad + map pin. Visible on asphalt; minimap uses the same color. */
+function createDestinationMarker(): THREE.Group {
+  const group = new THREE.Group();
+  const pink = new THREE.MeshLambertMaterial({
+    color: DEST_PIN_COLOR,
+    emissive: DEST_PIN_COLOR,
+    emissiveIntensity: 0.42,
+  });
+  const pinkPad = new THREE.MeshLambertMaterial({
+    color: DEST_PIN_COLOR,
+    emissive: DEST_PIN_COLOR,
+    emissiveIntensity: 0.28,
+    transparent: true,
+    opacity: 0.88,
+  });
+  const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
+
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), pinkPad);
+  pad.rotation.x = -Math.PI / 2;
+  pad.position.y = 0.035;
+  pad.receiveShadow = true;
+  group.add(pad);
+
+  const pin = new THREE.Group();
+  pin.name = 'dest-pin';
+  pin.position.set(3.15, 0, 1.1);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.85, 8), white);
+  stem.position.y = 0.95;
+  stem.castShadow = true;
+  pin.add(stem);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.62, 14), pink);
+  cone.position.y = 1.58;
+  cone.rotation.x = Math.PI;
+  cone.castShadow = true;
+  pin.add(cone);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 12), pink);
+  head.position.y = 2.02;
+  head.castShadow = true;
+  pin.add(head);
+  const bead = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), white);
+  bead.position.y = 2.02;
+  pin.add(bead);
+  group.add(pin);
+
+  group.visible = false;
+  group.traverse((obj) => { obj.layers.set(LAYER_WORLD); });
+  return group;
+}
+
+function syncDestinationMarker(): void {
+  if (!destinationMarker) return;
+  const dest = simulation.getTripDestination();
+  if (!dest) {
+    destinationMarker.visible = false;
+    return;
+  }
+  destinationMarker.visible = true;
+  destinationMarker.position.set(dest.x, 0, -dest.y);
+  destinationMarker.rotation.y = meshYawForHeading(simulation.getTripHeading());
+  const pin = destinationMarker.getObjectByName('dest-pin');
+  if (pin) pin.visible = !simulation.hasArrived();
+}
+
+function drawDestinationPin(
+  ctx: CanvasRenderingContext2D,
+  p: { x: number; y: number },
+  scale: number,
+): void {
+  const r = destPinRadius(scale);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y + r * 0.9);
+  ctx.bezierCurveTo(p.x + r * 0.95, p.y + r * 0.05, p.x + r * 0.72, p.y - r * 0.95, p.x, p.y - r * 0.95);
+  ctx.bezierCurveTo(p.x - r * 0.72, p.y - r * 0.95, p.x - r * 0.95, p.y + r * 0.05, p.x, p.y + r * 0.9);
+  ctx.closePath();
+  ctx.fillStyle = ROUTE_DEST;
+  ctx.fill();
+  ctx.strokeStyle = ROUTE_DEST_RING;
+  ctx.lineWidth = 1.7;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(p.x, p.y - r * 0.28, r * 0.26, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
 }
 
 // Create mesh for entity with proper styling
@@ -1353,13 +1443,15 @@ function syncDriveBadge() {
   const badge = document.getElementById('drive-badge');
   const control = document.getElementById('control-source');
   const manual = isManual();
+  const arrived = simulation.hasArrived();
+  const label = arrived && !manual ? 'ARRIVED' : manual ? 'MANUAL' : 'AUTOPILOT';
   if (badge) {
-    badge.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    badge.textContent = label;
     badge.classList.toggle('manual', manual);
   }
   document.getElementById('takeover-btn')?.classList.toggle('hidden', !gameStarted || manual);
   if (control) {
-    control.textContent = manual ? 'MANUAL' : 'AUTOPILOT';
+    control.textContent = label;
     control.className = 'status-value' + (manual ? ' status-warning' : '');
   }
 }
@@ -1435,6 +1527,7 @@ function restartSim() {
   visionFirstSeen.clear();
   simulation.restart();
   rebuildStaticCity();
+  syncDestinationMarker();
   captureEgoPose();
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
@@ -2421,14 +2514,6 @@ function updateMinimap() {
     const { halo, core } = routeStrokeWidths(scale);
     stroke(halo, ROUTE_HALO);
     stroke(core, ROUTE_CORE);
-    const dest = routePts[routePts.length - 1]!;
-    ctx.beginPath();
-    ctx.arc(dest.x, dest.y, Math.max(4, core * 0.7), 0, Math.PI * 2);
-    ctx.fillStyle = ROUTE_DEST;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = ROUTE_DEST_RING;
-    ctx.stroke();
   }
 
   for (const inter of state.worldMap.controlledIntersections) {
@@ -2466,6 +2551,20 @@ function updateMinimap() {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  const dest = simulation.getTripDestination();
+  const destMark = dest
+    ? destinationPinWorld(dest, simulation.getTripHeading())
+    : null;
+  const destPt = destinationOnMinimap(
+    destMark,
+    { x: egoX, y: egoY, yaw },
+    { w, h },
+    scale,
+  );
+  if (destPt && destPt.x > -16 && destPt.y > -16 && destPt.x < w + 16 && destPt.y < h + 16) {
+    drawDestinationPin(ctx, destPt, scale);
   }
 
   ctx.restore();
@@ -2814,7 +2913,7 @@ function drawStartMap() {
     ctx.stroke();
   };
   if (tripStart) dot(tripStart, '#3d6');
-  if (tripEnd) dot(tripEnd, '#f55');
+  if (tripEnd) dot(tripEnd, ROUTE_DEST);
 }
 
 function headingAlongRoad(p: { x: number; y: number }): number {
@@ -2913,13 +3012,24 @@ function applyShot(kind: string) {
   }
 }
 
-/** Intersection / lane demos: ?demo=lane|left|right|stop|yield|mix|queue, plus collision shots: hit-car|hit-pole|hit-sign|hit-ped */
+/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive, plus hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
   showAIView = true;
   document.getElementById('ai-view-panel')?.classList.add('visible');
   document.getElementById('decision-banner')?.classList.add('visible');
   perceptionViz?.setEnabled(true);
 
+  if (kind === 'arrive') {
+    tripStart = { x: 0, y: 50 };
+    tripEnd = { x: 0, y: 78 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = 0.2;
+    orbitPitch = 0.34;
+    orbitDist = 20;
+    camFollowReady = true;
+    return;
+  }
   if (kind === 'lane') {
     tripStart = { x: 0, y: -90 };
     tripEnd = { x: 0, y: 160 };
@@ -3128,6 +3238,7 @@ function animate(time: number) {
       : handWheelRotation(currSteer);
   }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
+  syncDestinationMarker();
 
   if (time - lastHudMs >= 200) {
     lastHudMs = time;
@@ -3275,6 +3386,9 @@ async function init() {
 
   applyQuality('med');
   rebuildStaticCity();
+  destinationMarker = createDestinationMarker();
+  scene.add(destinationMarker);
+  syncDestinationMarker();
   captureEgoPose();
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
@@ -3290,6 +3404,7 @@ async function init() {
   if (shot) applyShot(shot);
   const demo = params.get('demo');
   if (demo) applyDemo(demo);
+  if (params.get('pause') === '1') isPaused = true;
   lastTime = performance.now();
   requestAnimationFrame(animate);
   (window as unknown as { __autonomyDebug: Record<string, unknown> }).__autonomyDebug = {
@@ -3333,6 +3448,24 @@ async function init() {
     },
     applyShot,
     setCameraMode,
+    switchStack,
+    getTripDestination: () => simulation.getTripDestination(),
+    hasArrived: () => simulation.hasArrived(),
+    getTripHeading: () => simulation.getTripHeading(),
+    getEgo: () => {
+      const e = simulation.getState().ego;
+      return {
+        x: e.transform.position.x,
+        y: e.transform.position.y,
+        yaw: e.transform.rotation,
+        speed: Math.hypot(e.velocity.x, e.velocity.y),
+      };
+    },
+    setMinimapScale(s: number) {
+      minimapScale = clamp(s, 0.4, 4.5);
+    },
+    getFps: () => displayFps,
+    f3Work: () => ({ ...f3WorkStats }),
     holdSteer(dir: 'left' | 'right' | 'none') {
       inputState.left = dir === 'left';
       inputState.right = dir === 'right';

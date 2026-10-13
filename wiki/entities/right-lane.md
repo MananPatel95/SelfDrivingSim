@@ -1,16 +1,17 @@
 ---
 tags: [entity]
-updated: 2026-10-12
-sources: [20]
+updated: 2026-10-13
+sources: [20, 30]
 ---
 
 # `rightLane.ts`
 
-Right-hand traffic geometry. Heading θ: right is `(sin θ, −cos θ)`. Eastbound right is −Y; northbound right is +X. `LANE_OFFSET` is 3.5 m (`LANE_INNER` 1.6 … `LANE_OUTER` 5.8).
+Right-hand traffic geometry. Heading θ: right is `(sin θ, −cos θ)`. Eastbound right is −Y; northbound right is +X. `LANE_OFFSET` is 3.5 m (`LANE_INNER` 1.6 … `LANE_OUTER` 5.8). `PULL_OVER_OFFSET` is 5.4 m so a 1.85 m sedan parks with its right edge ~6.3 m, inside the curb at 7 m. `appendPullOver` eases laterally then adds a `PULL_OVER_STRAIGHT` (10 m) road-parallel tail.
 
-`rightLaneRoute` builds a Manhattan trip in that lane: right turns cut the near corner; left turns go wide into the far right lane. `beginTrip` uses this instead of centerline `roadRoute` ([[pr-13]], superseded for ego trips by [[pr-20]]).
+`rightLaneRoute` builds a Manhattan trip in that lane: right turns cut the near corner; left turns go wide into the far right lane. `tripRoute` / `beginTrip` append a pull-over onto `roadsideDestination` (slid off junctions). Same-road corners are start→end only — they do not bounce through the next crossing. `mergeIntoLaneRoute` still cruises without a pad when there is no trip goal. `sedanCorners` / `pointOnAsphalt` are the parked-pose overlap checks.
 
 ## Key files
 
 - `game/src/sim/rightLane.ts`
 - `game/src/sim/rightLane.test.ts`
+- `game/src/sim/destination.test.ts`

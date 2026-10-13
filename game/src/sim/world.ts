@@ -112,8 +112,13 @@ export function roadRoute(start: Vec3, end: Vec3): Vec3[] {
     <= Math.abs(p.y - nearestGridLine(p.y));
   const startNS = onNS(start);
   const endNS = onNS(end);
+  const sameRoad = startNS && endNS
+    ? Math.abs(nearestGridLine(start.x) - nearestGridLine(end.x)) < 1
+    : !startNS && !endNS && Math.abs(nearestGridLine(start.y) - nearestGridLine(end.y)) < 1;
   const pts: Vec3[] = [start];
-  if (startNS && endNS) {
+  if (sameRoad) {
+    // fall through to sampling start→end
+  } else if (startNS && endNS) {
     const crossY = nearestGridLine(end.y);
     pts.push(vec3(start.x, crossY, 0), vec3(end.x, crossY, 0));
   } else if (!startNS && !endNS) {

@@ -5,12 +5,15 @@ import { createPlannerState, planTrajectory } from '../planning/planner';
 import { createEgoState, updateVehicle, vehicleInputFromAccel } from './vehicle';
 import {
   LANE_OFFSET,
+  PULL_OVER_OFFSET,
   inRightLane,
   lateralFromCenter,
   mergeIntoLaneRoute,
   placeInRightLane,
+  roadsideDestination,
   rightLaneRoute,
   straddlesCenter,
+  tripRoute,
   turnKind,
 } from './rightLane';
 
@@ -95,9 +98,11 @@ describe('right-hand traffic lanes', () => {
     expect(Math.hypot(route[0]!.x - from.x, route[0]!.y - from.y)).toBeLessThan(1);
     const tail = route[route.length - 1]!;
     expect(tail.x).toBeGreaterThan(70);
+    const dest = route[route.length - 1]!;
     const settled = route.slice(9).filter((p) => {
       const nearCorner = Math.abs(p.x - nearestGridLine(p.x)) < 12 && Math.abs(p.y - nearestGridLine(p.y)) < 12;
-      return !nearCorner;
+      const nearDest = Math.hypot(p.x - dest.x, p.y - dest.y) < 24;
+      return !nearCorner && !nearDest;
     });
     expect(settled.length).toBeGreaterThan(3);
     for (const p of settled) {
@@ -106,5 +111,31 @@ describe('right-hand traffic lanes', () => {
         : 0;
       expect(inRightLane(p.x, p.y, heading)).toBe(true);
     }
+  });
+
+  it('places the trip destination on the right-hand curb, not in the driving lane', () => {
+    const north = roadsideDestination(vec3(0, 80, 0), Math.PI / 2);
+    expect(north.x).toBeCloseTo(PULL_OVER_OFFSET);
+    expect(north.y).toBeCloseTo(80);
+    const east = roadsideDestination(vec3(50, 0, 0), 0);
+    expect(east.y).toBeCloseTo(-PULL_OVER_OFFSET);
+    expect(east.x).toBeCloseTo(50);
+  });
+
+  it('slides a destination out of an intersection before parking', () => {
+    const pad = roadsideDestination(vec3(0, 4, 0), Math.PI / 2);
+    expect(Math.abs(pad.x - nearestGridLine(pad.x))).toBeGreaterThan(4);
+    expect(pad.y).toBeLessThan(-10);
+    expect(pad.x).toBeCloseTo(PULL_OVER_OFFSET, 0);
+  });
+
+  it('ends a trip route pulled over at the roadside pad', () => {
+    const route = tripRoute(vec3(0, 20, 0), vec3(0, 80, 0));
+    const tail = route[route.length - 1]!;
+    expect(tail.x).toBeCloseTo(PULL_OVER_OFFSET, 1);
+    expect(tail.y).toBeCloseTo(80, 0);
+    const mid = route[Math.floor(route.length / 2)]!;
+    expect(mid.x).toBeLessThan(tail.x);
+    expect(inRightLane(mid.x, mid.y, Math.PI / 2)).toBe(true);
   });
 });

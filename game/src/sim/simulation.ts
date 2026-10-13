@@ -15,7 +15,7 @@ import {
   isLegitimatelyQueued, nudgeOrRespawn,
   applyTrafficImpulse, knockPedestrian,
 } from './world';
-import { mergeIntoLaneRoute, placeInRightLane, rightLaneRoute } from './rightLane';
+import { mergeIntoLaneRoute, placeInRightLane, tripRoute } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
@@ -27,7 +27,7 @@ import { vec3, vec3Distance, vec3Length, SeededRandom, egoToWorld, normalizeAngl
 import { createEgoState, updateVehicle, VehicleInput, vehicleInputFromAccel } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
-import { planTrajectory, createPlannerState, PlannerState, oracleSupervisor } from '../planning/planner';
+import { planTrajectory, createPlannerState, remainingRouteDistance, PlannerState, oracleSupervisor } from '../planning/planner';
 import { Recorder, Recording } from '../recorder/recorder';
 import type { PlannerOutput, LidarConfig } from './types';
 import {
@@ -97,6 +97,7 @@ export interface SimulationState {
   lastTakeover?: TakeoverEvent;
   lastPlannerOutput: PlannerOutput | null;
   lastRule: RuleDecision | null;
+  arrived: boolean;
   collisionCount: number;
   lastCollision: CollisionEvent | null;
   collisionLog: CollisionEvent[];
@@ -118,6 +119,7 @@ export class Simulation {
   private stopBook: StopBook = { arrivals: new Map() };
   /** Last map-trip destination. Null when Just-drive / cruise has no goal. */
   private tripDestination: Vec3 | null = null;
+  private tripHeading = 0;
   private prevEgoX = 0;
   private prevEgoY = 0;
   private spatialGrid = new SpatialGrid(8);
@@ -190,6 +192,7 @@ export class Simulation {
       controlSource: 'policy',
       lastPlannerOutput: null,
       lastRule: null,
+      arrived: false,
       collisionCount: 0,
       lastCollision: null,
       collisionLog: [],
@@ -472,13 +475,21 @@ export class Simulation {
       nowSec,
     );
     this.state.lastRule = lastRule;
+    if (this.state.arrived) {
+      this.state.lastRule = {
+        maxSpeed: 0,
+        mustStop: true,
+        reason: 'Arrived',
+        severity: 'go',
+      };
+    }
 
     const plannerInput = {
       egoState: this.state.ego,
       detections: [...worldDetections, ...signDetections],
       route: this.state.route,
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
-      rule: lastRule,
+      rule: this.state.lastRule,
     };
     
     const hazard = obstacleAhead(
@@ -572,7 +583,9 @@ export class Simulation {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
     }
 
-    if (this.state.controlSource !== 'human' && lastRule.mustStop) {
+    if (this.state.arrived && this.state.controlSource !== 'human') {
+      vehicleInput = { throttle: 0, steering: 0, brake: 1 };
+    } else if (this.state.controlSource !== 'human' && lastRule.mustStop) {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
     } else if (this.state.controlSource !== 'human' && lastRule.maxSpeed < 8) {
       const speed = vec3Length(this.state.ego.velocity);
@@ -583,6 +596,7 @@ export class Simulation {
 
     // Update ego vehicle (bicycle model). Collision impulse is applied after this.
     this.state.ego = updateVehicle(this.state.ego, vehicleInput, dt);
+    this.maybeArrive();
 
     this.resolveWorldCollisions(dt);
     this.integrateBrokenFurniture(dt);
@@ -841,13 +855,15 @@ export class Simulation {
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'human';
     this.tripDestination = null;
+    this.tripHeading = 0;
+    this.state.arrived = false;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }
 
-  /** Place the car on a start point and follow a right-hand-lane road route to the end. */
+  /** Place the car on a start point and follow a right-hand-lane road route to a roadside pad. */
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
-    const route = rightLaneRoute(start, end);
+    const route = tripRoute(start, end);
     const next = route[Math.min(1, route.length - 1)] ?? end;
     const placed = route[0] ?? placeInRightLane(start.x, start.y, 0);
     const yaw = Math.atan2(next.y - placed.y, next.x - placed.x);
@@ -859,13 +875,44 @@ export class Simulation {
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = mode;
-    this.tripDestination = { x: end.x, y: end.y, z: 0 };
+    const pad = route[route.length - 1] ?? { x: end.x, y: end.y, z: 0 };
+    this.tripDestination = { x: pad.x, y: pad.y, z: 0 };
+    this.tripHeading = route.length >= 2
+      ? Math.atan2(pad.y - route[route.length - 2]!.y, pad.x - route[route.length - 2]!.x)
+      : yaw;
+    this.state.arrived = false;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }
 
   getTripDestination(): Vec3 | null {
     return this.tripDestination;
+  }
+
+  getTripHeading(): number {
+    return this.tripHeading;
+  }
+
+  hasArrived(): boolean {
+    return this.state.arrived;
+  }
+
+  private maybeArrive(): void {
+    if (this.state.arrived || !this.tripDestination || this.state.controlSource === 'human') return;
+    const dest = this.tripDestination;
+    const ego = this.state.ego;
+    const dist = vec3Distance(ego.transform.position, dest);
+    const speed = vec3Length(ego.velocity);
+    const remaining = remainingRouteDistance(ego, this.state.route);
+    if (dist < 3.2 && speed < 0.65 && remaining < 6) {
+      this.state.arrived = true;
+      this.state.lastRule = {
+        maxSpeed: 0,
+        mustStop: true,
+        reason: 'Arrived',
+        severity: 'go',
+      };
+    }
   }
 
   /**
@@ -882,6 +929,12 @@ export class Simulation {
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'policy';
+    this.state.arrived = false;
+    if (goal && route.length >= 2) {
+      const tail = route[route.length - 1]!;
+      const prev = route[route.length - 2]!;
+      this.tripHeading = Math.atan2(tail.y - prev.y, tail.x - prev.x);
+    }
     return { mode: goal ? 'trip' : 'cruise', route };
   }
   

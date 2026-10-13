@@ -5,8 +5,10 @@
 
 export const ROUTE_HALO = 'rgba(156, 70, 255, 0.55)';
 export const ROUTE_CORE = '#c45cff';
-export const ROUTE_DEST = '#f4e8ff';
-export const ROUTE_DEST_RING = '#6b21c4';
+/** Roadside arrival pad — hot pink, distinct from ped `#ff66cc`. */
+export const ROUTE_DEST = '#ff2d8a';
+export const ROUTE_DEST_RING = '#ffffff';
+export const DEST_PIN_COLOR = 0xff2d8a;
 
 export interface MapPoint {
   x: number;
@@ -73,4 +75,19 @@ export function autopilotRouteOnMinimap(
     pts.push(projectToMinimap(p.x, p.y, ego.x, ego.y, ego.yaw, cx, cy, scale));
   }
   return pts.length >= 2 ? pts : null;
+}
+
+/** Pink destination pin, shown whenever a trip pad exists (including manual). */
+export function destinationOnMinimap(
+  dest: { x: number; y: number } | null | undefined,
+  ego: { x: number; y: number; yaw: number },
+  canvas: { w: number; h: number },
+  scale: number,
+): MapPoint | null {
+  if (!dest) return null;
+  return projectToMinimap(dest.x, dest.y, ego.x, ego.y, ego.yaw, canvas.w / 2, canvas.h / 2, scale);
+}
+
+export function destPinRadius(scale: number): number {
+  return Math.max(6.5, scale * 2.4);
 }
