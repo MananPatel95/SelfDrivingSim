@@ -89,3 +89,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
 
 ## [2026-10-14] ingest | PR #33 opposite-side pad, legal U-turn, HUD % sprite
+
+## [2026-10-14] ingest | PR #33 parked offset 5.775 m / heading-aware curb tests

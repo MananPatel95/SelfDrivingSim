@@ -11,16 +11,27 @@ export const LANE_OFFSET = 3.5;
 /** Keep the tyres off the yellow line and out of the oncoming lane. */
 export const LANE_INNER = 1.6;
 export const LANE_OUTER = 5.8;
-/** Parked offset: right of the driving lane. Sedan half-width 0.925 → right edge ~6.3 m, curb at 7 m. */
-export const PULL_OVER_OFFSET = 5.4;
+/** Fitted sedan half-width (1.85 m body). */
+export const SEDAN_HALF_WIDTH = 0.925;
+/** Parked tyre-to-curb gap. */
+export const CURB_CLEARANCE = 0.3;
+/** Asphalt half-width of the 14 m roads. Curb face sits here. */
+export const ROAD_HALF = 7;
+/**
+ * Parked offset: right-hand bay, ~0.3 m off the curb.
+ * 7 − 0.3 − 0.925 = 5.775 m. Right edge at 6.7 m, pad outer flush at 7 m.
+ */
+export const PULL_OVER_OFFSET = ROAD_HALF - CURB_CLEARANCE - SEDAN_HALF_WIDTH;
+/** Pink bay, long axis along the road. */
+export const PAD_ALONG = 8.4;
+/** Pink bay width: centered on the parked pose, outer edge at the curb. */
+export const PAD_WIDTH = 2 * (ROAD_HALF - PULL_OVER_OFFSET);
 /** Ease laterally onto the pad over this many metres. */
 export const PULL_OVER_LENGTH = 16;
 /** Straight, road-parallel tail so the nose matches the curb at the stop. */
 export const PULL_OVER_STRAIGHT = 10;
 /** Keep the pad out of the intersection box. */
 export const DEST_INTERSECTION_CLEAR = 16;
-/** Asphalt half-width of the 14 m roads. */
-export const ROAD_HALF = 7;
 /** City grid step (matches `world.ts` MAP_BLOCK). */
 export const GRID_STEP = 100;
 /** Click this far left of the naive approach counts as an opposite-side dest. */
@@ -327,7 +338,7 @@ export function sedanCorners(x: number, y: number, yaw: number): Array<{ x: numb
   const uy = Math.sin(yaw);
   const r = headingRight(yaw);
   const hl = 2.35;
-  const hw = 0.925;
+  const hw = SEDAN_HALF_WIDTH;
   const out: Array<{ x: number; y: number }> = [];
   for (const s of [-1, 1]) {
     for (const t of [-1, 1]) {
@@ -339,6 +350,22 @@ export function sedanCorners(x: number, y: number, yaw: number): Array<{ x: numb
 
 export function pointOnAsphalt(x: number, y: number, half = ROAD_HALF): boolean {
   return Math.abs(x - nearestGridLine(x)) <= half || Math.abs(y - nearestGridLine(y)) <= half;
+}
+
+/**
+ * On the asphalt of the road `heading` is following — not the cross street.
+ * A southbound corner uses |x − axis| < 7; an eastbound corner uses |y − axis| < 7.
+ */
+export function onArrivalAsphalt(x: number, y: number, heading: number, half = ROAD_HALF): boolean {
+  const yaw = snapHeadingToGrid(heading);
+  const ns = Math.abs(Math.sin(yaw)) >= Math.abs(Math.cos(yaw));
+  if (ns) return Math.abs(x - nearestGridLine(x)) < half;
+  return Math.abs(y - nearestGridLine(y)) < half;
+}
+
+/** Metres from a point to the right-hand curb of `heading`'s road. Negative = over the sidewalk. */
+export function distanceToRightCurb(x: number, y: number, heading: number): number {
+  return ROAD_HALF - lateralFromCenter(x, y, heading);
 }
 
 /** Replace the last metres of a lane route with an ease, then a road-parallel tail onto `dest`. */
