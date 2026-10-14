@@ -1,6 +1,6 @@
 ---
 tags: [system]
-updated: 2026-10-13
+updated: 2026-10-14
 sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30]
 ---
 
@@ -21,7 +21,7 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 
 Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
-`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them.
+`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures.
 
 `destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on asphalt (`|x| < 7`). The live sim then holds with banner **Arrived**. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` is the screenshot rig.
 
@@ -40,6 +40,10 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/destination.test.ts`
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`
+- `game/src/sim/poleTurnDrive.ts`
+- `game/src/sim/viewPerfTurns.test.ts`
+- `game/src/render/f3Perf.test.ts`
+- `game/src/render/cityLook.test.ts`
 - `game/src/sim/collision.test.ts`
 - `game/src/sim/collisionSim.test.ts`
 - `docs/screenshots/README.md`

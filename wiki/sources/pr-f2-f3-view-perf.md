@@ -1,0 +1,49 @@
+---
+tags: [source]
+updated: 2026-10-14
+sources: []
+---
+
+# Branch cursor/f2-f3-view-perf-7cdd — F2/F3 perception scheduling (draft)
+
+## What changed
+
+F2 Waymo-style and F3 Waabi-style views no longer recast a full roof lidar or rebuild Three.js objects every frame.
+
+- Live F3 HUD uses `tickWaabiView` / `bevOverlay.ts` at **10 Hz**. Occupancy, the +1/+2/+3 s heatmaps, and the trajectory fan come from traffic + pedestrians into pooled 32×32 grids. No second `simulateLidarScan(roofLidar)` against ~595 statics. Heatmaps are one `putImageData` (`occupancyPaint.ts`).
+- `createBEVOccupancyFromAgents` is unchanged as the splat; it now accepts an optional `into` buffer so the overlay can reuse `Float32Array`s.
+- F2/F3 3D overlays reuse a preallocated `BufferGeometry` `Points` cloud and `InstancedMesh` boxes/voxels. Compare-mode Tesla voxels and Waymo boxes do the same. Detection wire boxes in the main view update at 10 Hz.
+- Browser lidar reuses cached local-frame directions and pooled `dirs`/`boxes` buffers; `cast_rays` stays the Rust/WASM kernel and now sphere-culls boxes outside `max_range`. Browser scans skip per-frame range jitter so the point cloud does not shimmer; displayed dots are dimmer.
+- City look: hemisphere + tight PCF sun, ACES, sky dome, fog, procedural CC0 asphalt/sidewalk/facade/grass, instance AO, near/far building LOD, half-res bloom + LUT on **Look High**.
+- Planner, `obstacleAhead`, `updateVehicle`, `removeGround`, and `simHotPath.ts` were not touched. `viewPerfTurns.test.ts` reuses the `poleTurnDrive` helper so left / right / straight still complete.
+
+Headless CPU (Node): F3 extra **197 ms → 0.33 ms** (~600×). The 197 ms was almost entirely a duplicate `simulateLidarScan(roofLidar)` (~157 ms of 23k rays × 595 boxes). Overlay occupancy + RGBA paint is 0.17 + 0.16 ms.
+
+`npm run bench:views` reports F1/F2/F3 subsystem times. `f3Perf.test.ts` bounds lidar scans, occupancy allocs, and F3 work.
+
+Headless Chrome (SwiftShader) after: F1/F2/F3 match. Look Low ~10.3 FPS; Look High (bloom/LUT) ~9.8–10.2 FPS. Overlay ~0.3–1.2 ms. Hardware GL should sit with F1 (target 50+).
+
+## Why
+
+F1 was smooth; F2/F3 screenshots showed 3–11 FPS. Target: F2/F3 comparable to F1, ≥50 FPS on the VM, visualisation unchanged. An earlier extract ([[pr-26]]) was reverted in [[pr-28]] after a left-turn stall that was actually the pole hazard (fixed in #28). This change only schedules perception compute and rendering.
+
+## Pages touched
+
+perception-waabi, perception-waymo, ai-view, lidar-wasm, game-loop, testing, main-ts, bev-overlay, city-look, overview, decisions
+
+## Claims superseded
+
+Supersedes the live `runWaabiStack` extra lidar on the F3 HUD from [[pr-28]]. Occupancy is still TypeScript `createBEVOccupancyFromAgents`. Lidar `cast_rays` stays in Rust/WASM.
+
+## Key files
+
+- `game/src/stacks/waabi.ts`
+- `game/src/render/bevOverlay.ts`
+- `game/src/render/occupancyPaint.ts`
+- `game/src/render/perceptionViz.ts`
+- `game/src/sensors/lidar.ts`
+- `game/src/main.ts`
+- `game/crates/autonomy-sim/src/lib.rs`
+- `game/src/render/cityLook.ts`
+- `game/src/render/cityTextures.ts`
+- `game/src/render/postFx.ts`

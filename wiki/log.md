@@ -1,6 +1,6 @@
 ---
 tags: [log]
-updated: 2026-10-13
+updated: 2026-10-14
 sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30]
 ---
 
@@ -87,3 +87,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-13] ingest | PR #30 pink roadside destination + pull-over on arrival
 
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
+
+## [2026-10-14] ingest | cursor/f2-f3-view-perf-7cdd F2/F3 10 Hz overlay, no extra lidar, InstancedMesh
+
+## [2026-10-14] ingest | cursor/f2-f3-view-perf-7cdd city look: PCF sun, ACES, textures, bloom/LUT

@@ -38,6 +38,15 @@ pub fn cast_rays(
             let sz = boxes[j * 7 + 5] * 0.5;
             let yaw = boxes[j * 7 + 6];
 
+            // Sphere cull: skip boxes whose centre is outside max_range + half-diagonal.
+            let reach = max_range + (sx * sx + sy * sy + sz * sz).sqrt();
+            let ddx = cx - ox;
+            let ddy = cy - oy;
+            let ddz = cz - oz;
+            if ddx * ddx + ddy * ddy + ddz * ddz > reach * reach {
+                continue;
+            }
+
             if let Some(t) = ray_aabb(ox, oy, oz, dx, dy, dz, cx, cy, cz, sx, sy, sz, yaw) {
                 if t > 0.1 && t < best_t {
                     best_t = t;

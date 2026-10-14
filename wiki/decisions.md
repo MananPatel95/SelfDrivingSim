@@ -1,6 +1,6 @@
 ---
 tags: [decisions]
-updated: 2026-10-12
+updated: 2026-10-14
 sources: [3, 6, 12, 20, 24, 29]
 ---
 
@@ -23,6 +23,10 @@ These stay in TypeScript:
 - `createBEVOccupancyFromAgents` in `game/src/stacks/waabi.ts`
 
 `game/src/workers/simHotPath.ts` describes worker messages for cast / occupancy / step / filter but **nothing imports it**. Treat it as unused.
+
+The live F3 HUD is a 10 Hz `tickWaabiView` overlay (`bevOverlay.ts`) that does **not** recast lidar. `runWaabiStack` remains the headless/API path. Planner / `obstacleAhead` / `updateVehicle` stay on the sim step. This restores the cheap overlay from [[pr-26]] after [[pr-28]] reverted it for a pole-hazard stall (fixed in #28, not by the overlay).
+
+City look textures are procedural CC0 (`cityTextures.ts`). **Look High** is bloom + LUT only; **Quality High** is the tight-frustum PCF sun. Pixel ratio is capped at 1.5. Browser lidar display uses a fixed beam (no per-frame jitter).
 
 World collision response is also TypeScript (`collision.ts`): SAT / capsule overlap, spatial hash, and a 2D impulse. It runs after `updateVehicle` and does not go through WASM.
 

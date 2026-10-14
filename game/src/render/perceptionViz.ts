@@ -9,6 +9,25 @@ import type { EgoState, Entity, LidarPoint, PlannerOutput, Vec3 } from '../sim/t
 import type { Track } from '../stacks/perception';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
+import { writeOccupancyRgbaAiView } from './occupancyPaint';
+
+export interface VizWorkStats {
+  predArrayAllocs: number;
+  planArrayAllocs: number;
+  occupancyCellsVisited: number;
+}
+
+export const vizWorkStats: VizWorkStats = {
+  predArrayAllocs: 0,
+  planArrayAllocs: 0,
+  occupancyCellsVisited: 0,
+};
+
+export function resetVizWorkStats() {
+  vizWorkStats.predArrayAllocs = 0;
+  vizWorkStats.planArrayAllocs = 0;
+  vizWorkStats.occupancyCellsVisited = 0;
+}
 
 export type VizStack = 'tesla' | 'waymo' | 'waabi';
 
@@ -133,6 +152,10 @@ export class PerceptionVisualizer {
   private planLine: THREE.Line;
   private frustumLines: THREE.Line[] = [];
   private lastLabelKey = '';
+  private predPts = new Float32Array(12 * 3);
+  private planPts = new Float32Array(48 * 3);
+  private boxDummy = new THREE.Object3D();
+  private boxes: THREE.InstancedMesh;
 
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
@@ -144,9 +167,12 @@ export class PerceptionVisualizer {
     pGeom.setAttribute('color', new THREE.BufferAttribute(this.pointCol, 3));
     pGeom.setDrawRange(0, 0);
     this.points = new THREE.Points(pGeom, new THREE.PointsMaterial({
-      size: 0.18,
+      size: 0.14,
       vertexColors: true,
       sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.78,
+      depthWrite: false,
     }));
     this.group.add(this.points);
 
@@ -157,6 +183,14 @@ export class PerceptionVisualizer {
     this.voxels.count = 0;
     this.voxels.frustumCulled = false;
     this.group.add(this.voxels);
+
+    const boxGeom = new THREE.BoxGeometry(1, 1, 1);
+    const boxMat = new THREE.MeshBasicMaterial({ color: 0x88ff88, wireframe: true, transparent: true, opacity: 0.7 });
+    this.boxes = new THREE.InstancedMesh(boxGeom, boxMat, MAX_LABELS);
+    this.boxes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.boxes.count = 0;
+    this.boxes.frustumCulled = false;
+    this.group.add(this.boxes);
 
     const planGeom = new THREE.BufferGeometry();
     planGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(48 * 3), 3));
@@ -183,6 +217,7 @@ export class PerceptionVisualizer {
 
     this.updatePoints(input);
     this.updateVoxels(input);
+    this.updateBoxes(input);
     this.updatePredictions(input);
     this.updatePlan(input, decision);
     this.updateLabels(input);
@@ -212,21 +247,25 @@ export class PerceptionVisualizer {
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
         const world = egoToWorld(p, ego.transform.position, ego.transform.rotation);
-        if (p.z < 0.25 && i % 6 !== 0) continue;
+        if (p.z < 0.25 && (p.ring % 3) !== 0) continue;
         const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
-        push(world.x, world.y, world.z + 0.05, 0.15 + h * 0.2, 0.4 + h * 0.5, 1 - h * 0.6);
+        push(world.x, world.y, world.z + 0.05, 0.10 + h * 0.16, 0.32 + h * 0.38, 0.78 - h * 0.4);
       }
     }
 
     if (stack === 'tesla') {
       for (const det of input.visionDetections) {
         const samples = det.classType === 'pedestrian' ? 18 : 40;
+        const id = det.entityId;
         for (let i = 0; i < samples && n < MAX_POINTS; i++) {
+          const u = ((id * 13 + i * 17) % 1000) / 1000;
+          const v = ((id * 29 + i * 11) % 1000) / 1000;
+          const w = ((id * 7 + i * 19) % 1000) / 1000;
           push(
-            det.center.x + (Math.random() - 0.5) * det.size.x,
-            det.center.y + (Math.random() - 0.5) * det.size.y,
-            0.3 + Math.random() * det.size.z,
-            0.2, 0.9, 1
+            det.center.x + (u - 0.5) * det.size.x,
+            det.center.y + (v - 0.5) * det.size.y,
+            0.3 + w * det.size.z,
+            0.18, 0.72, 0.85
           );
         }
       }
@@ -288,6 +327,7 @@ export class PerceptionVisualizer {
       for (let gy = 0; gy < gridSize && count < MAX_VOXELS; gy += step) {
         for (let gx = 0; gx < gridSize && count < MAX_VOXELS; gx += step) {
           const v = occ.grid[gy * gridSize + gx] || 0;
+          vizWorkStats.occupancyCellsVisited++;
           if (v < 0.12) continue;
           const lx = gx * occ.resolution - occ.extent;
           const ly = gy * occ.resolution - occ.extent;
@@ -305,14 +345,42 @@ export class PerceptionVisualizer {
     this.voxels.instanceMatrix.needsUpdate = true;
   }
 
+  private updateBoxes(input: PerceptionVizInput) {
+    const show = input.stack === 'waymo' || input.stack === 'waabi';
+    this.boxes.visible = show;
+    if (!show) {
+      this.boxes.count = 0;
+      return;
+    }
+    const dummy = this.boxDummy;
+    const ego = input.ego;
+    let count = 0;
+    for (const track of input.tracks) {
+      if (count >= MAX_LABELS) break;
+      if (track.missedFrames > 0 || track.confidence < 0.4) continue;
+      const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
+      dummy.position.set(world.x, Math.max(world.z, track.box.size.z / 2), -world.y);
+      dummy.scale.set(
+        Math.max(track.box.size.x, 0.6),
+        Math.max(track.box.size.z, 0.8),
+        Math.max(track.box.size.y, 0.6),
+      );
+      dummy.rotation.set(0, -(track.box.yaw + ego.transform.rotation), 0);
+      dummy.updateMatrix();
+      this.boxes.setMatrixAt(count++, dummy.matrix);
+    }
+    this.boxes.count = count;
+    this.boxes.instanceMatrix.needsUpdate = true;
+  }
+
   private updatePredictions(input: PerceptionVizInput) {
     const ego = input.ego;
     let used = 0;
+    const pts = this.predPts;
     for (const track of input.tracks) {
       if (used >= this.predLines.length) break;
       if (track.missedFrames > 0) continue;
       const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
-      const pts = new Float32Array(12 * 3);
       for (let t = 0; t < 12; t++) {
         const s = t * 0.25;
         pts[t * 3] = world.x + track.velocity.x * s;
@@ -331,7 +399,7 @@ export class PerceptionVisualizer {
   private updatePlan(input: PerceptionVizInput, decision: DecisionInfo) {
     const ego = input.ego;
     const traj = input.plannerOutput?.trajectory?.points ?? [];
-    const pts = new Float32Array(48 * 3);
+    const pts = this.planPts;
     let n = 0;
     if (traj.length > 1) {
       const step = Math.max(1, Math.floor(traj.length / 40));
@@ -478,21 +546,22 @@ export function renderAIViewCanvas(
 
   if (input.stack === 'waabi' && input.occupancy) {
     const occ = input.occupancy;
-    const gridSize = Math.sqrt(occ.grid.length);
     const side = Math.min(w - 16, h - 36);
     const x0 = 8;
     const y0 = 24;
-    const cell = side / gridSize;
-    for (let gy = 0; gy < gridSize; gy++) {
-      for (let gx = 0; gx < gridSize; gx++) {
-        const v = occ.grid[gy * gridSize + gx] || 0;
-        if (v < 0.05) continue;
-        const r = Math.min(255, Math.floor(v * 255 * 1.6));
-        const g = Math.max(0, Math.floor((1 - v) * 180));
-        ctx.fillStyle = `rgb(${r},${g},${40})`;
-        ctx.fillRect(x0 + gx * cell, y0 + (gridSize - gy - 1) * cell, cell + 0.4, cell + 0.4);
-      }
+    const img = ctx.createImageData(w, h);
+    img.data.fill(0);
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 11;
+      img.data[i + 1] = 15;
+      img.data[i + 2] = 24;
+      img.data[i + 3] = 255;
     }
+    writeOccupancyRgbaAiView(img.data, w, occ, x0, y0, side, side);
+    ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = '#7fd7ff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(titles[input.stack], 8, 16);
     ctx.fillStyle = '#00ffff';
     ctx.beginPath();
     ctx.arc(x0 + side / 2, y0 + side / 2, 3, 0, Math.PI * 2);
