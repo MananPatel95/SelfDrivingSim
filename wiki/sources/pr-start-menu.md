@@ -1,0 +1,36 @@
+---
+tags: [source]
+updated: 2026-10-14
+sources: []
+---
+
+# PR pending — Orbiting start / arrived menu
+
+Draft source page for the start-menu overlay. Replace this file with `pr-NNN.md` and fix `wiki/index.md` + `wiki/log.md` once the GitHub number exists.
+
+## What changed
+
+Launch overlay over a slowly orbiting city: title **AUTONOMY CITY: How Machines See**, F1/F2/F3 cards, chase / first-person, a minimap-styled city map (current pose as start), click or **Random destination** snapped to the right-hand curb via `roadsideDestination`, then **Start** / Enter. Autopilot uses the existing `beginTrip` pink-pad pull-over. Arrival reopens the same overlay as **Arrived — choose next destination** without reloading. Sim step is paused while the overlay is open. Esc dismisses the arrived variant or opens the existing pause menu while driving.
+
+Planner / `tripRoute` / `updateVehicle` / `removeGround` / `createBEVOccupancyFromAgents` / `cast_rays` were not edited.
+
+## Why
+
+The two-click start-then-end map did not show stack/camera choice, did not reuse arrival as the next start, and did not pause the city behind a polished overlay.
+
+## Pages touched
+
+hud, overview, main-ts, testing, decisions, simulation-ts
+
+## Claims superseded
+
+Supersedes the live two-click start-then-end overlay from [[pr-13]] / [[pr-19]]. `beginTrip` / **Just drive** / `?demo=` skip remain.
+
+## Key files
+
+- `game/src/ui/startMenu.ts`
+- `game/src/ui/startMenu.test.ts`
+- `game/src/main.ts`
+- `game/index.html`
+- `game/src/ui/minimapRoute.ts`
+- `game/src/ui/viewCopy.ts`

@@ -76,6 +76,18 @@ One card dragged off the stack, still clear of the minimap / speed HUD / banner.
 ### autopilot_engaged.png
 Centre banner after T / banner click re-engages Auto.
 
+### 28-start-menu.png
+Launch overlay over the orbiting city: **AUTONOMY CITY: How Machines See**, F1–F3 cards, chase / first person, city map with the start triangle.
+
+### 28-start-menu-dest.png
+Same overlay after a map click: purple preview and a pink curb pin. Start is enabled.
+
+### 29-arrived-menu.png
+**Arrived — choose next destination** after a pink-pad stop. The white triangle is the new start.
+
+### 30-second-trip.png
+Second trip underway from the arrived menu without a reload (HUD visible, dest pin on the minimap).
+
 ## Environment Effects
 
 ### 07-night-fog.png
