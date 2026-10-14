@@ -77,7 +77,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 - [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
 - [PR #30](sources/pr-30.md) — pink roadside destination + pull-over
-- [F2/F3 view perf (draft)](sources/pr-f2-f3-view-perf.md) — 10 Hz overlay, city look, InstancedMesh / pooled points
+- [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

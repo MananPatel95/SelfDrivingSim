@@ -88,6 +88,6 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
 
-## [2026-10-14] ingest | cursor/f2-f3-view-perf-7cdd F2/F3 10 Hz overlay, no extra lidar, InstancedMesh
+## [2026-10-14] ingest | PR #34 F2/F3 10 Hz overlay, no extra lidar, InstancedMesh
 
-## [2026-10-14] ingest | cursor/f2-f3-view-perf-7cdd city look: PCF sun, ACES, textures, bloom/LUT
+## [2026-10-14] ingest | PR #34 city look: PCF sun, ACES, textures, bloom/LUT
