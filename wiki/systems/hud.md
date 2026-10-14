@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-14
-sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30]
+sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30, 32]
 ---
 
 # HUD and menus
@@ -12,7 +12,7 @@ Tesla **Detections** counts vision boxes (`hudDetectionCount`), including `stop_
 
 Parked or driving in manual: the decision banner is **Manual — press T to re-engage**, not “Cruising: lane clear” ([[ai-view]]). The banner is a button: click it (or press **T**) to re-engage Auto from the current pose. A short **Autopilot engaged** flash follows. WASD still takes over on a new key press.
 
-Right-side cards (stack explainer, AI View, info, and on F3 the Waabi BEV + Sim World card) share one width (`min(300px, 100vw − 24px)`) and one right edge, stacked with an 8px gap. Each header has **?**, collapse, and close, and is draggable. **?** opens a popover (no backdrop) with the long uses / unlike / how-to-read copy; it closes on click-outside or Esc and does not swallow WASD. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]). The view-info card itself is only the stack name, a one-line sensor summary, and the current camera mode.
+Right-side cards (stack explainer, AI View, info, and on F3 the Waabi BEV + Sim World card) share one width (`min(300px, 100vw − 24px)`) and one right edge, stacked with an 8px gap. Each header has **?**, collapse, and close, and is draggable. **?** opens a popover (no backdrop) with the long uses / unlike / how-to-read copy; it closes on click-outside or Esc and does not swallow WASD. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]). The view-info card itself is only the stack name, a one-line sensor summary, and the current camera mode ([[pr-32]]).
 
 Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. The end point is the pink pin. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
 

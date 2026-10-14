@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-14
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 32]
 ---
 
 # Wiki log
@@ -88,4 +88,4 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
 
-## [2026-10-14] ingest | cursor/hud-panel-cleanup-8bb5 shared 300px HUD column + ? popovers
+## [2026-10-14] ingest | PR #32 shared 300px HUD column + ? popovers
