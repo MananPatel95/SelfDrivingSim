@@ -123,6 +123,12 @@ Same trip. Minimap shows the purple remaining route and the pink destination pin
 ### 26-destination-pullover-stop.png
 Arrival: ego pulled over onto the pad and stopped. Speed ~0, nose in the right-hand roadside, pin beside the car.
 
+### 27-destination-opposite-uturn.png
+`?seed=3&demo=arrive-opp`. Left-curb dest. Ego is in a legal intersection U-turn (or the loop onto the opposite heading), moving, AI View rendered, no huge green `%` over the HUD.
+
+### 28-destination-opposite-arrived.png
+Same trip after the U-turn. Sedan parked on the left-curb pad, heading-aligned, Arrived / ARRIVED, pin hidden, body on asphalt.
+
 ## Modern cabin and Kenney sedan-sports
 
 ### cabin3_cockpit_straight.png

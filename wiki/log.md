@@ -87,3 +87,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-13] ingest | PR #30 pink roadside destination + pull-over on arrival
 
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
+
+## [2026-10-14] ingest | dest-opposite-side opposite-side pad, legal U-turn, HUD % sprite

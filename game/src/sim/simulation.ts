@@ -120,6 +120,8 @@ export class Simulation {
   /** Last map-trip destination. Null when Just-drive / cruise has no goal. */
   private tripDestination: Vec3 | null = null;
   private tripHeading = 0;
+  /** Frames of in-lane standstill while the pad is still ahead (replan trigger). */
+  private stuckTicks = 0;
   private prevEgoX = 0;
   private prevEgoY = 0;
   private spatialGrid = new SpatialGrid(8);
@@ -597,6 +599,7 @@ export class Simulation {
     // Update ego vehicle (bicycle model). Collision impulse is applied after this.
     this.state.ego = updateVehicle(this.state.ego, vehicleInput, dt);
     this.maybeArrive();
+    this.maybeReplanStuck();
 
     this.resolveWorldCollisions(dt);
     this.integrateBrokenFurniture(dt);
@@ -857,6 +860,7 @@ export class Simulation {
     this.tripDestination = null;
     this.tripHeading = 0;
     this.state.arrived = false;
+    this.stuckTicks = 0;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }
@@ -881,6 +885,7 @@ export class Simulation {
       ? Math.atan2(pad.y - route[route.length - 2]!.y, pad.x - route[route.length - 2]!.x)
       : yaw;
     this.state.arrived = false;
+    this.stuckTicks = 0;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }
@@ -904,7 +909,8 @@ export class Simulation {
     const dist = vec3Distance(ego.transform.position, dest);
     const speed = vec3Length(ego.velocity);
     const remaining = remainingRouteDistance(ego, this.state.route);
-    if (dist < 3.2 && speed < 0.65 && remaining < 6) {
+    const yawErr = Math.abs(normalizeAngle(ego.transform.rotation - this.tripHeading));
+    if (dist < 3.2 && speed < 0.65 && remaining < 6 && yawErr < 20 * Math.PI / 180) {
       this.state.arrived = true;
       this.state.lastRule = {
         maxSpeed: 0,
@@ -912,6 +918,32 @@ export class Simulation {
         reason: 'Arrived',
         severity: 'go',
       };
+    }
+  }
+
+  /**
+   * If autopilot is standing still in-lane (cruising / no stop) while the pad
+   * is still metres away, rebuild a legal route — never sit short of the dest.
+   */
+  private maybeReplanStuck(): void {
+    if (this.state.arrived || !this.tripDestination || this.state.controlSource === 'human') {
+      this.stuckTicks = 0;
+      return;
+    }
+    const dest = this.tripDestination;
+    const ego = this.state.ego;
+    const dist = vec3Distance(ego.transform.position, dest);
+    const speed = vec3Length(ego.velocity);
+    const rule = this.state.lastRule;
+    const held = !!rule && (rule.mustStop || rule.severity !== 'go' || rule.reason === 'Arrived');
+    if (speed < 0.4 && dist > 4.5 && !held) {
+      this.stuckTicks += 1;
+      if (this.stuckTicks >= 36) {
+        this.stuckTicks = 0;
+        this.reengageAutopilot();
+      }
+    } else {
+      this.stuckTicks = 0;
     }
   }
 
@@ -930,6 +962,7 @@ export class Simulation {
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'policy';
     this.state.arrived = false;
+    this.stuckTicks = 0;
     if (goal && route.length >= 2) {
       const tail = route[route.length - 1]!;
       const prev = route[route.length - 2]!;

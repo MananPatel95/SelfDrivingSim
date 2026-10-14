@@ -1,6 +1,6 @@
 ---
 tags: [index]
-updated: 2026-10-13
+updated: 2026-10-14
 sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30]
 ---
 
@@ -75,6 +75,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 - [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
 - [PR #30](sources/pr-30.md) — pink roadside destination + pull-over
+- [dest-opposite-side](sources/pr-dest-opposite-side.md) — opposite-side pad, legal U-turn, HUD % sprite
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

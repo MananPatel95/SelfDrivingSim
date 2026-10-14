@@ -174,4 +174,89 @@ describe('roadside destination arrival', () => {
       sim.getState().route[sim.getState().route.length - 1]!.y - dest.y,
     )).toBeLessThan(1);
   });
+
+  it('follows a U-turn onto the opposite-side pad (planner + vehicle)', () => {
+    const route = tripRoute(vec3(0, 70, 0), vec3(-5, 78, 0));
+    const dest = route[route.length - 1]!;
+    expect(dest.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    expect(Math.max(...route.map(p => p.y))).toBeGreaterThan(95);
+    let ego = createEgoState('car', route[0]!, Math.PI / 2);
+    let planner = createPlannerState();
+    const dt = 1 / 30;
+    let cruiseStuck = 0;
+    let maxCruiseStuck = 0;
+    for (let i = 0; i < 30 * 32; i++) {
+      const { output, newState } = planTrajectory({
+        egoState: ego,
+        detections: [],
+        route,
+        trafficLightStates: new Map(),
+      }, planner);
+      planner = newState;
+      ego = updateVehicle(ego, vehicleInputFromAccel(output.acceleration, output.steering), dt);
+      const speed = vec3Length(ego.velocity);
+      const dist = Math.hypot(ego.transform.position.x - dest.x, ego.transform.position.y - dest.y);
+      if (speed < 0.35 && dist > 5) cruiseStuck += 1;
+      else cruiseStuck = 0;
+      maxCruiseStuck = Math.max(maxCruiseStuck, cruiseStuck);
+      if (speed < 0.2 && dist < 3.2) break;
+    }
+    expect(maxCruiseStuck).toBeLessThan(45);
+    expect(vec3Length(ego.velocity)).toBeLessThan(0.45);
+    expect(Math.hypot(ego.transform.position.x - dest.x, ego.transform.position.y - dest.y)).toBeLessThan(3.5);
+    const yawErr = Math.abs(normalizeAngle(ego.transform.rotation - (-Math.PI / 2)));
+    expect(yawErr).toBeLessThan(5 * Math.PI / 180);
+    expect(ego.transform.position.x).toBeLessThan(-4);
+    for (const c of sedanCorners(
+      ego.transform.position.x,
+      ego.transform.position.y,
+      ego.transform.rotation,
+    )) {
+      expect(pointOnAsphalt(c.x, c.y)).toBe(true);
+      expect(Math.abs(c.x)).toBeLessThan(7);
+    }
+  });
+
+  it('live sim reaches an opposite-side pad and holds Arrived without a cruise-stuck stop', () => {
+    const sim = new Simulation({ seed: 3, lidarEveryN: 80 });
+    sim.getState().trafficVehicles = [];
+    sim.getState().pedestrians = [];
+    sim.beginTrip(vec3(0, 72, 0), vec3(-5, 78, 0), 'policy');
+    const dest = sim.getTripDestination()!;
+    expect(dest.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    let cruiseStuck = 0;
+    let maxCruiseStuck = 0;
+    for (let i = 0; i < 30 * 28; i++) {
+      sim.step(1 / 30);
+      const ego = sim.getState().ego;
+      const speed = vec3Length(ego.velocity);
+      const dist = Math.hypot(ego.transform.position.x - dest.x, ego.transform.position.y - dest.y);
+      const rule = sim.getState().lastRule;
+      const held = !!rule && (rule.mustStop || rule.severity !== 'go');
+      if (speed < 0.4 && dist > 4.5 && !held && !sim.hasArrived()) cruiseStuck += 1;
+      else cruiseStuck = 0;
+      maxCruiseStuck = Math.max(maxCruiseStuck, cruiseStuck);
+      if (sim.hasArrived() && speed < 0.25) break;
+    }
+    expect(maxCruiseStuck).toBeLessThan(45);
+    expect(sim.hasArrived()).toBe(true);
+    expect(vec3Length(sim.getState().ego.velocity)).toBeLessThan(0.35);
+    const yawErr = Math.abs(normalizeAngle(
+      sim.getState().ego.transform.rotation - snapHeadingToGrid(sim.getTripHeading()),
+    ));
+    expect(yawErr).toBeLessThan(5 * Math.PI / 180);
+    expect(computeDecision({
+      stack: 'tesla',
+      ego: sim.getState().ego,
+      tracks: [],
+      lidarPoints: [],
+      agents: [],
+      groundTruth: [],
+      showGroundTruth: false,
+      plannerOutput: sim.getState().lastPlannerOutput,
+      visionDetections: [],
+      controlSource: 'policy',
+      rule: sim.getState().lastRule,
+    }).text).toBe('Arrived');
+  });
 });

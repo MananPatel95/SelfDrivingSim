@@ -1,0 +1,36 @@
+---
+tags: [source]
+updated: 2026-10-14
+sources: []
+---
+
+# dest-opposite-side — Opposite-side pad, legal U-turn, HUD % sprite
+
+Draft source page. Replace with `pr-NNN.md` and the GitHub number when the PR opens.
+
+## What changed
+
+- End clicks use `snapTripEnd`: stay on the start road near a junction, keep the clicked curb side.
+- `resolveTripDestination` snaps the pad to the **right-hand curb of the arrival heading**. A left-of-approach click is an opposite-side dest.
+- Opposite-side routes go to the next intersection and make a **legal left U-turn** (no mid-block median cross), then pull over so the pad is on the right.
+- Autopilot that sits in-lane at 0 km/h while cruising, pad still far, calls `reengageAutopilot()`.
+- World-space green `%` confidence sprites are off (`DRAW_WORLD_LABEL_SPRITES`). Labels stay on the AI View canvas.
+
+## Why
+
+PR #30 could place the pink pad on the left curb (or the cross street) and then stop in the travel lane with banner **Cruising: lane clear, 0 km/h**. A near-camera detection sprite painted a huge green percent over the HUD.
+
+## Pages touched
+
+planning, hud, testing, ai-view, right-lane, simulation-ts, pr-30
+
+## Key files
+
+- `game/src/sim/rightLane.ts`
+- `game/src/sim/world.ts`
+- `game/src/sim/simulation.ts`
+- `game/src/sim/destination.test.ts`
+- `game/src/render/perceptionViz.ts`
+- `game/src/main.ts`
+- `docs/screenshots/27-destination-opposite-uturn.png`
+- `docs/screenshots/28-destination-opposite-arrived.png`

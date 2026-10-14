@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
+import { nearestGridLine, snapToRoad, snapTripEnd, roadRoute } from './sim/world';
 import { destinationPinWorld } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
@@ -2833,12 +2833,13 @@ function setupInput() {
     const rect = startMap.getBoundingClientRect();
     const u = (ev.clientX - rect.left) / rect.width;
     const v = (ev.clientY - rect.top) / rect.height;
-    const world = snapToRoad(-300 + u * 600, 300 - v * 600);
+    const rawX = -300 + u * 600;
+    const rawY = 300 - v * 600;
     if (!tripStart || tripEnd) {
-      tripStart = world;
+      tripStart = snapToRoad(rawX, rawY);
       tripEnd = null;
     } else {
-      tripEnd = world;
+      tripEnd = snapTripEnd({ ...tripStart, z: 0 }, rawX, rawY);
     }
     drawStartMap();
     refreshStartButtons();
@@ -3012,7 +3013,7 @@ function applyShot(kind: string) {
   }
 }
 
-/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive, plus hit-car|hit-pole|hit-sign|hit-ped */
+/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp, plus hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
   showAIView = true;
   document.getElementById('ai-view-panel')?.classList.add('visible');
@@ -3027,6 +3028,17 @@ function applyDemo(kind: string) {
     orbitYaw = 0.2;
     orbitPitch = 0.34;
     orbitDist = 20;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'arrive-opp') {
+    tripStart = { x: 0, y: 55 };
+    tripEnd = { x: -5, y: 78 };
+    beginGame('autopilot');
+    setCameraMode('orbit');
+    orbitYaw = 0.15;
+    orbitPitch = 0.38;
+    orbitDist = 22;
     camFollowReady = true;
     return;
   }

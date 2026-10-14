@@ -11,6 +11,7 @@ import {
   mergeIntoLaneRoute,
   placeInRightLane,
   roadsideDestination,
+  resolveTripDestination,
   rightLaneRoute,
   straddlesCenter,
   tripRoute,
@@ -137,5 +138,19 @@ describe('right-hand traffic lanes', () => {
     const mid = route[Math.floor(route.length / 2)]!;
     expect(mid.x).toBeLessThan(tail.x);
     expect(inRightLane(mid.x, mid.y, Math.PI / 2)).toBe(true);
+  });
+
+  it('snaps an opposite-side click onto the left curb and arrives heading south', () => {
+    const resolved = resolveTripDestination(vec3(0, 22, 0), vec3(-4.5, 78, 0));
+    expect(resolved.opposite).toBe(true);
+    expect(resolved.pad.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    expect(resolved.arrivalHeading).toBeCloseTo(-Math.PI / 2, 5);
+    const route = tripRoute(vec3(0, 22, 0), vec3(-4.5, 78, 0));
+    const tail = route[route.length - 1]!;
+    expect(tail.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    expect(tail.y).toBeCloseTo(78, 0);
+    const prev = route[route.length - 2]!;
+    expect(tail.y).toBeLessThan(prev.y);
+    expect(Math.max(...route.map(p => p.y))).toBeGreaterThan(95);
   });
 });

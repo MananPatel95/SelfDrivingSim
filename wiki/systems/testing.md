@@ -1,6 +1,6 @@
 ---
 tags: [system]
-updated: 2026-10-13
+updated: 2026-10-14
 sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30]
 ---
 
@@ -23,7 +23,7 @@ Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spati
 
 `poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them.
 
-`destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on asphalt (`|x| < 7`). The live sim then holds with banner **Arrived**. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` is the screenshot rig.
+`destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on asphalt (`|x| < 7`). The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. `perceptionViz.test.ts` asserts world-space `%` sprites stay off. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs.
 
 Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
 
@@ -38,6 +38,7 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/ui/hudPanels.test.ts`
 - `game/src/sim/reengage.test.ts`
 - `game/src/sim/destination.test.ts`
+- `game/src/render/perceptionViz.test.ts`
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`
 - `game/src/sim/collision.test.ts`

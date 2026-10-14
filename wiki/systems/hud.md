@@ -1,6 +1,6 @@
 ---
 tags: [system]
-updated: 2026-10-13
+updated: 2026-10-14
 sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30]
 ---
 
@@ -16,7 +16,7 @@ Right-side cards (stack explainer, AI View, info) are one column: each has colla
 
 Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. The end point is the pink pin. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
 
-Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots. `arrive` is a mid-block northbound trip onto the pink pad.
+Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots. `arrive` is a mid-block northbound trip onto the pink pad; `arrive-opp` is a left-curb dest that U-turns at the next junction.
 
 ## Key files
 
