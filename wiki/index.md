@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-14
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31]
 ---
 
 # Wiki index
@@ -75,7 +75,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #28](sources/pr-28.md) — revert F3 overlay extract; poles do not block turns
 - [PR #29](sources/pr-29.md) — impulse collisions, snap, tumble
 - [PR #30](sources/pr-30.md) — pink roadside destination + pull-over
-- [PR start-menu](sources/pr-start-menu.md) — orbiting start / arrived menu (number pending)
+- [PR #31](sources/pr-31.md) — orbiting start / arrived menu
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

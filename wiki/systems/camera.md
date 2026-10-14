@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-12
-sources: [4, 11, 17, 22, 25]
+updated: 2026-10-14
+sources: [4, 11, 17, 22, 25, 31]
 ---
 
 # Camera system
