@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
 ---
 
 # Wiki index
@@ -81,7 +81,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #32](sources/pr-32.md) — shared 300px HUD column + ? popovers
 - [PR #33](sources/pr-33.md) — opposite-side pad, legal U-turn, HUD % sprite
 - [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
-- [City look fix (draft)](sources/pr-city-look-fix.md) — isotropic ground, block fill, solid buildings, ped heading
+- [PR #35](sources/pr-35.md) — isotropic ground, block fill, solid buildings, ped heading
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 
