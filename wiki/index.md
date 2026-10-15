@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 39]
 ---
 
 # Wiki index
@@ -83,6 +83,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
 - [PR #35](sources/pr-35.md) — isotropic ground, block fill, solid buildings, ped heading
 - [PR #36](sources/pr-36.md) — lane spawn, stop-sign recovery, A→B / Random menu
+- [PR #39](sources/pr-39.md) — left cheaper than U-turn+right; same-street opposite only
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

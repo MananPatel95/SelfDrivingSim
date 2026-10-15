@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-15
-sources: [13, 18, 20, 25, 27, 28, 29, 30, 33]
+sources: [13, 18, 20, 25, 27, 28, 29, 30, 33, 39]
 ---
 
 # Planning and autopilot
