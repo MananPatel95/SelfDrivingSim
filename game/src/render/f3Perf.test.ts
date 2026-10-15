@@ -54,11 +54,26 @@ describe('F3 occupancy hot path', () => {
     const into = makeFutureOccupancy();
     const state = emptyWaabiState();
     const s = sim.getState();
+    // Lane spawn (#36) can park ego with no traffic inside the 24 m BEV. Keep one
+    // car in range so reuse stats still measure a real splat, not empty grids.
+    const sample = s.trafficVehicles[0]!;
+    const nearPos = {
+      x: s.ego.transform.position.x,
+      y: s.ego.transform.position.y + 12,
+      z: 0.8,
+    };
+    const nearby = {
+      ...sample,
+      id: 424242,
+      isStatic: false,
+      transform: { ...sample.transform, position: nearPos },
+      boundingBox: { ...sample.boundingBox, center: nearPos },
+    };
     resetF3WorkStats();
     for (let i = 0; i < 30; i++) {
       tickWaabiView(
         s.ego,
-        [s.trafficVehicles, s.pedestrians],
+        [[nearby, ...s.trafficVehicles], s.pedestrians],
         state,
         s.timestamp + i * 100,
         42,

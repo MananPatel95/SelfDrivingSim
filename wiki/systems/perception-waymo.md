@@ -1,7 +1,7 @@
 ---
 tags: [system, perception]
-updated: 2026-10-14
-sources: [2, 3, 20]
+updated: 2026-10-15
+sources: [2, 3, 20, 34, 37]
 ---
 
 # Perception F2 — Waymo-style
@@ -10,7 +10,17 @@ Lidar clustering + tracking (`runPerception`) fused with radar-like returns (`fu
 
 [[pr-20]] added `stop_sign` / `yield_sign` size priors in `CLASS_SIZE_RANGES` so clustered lidar can label those classes. Tesla HUD still does **not** use these tracks (see [[perception-tesla]]).
 
-The 3D overlay is a single preallocated `Points` cloud plus `InstancedMesh` boxes, updated at **10 Hz** with the rest of perception viz. Compare-mode Waymo points/boxes reuse the same buffers. Browser lidar keeps `cast_rays` in WASM and reuses direction/box arrays. Planner input still comes from `Simulation.step` (not this overlay).
+The 3D overlay is a single preallocated `Points` cloud plus `InstancedMesh` boxes. Perception and buffer uploads stay at **10 Hz** ([[pr-34]]). Browser lidar keeps `cast_rays` in WASM, a **fixed beam** (no per-frame jitter), and reused direction/box arrays. Planner input still comes from `Simulation.step` (not this overlay).
+
+[[pr-37]] animates the display between ticks: a spinning 360° lidar sweep (1 rev/s). The 10 Hz WASM scan is cached ego-local in a reused buffer. Each display frame bakes only the azimuths the beam just crossed into **world** at the live ego pose; older slots stay put so ground rings do not drag with the car. The shader fades a ~0.28 s trail after `aBirth`. The beam is a **4° additive wedge** that fades with range (returns, not a cyan slab, are the main cue). Expanding radar pings, fused boxes with velocity arrows/trails, and HD-map lane dashes sit on the ego rig. No extra `cast_rays`.
+
+## Public sources (educational stand-in)
+
+This view is **not** the Waymo Driver. It follows public 6th-gen + mapping write-ups:
+
+- Sensors: **13 cameras, 4 lidars, 6 radars**, overlapping 360° out to ~500 m ([Waymo, Aug 2024](https://waymo.com/blog/2024/08/meet-the-6th-generation-waymo-driver); [fully autonomous 6th-gen ops, 2026](https://www.waymo.com/blog/2026/02/ro-on-6th-gen-waymo-driver/)). Imaging radar tracks range/velocity in rain and night.
+- HD maps: custom prior of lanes, signs, signals, curbs, crosswalks, used with live sensors for localization ([Waymo Driver Handbook: mapping, 2020](https://waymo.com/blog/2020/09/the-waymo-driver-handbook-mapping)).
+- The sim draws one roof lidar sweep + radar rings + camera context + fused boxes on procedural lanes — a readable stand-in, not 13+4+6 sensors.
 
 ## Key files
 
@@ -18,3 +28,5 @@ The 3D overlay is a single preallocated `Points` cloud plus `InstancedMesh` boxe
 - `game/src/stacks/perception.ts`
 - `game/src/sensors/lidar.ts`
 - `game/src/render/perceptionViz.ts`
+- `game/src/render/snapshotLerp.ts`
+- `game/src/render/perceptionShaders.ts`

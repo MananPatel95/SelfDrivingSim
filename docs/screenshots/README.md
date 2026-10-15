@@ -239,3 +239,19 @@ One city block from a high 3/4: widened sidewalks, plaza/pad/parking, lot buildi
 
 ### verify-ped-walk.png
 Walking pedestrian; body and feet face the velocity heading.
+
+## Perception overlay animation
+
+Live headless Chrome (SwiftShader, 1280×720, Look Low, `?demo=mix&seed=3`). GPU sweep/decay + 10 Hz snapshot lerp; the lidar beam stays fixed (no shimmer).
+
+### verify-f1-anim.png / .webm / .mp4
+F1 Tesla-style: camera-frustum sweep, pulsing vision rays, occupancy voxels, detection boxes with confidence bars. HUD FPS 8.
+
+### verify-f2-anim.png / .webm / .mp4
+F2 Waymo-style: cyan rotating lidar sweep, decaying point rings, expanding radar pings, fused box + velocity, HD-map lane dashes. HUD FPS 7–8.
+
+### verify-f3-anim.png / .webm / .mp4
+F3 Waabi-style: occupancy blobs (no lidar rings), BEV current/+1s/+2s/+3s heat, trajectory fan. HUD FPS 8.
+
+### verify-anim-fps.json
+Per-stack mean frame ms / FPS / overlay+viz work from that capture.

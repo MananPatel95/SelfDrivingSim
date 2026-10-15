@@ -1,7 +1,7 @@
 ---
 tags: [overview]
 updated: 2026-10-15
-sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 38]
+sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
 ---
 
 # Overview
@@ -18,7 +18,7 @@ It is an educational sim, not a product of the named companies.
 - Autopilot follows a Manhattan **right-hand-lane** route and slows for grid corners so it stays on asphalt ([[pr-18]], [[pr-20]]). Right turns cut the near corner; left turns go wide. A map trip ends at a **pink roadside pad**; the stack pulls over onto it and stops.
 - Pedestrians walk sidewalks, wait, and cross; cars yield to anyone **on the asphalt or crossing** ([[pr-5]]) and also at junctions ([[pr-20]]). Sidewalk waiters do not freeze a junction.
 - Intersections are a seeded mix of all-way **STOP**, **YIELD** (minor road), and **uncontrolled** — about a third each. Ego and every AI traffic car share `decideIntersection`. This **supersedes** cycling traffic lights as the live control (true through [[pr-19]]). AI traffic random-walks the grid, never reverses, never camps the box, and a 3 s deadlock breaker releases the earliest arrival. The ego is treated as traffic by NPC follow.
-- Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner reads **Manual — press T to re-engage**; T or the banner replans Auto from the current pose ([[pr-25]]).
+- Tesla HUD detections match vision boxes, including stop/yield signs. Manual banner reads **Manual — press T to re-engage**; T or the banner replans Auto from the current pose ([[pr-25]]). F1/F2/F3 3D overlays snapshot perception at 10 Hz ([[pr-34]]) and animate between ticks on the GPU (frustum/lidar sweep, box pop, occupancy lerp) without recasting the beam ([[pr-37]]).
 - Lidar rays can run in Rust/WASM (`cast_rays` only). Vehicle integration, ground removal, BEV occupancy, and the impulse collision solver stay in TypeScript. See [[decisions]] and [[lidar-wasm]]. The live F3 HUD is a 10 Hz `tickWaabiView` overlay with no second lidar (planner / `obstacleAhead` unchanged).
 - The city look is hemisphere + a tight-frustum PCF sun, ACES, a sky gradient, distance fog, low-contrast ground noise (no streaks), solid pre-#34 building boxes, filled block lots, optional half-res bloom/LUT, and North-American stop/yield blades ([[city-look]]). Lidar dots are dimmer and use a fixed beam (no per-frame jitter). Pedestrian meshes face local +Z along velocity.
 - Ego vs cars / poles / signs / pedestrians uses mesh-matched OBBs and capsules, a spatial hash, and an impulse that can spin and shove traffic, snap street furniture above ~22 km/h, and tumble pedestrians. A counted hit increments the HUD and drops autopilot to manual.
