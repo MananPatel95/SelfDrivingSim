@@ -33,6 +33,16 @@ export function panelWidthForViewport(vw: number): number {
   return Math.min(PANEL_WIDTH, Math.max(160, vw - PANEL_GUTTER));
 }
 
+/** Left edge of the docked right-side column (STACK_RIGHT = 10). */
+export function hudColumnLeft(vw: number): number {
+  return vw - 10 - panelWidthForViewport(vw);
+}
+
+/** True when a world label would be sliced by the right-side HUD column. */
+export function spriteHitsHudColumn(screenX: number, vw: number, halfPx = 90): boolean {
+  return screenX + halfPx > hudColumnLeft(vw) - 8;
+}
+
 export const PANEL_SIZE: Record<PanelId, { w: number; h: number; collapsedH: number }> = {
   explainer: { w: PANEL_WIDTH, h: 108, collapsedH: 36 },
   'ai-view': { w: PANEL_WIDTH, h: 196, collapsedH: 36 },

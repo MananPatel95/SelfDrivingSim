@@ -7,8 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { nearestGridLine, snapToRoad, roadRoute } from './sim/world';
-import { destinationPinWorld } from './sim/rightLane';
+import { destinationPinWorld, PAD_ALONG, PAD_WIDTH, tripRoute } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
   applyCameraLayers,
@@ -41,15 +40,32 @@ import { bindPanelHelp, dismissPanelHelp, setPanelHelpCopy } from './ui/panelHel
 import {
   DEST_PIN_COLOR,
   ROUTE_CORE,
-  ROUTE_DEST,
-  ROUTE_DEST_RING,
   ROUTE_HALO,
   autopilotRouteOnMinimap,
   destinationOnMinimap,
-  destPinRadius,
+  paintDestPin,
   projectToMinimap,
   routeStrokeWidths,
 } from './ui/minimapRoute';
+import {
+  canStart,
+  createTripMenu,
+  dismissTripMenu,
+  drawStartCityMap,
+  justDrive,
+  menuBanner,
+  menuLead,
+  menuStatus,
+  menuTitle,
+  onArrived,
+  pickRandomDestination,
+  pickTripDestination,
+  setTripCamera,
+  setTripStack,
+  startMapToWorld,
+  startTrip,
+  type TripMenuState,
+} from './ui/startMenu';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
 import {
@@ -146,8 +162,10 @@ let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
 let gameStarted = false;
-let tripStart: { x: number; y: number } | null = null;
-let tripEnd: { x: number; y: number } | null = null;
+let tripMenu: TripMenuState = createTripMenu({ x: 3.5, y: -22 });
+let menuOrbitYaw = 0.85;
+const MENU_ORBIT_SPEED = 0.11;
+let suppressArrivedMenu = false;
 let currentStack: StackProfile = 'tesla';
 let compareMode = false;
 let driveHintShown = false;
@@ -470,7 +488,7 @@ function createDestinationMarker(): THREE.Group {
   });
   const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-  const pad = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), pinkPad);
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(PAD_ALONG, PAD_WIDTH), pinkPad);
   pad.rotation.x = -Math.PI / 2;
   pad.position.y = 0.035;
   pad.receiveShadow = true;
@@ -478,7 +496,7 @@ function createDestinationMarker(): THREE.Group {
 
   const pin = new THREE.Group();
   pin.name = 'dest-pin';
-  pin.position.set(3.15, 0, 1.1);
+  pin.position.set(PAD_ALONG / 2 - 1.05, 0, PAD_WIDTH / 2 - 0.12);
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.85, 8), white);
   stem.position.y = 0.95;
   stem.castShadow = true;
@@ -516,26 +534,8 @@ function syncDestinationMarker(): void {
   if (pin) pin.visible = !simulation.hasArrived();
 }
 
-function drawDestinationPin(
-  ctx: CanvasRenderingContext2D,
-  p: { x: number; y: number },
-  scale: number,
-): void {
-  const r = destPinRadius(scale);
-  ctx.beginPath();
-  ctx.moveTo(p.x, p.y + r * 0.9);
-  ctx.bezierCurveTo(p.x + r * 0.95, p.y + r * 0.05, p.x + r * 0.72, p.y - r * 0.95, p.x, p.y - r * 0.95);
-  ctx.bezierCurveTo(p.x - r * 0.72, p.y - r * 0.95, p.x - r * 0.95, p.y + r * 0.05, p.x, p.y + r * 0.9);
-  ctx.closePath();
-  ctx.fillStyle = ROUTE_DEST;
-  ctx.fill();
-  ctx.strokeStyle = ROUTE_DEST_RING;
-  ctx.lineWidth = 1.7;
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.arc(p.x, p.y - r * 0.28, r * 0.26, 0, Math.PI * 2);
-  ctx.fillStyle = '#fff';
-  ctx.fill();
+function isTripMenuOpen(): boolean {
+  return tripMenu.open && !photoMode;
 }
 
 // Create mesh for entity with proper styling
@@ -1299,6 +1299,24 @@ function followHeading(_egoX: number, _egoY: number, egoYaw: number): number {
 }
 
 function updateCamera(dt: number, egoX: number, egoY: number, egoYaw: number) {
+  if (isTripMenuOpen()) {
+    menuOrbitYaw += dt * MENU_ORBIT_SPEED;
+    const pitch = 0.38;
+    const dist = 46;
+    const lookX = egoX;
+    const lookY = egoY;
+    const posX = lookX + Math.sin(menuOrbitYaw) * Math.cos(pitch) * dist;
+    const posY = Math.sin(pitch) * dist + 7;
+    const posZ = -lookY + Math.cos(menuOrbitYaw) * Math.cos(pitch) * dist;
+    applyCameraLayers(camera, false);
+    camera.fov = 58;
+    camera.near = 0.2;
+    camera.updateProjectionMatrix();
+    camera.position.set(posX, posY, posZ);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(lookX, 1.2, -lookY);
+    return;
+  }
   if (debugHeroCam) {
     const eye = carLocalToWorld(debugHeroCam.x, debugHeroCam.y, debugHeroCam.z, egoX, egoY, egoYaw);
     const look = carLocalToWorld(debugHeroCam.lookX, debugHeroCam.lookY, debugHeroCam.lookZ, egoX, egoY, egoYaw);
@@ -1539,8 +1557,11 @@ function restartSim() {
   applyQuality(qualityLevel);
   resetCameraRig();
   setPaused(false);
+  gameStarted = false;
+  const spawn = simulation.getState().ego.transform.position;
+  tripMenu = createTripMenu({ x: spawn.x, y: spawn.y }, { stack: currentStack, camera: cameraMode === 'hood' ? 'hood' : 'chase' });
+  syncTripMenuDom();
   syncDriveBadge();
-  showDriveHintOnce();
 }
 
 function anyDriveHeld(): boolean {
@@ -2567,7 +2588,7 @@ function updateMinimap() {
     scale,
   );
   if (destPt && destPt.x > -16 && destPt.y > -16 && destPt.x < w + 16 && destPt.y < h + 16) {
-    drawDestinationPin(ctx, destPt, scale);
+    paintDestPin(ctx, destPt, scale);
   }
 
   ctx.restore();
@@ -2675,9 +2696,26 @@ function setupInput() {
         e.preventDefault();
         return;
       }
-      if (!gameStarted) return;
       e.preventDefault();
+      if (isTripMenuOpen()) {
+        if (tripMenu.phase === 'arrived') {
+          tripMenu = dismissTripMenu(tripMenu);
+          syncTripMenuDom();
+        }
+        return;
+      }
+      if (!gameStarted) return;
       togglePause();
+      return;
+    }
+    if (isTripMenuOpen()) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        beginGame('autopilot');
+      }
+      if (e.key === 'F1') { e.preventDefault(); chooseMenuStack('tesla'); }
+      if (e.key === 'F2') { e.preventDefault(); chooseMenuStack('waymo'); }
+      if (e.key === 'F3') { e.preventDefault(); chooseMenuStack('waabi'); }
       return;
     }
     if (!gameStarted) return;
@@ -2808,7 +2846,7 @@ function setupInput() {
   document.getElementById('pause-resume')?.addEventListener('click', () => setPaused(false));
   document.getElementById('pause-restart')?.addEventListener('click', () => restartSim());
   document.getElementById('gear-btn')?.addEventListener('click', () => {
-    if (!gameStarted) return;
+    if (!gameStarted || isTripMenuOpen()) return;
     togglePause();
   });
   document.querySelectorAll('#quality-seg button').forEach(btn => {
@@ -2830,7 +2868,7 @@ function setupInput() {
     updatePhysDebug();
   });
   document.getElementById('decision-banner')?.addEventListener('click', () => {
-    if (!gameStarted || isPaused) return;
+    if (!gameStarted || isPaused || isTripMenuOpen()) return;
     setAutopilot(isManual());
   });
   bindHudPanels();
@@ -2838,43 +2876,74 @@ function setupInput() {
   const startMap = document.getElementById('start-map') as HTMLCanvasElement | null;
   startMap?.addEventListener('click', (ev) => {
     const rect = startMap.getBoundingClientRect();
-    const u = (ev.clientX - rect.left) / rect.width;
-    const v = (ev.clientY - rect.top) / rect.height;
-    const world = snapToRoad(-300 + u * 600, 300 - v * 600);
-    if (!tripStart || tripEnd) {
-      tripStart = world;
-      tripEnd = null;
-    } else {
-      tripEnd = world;
-    }
-    drawStartMap();
-    refreshStartButtons();
+    const sx = (ev.clientX - rect.left) * (startMap.width / rect.width);
+    const sy = (ev.clientY - rect.top) * (startMap.height / rect.height);
+    const world = startMapToWorld(sx, sy, startMap.width, startMap.height);
+    tripMenu = pickTripDestination(tripMenu, world.x, world.y);
+    syncTripMenuDom();
   });
   document.getElementById('start-manual')?.addEventListener('click', () => beginGame('manual'));
   document.getElementById('start-auto')?.addEventListener('click', () => beginGame('autopilot'));
+  document.getElementById('start-random')?.addEventListener('click', () => {
+    tripMenu = pickRandomDestination(tripMenu);
+    syncTripMenuDom();
+  });
+  document.querySelectorAll('.stack-card').forEach(btn => {
+    btn.addEventListener('click', () => {
+      chooseMenuStack((btn as HTMLElement).dataset['profile'] as StackProfile);
+    });
+  });
+  document.querySelectorAll('#start-camera-seg button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cam = (btn as HTMLElement).dataset['camera'] as 'chase' | 'hood';
+      tripMenu = setTripCamera(tripMenu, cam);
+      syncTripMenuDom();
+    });
+  });
   document.getElementById('takeover-btn')?.addEventListener('click', () => takeManual());
   document.getElementById('raw-camera-canvas')?.addEventListener('click', () => {
-    if (!gameStarted) return;
+    if (!gameStarted || isTripMenuOpen()) return;
     setCameraMode(cameraMode === 'hood' ? 'chase' : 'hood');
   });
-  drawStartMap();
-  refreshStartButtons();
+  syncTripMenuDom();
 }
 
-function refreshStartButtons() {
-  const ready = !!(tripStart && tripEnd);
-  const manual = document.getElementById('start-manual') as HTMLButtonElement | null;
-  const auto = document.getElementById('start-auto') as HTMLButtonElement | null;
-  if (manual) {
-    manual.disabled = false;
-    manual.textContent = ready ? 'Drive this route' : 'Just drive';
+function chooseMenuStack(profile: StackProfile) {
+  tripMenu = setTripStack(tripMenu, profile);
+  switchStack(profile);
+  syncTripMenuDom();
+}
+
+function syncTripMenuDom() {
+  const open = isTripMenuOpen();
+  document.body.classList.toggle('trip-menu-open', open);
+  document.getElementById('start-menu')?.classList.toggle('hidden', !open);
+  const banner = document.getElementById('start-arrived-banner');
+  if (banner) {
+    const text = menuBanner(tripMenu);
+    banner.textContent = text ?? 'Arrived — choose next destination';
+    banner.classList.toggle('visible', !!text);
   }
-  if (auto) auto.disabled = !ready;
+  const title = document.getElementById('start-title');
+  if (title) title.textContent = menuTitle(tripMenu);
+  const lead = document.getElementById('start-lead');
+  if (lead) lead.textContent = menuLead(tripMenu);
   const status = document.getElementById('start-status');
-  if (!status) return;
-  if (!tripStart) status.textContent = 'Just drive starts you parked. Or click the map to set a start, then an end.';
-  else if (!tripEnd) status.textContent = 'Click where the trip should end, or just drive from here.';
-  else status.textContent = 'Watch the autopilot drive this route, or drive it yourself.';
+  if (status) status.textContent = menuStatus(tripMenu);
+  document.querySelectorAll('.stack-card').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['profile'] === tripMenu.stack);
+  });
+  document.querySelectorAll('#start-camera-seg button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === tripMenu.camera);
+  });
+  const auto = document.getElementById('start-auto') as HTMLButtonElement | null;
+  if (auto) {
+    auto.disabled = !canStart(tripMenu);
+    auto.textContent = tripMenu.phase === 'arrived' ? 'Continue' : 'Start';
+  }
+  const manual = document.getElementById('start-manual') as HTMLButtonElement | null;
+  if (manual) manual.textContent = 'Just drive';
+  drawStartMap();
 }
 
 function drawStartMap() {
@@ -2882,78 +2951,74 @@ function drawStartMap() {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  const w = canvas.width;
-  const h = canvas.height;
-  const half = 300;
-  const span = 600;
-  const toX = (x: number) => ((x + half) / span) * w;
-  const toY = (y: number) => ((half - y) / span) * h;
-  ctx.fillStyle = '#1a2a22';
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = '#d5d8dc';
-  for (let i = 0; i <= 6; i++) {
-    const p = -half + i * 100;
-    const rw = (14 / span) * w;
-    ctx.fillRect(toX(p) - rw / 2, 0, rw, h);
-    ctx.fillRect(0, toY(p) - rw / 2, w, rw);
-  }
-  if (tripStart && tripEnd) {
-    const route = roadRoute({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 });
-    ctx.strokeStyle = '#7fd7ff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    route.forEach((p, i) => {
-      const x = toX(p.x);
-      const y = toY(p.y);
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }
-  const dot = (p: { x: number; y: number }, color: string) => {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(toX(p.x), toY(p.y), 7, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  };
-  if (tripStart) dot(tripStart, '#3d6');
-  if (tripEnd) dot(tripEnd, ROUTE_DEST);
+  const buildings = simulation
+    ? simulation.getState().worldMap.staticEntities
+      .filter(e => e.classType === 'building')
+      .map(b => ({
+        x: b.transform.position.x,
+        y: b.transform.position.y,
+        hx: b.boundingBox.size.x / 2,
+        hy: b.boundingBox.size.y / 2,
+      }))
+    : [];
+  const route = tripMenu.destination
+    ? tripRoute(
+      { x: tripMenu.start.x, y: tripMenu.start.y, z: 0 },
+      { x: tripMenu.destination.x, y: tripMenu.destination.y, z: 0 },
+    )
+    : undefined;
+  const heading = simulation?.getState().ego.transform.rotation;
+  drawStartCityMap(ctx, canvas.width, canvas.height, {
+    start: tripMenu.start,
+    startHeading: heading,
+    destination: tripMenu.destination,
+    buildings,
+    route,
+  });
 }
 
-function headingAlongRoad(p: { x: number; y: number }): number {
-  const onNS = Math.abs(p.x - nearestGridLine(p.x)) <= Math.abs(p.y - nearestGridLine(p.y));
-  return onNS ? Math.PI / 2 : 0;
+function armMenuTrip(start: { x: number; y: number }, end: { x: number; y: number }) {
+  tripMenu = pickTripDestination(createTripMenu(start, {
+    stack: tripMenu.stack,
+    camera: tripMenu.camera,
+  }), end.x, end.y);
 }
 
 function beginGame(mode: 'manual' | 'autopilot') {
-  if (gameStarted) return;
   if (mode === 'autopilot') {
-    if (!tripStart || !tripEnd) return;
-    simulation.beginTrip({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 }, 'policy');
-  } else if (tripStart && tripEnd) {
-    simulation.beginTrip({ ...tripStart, z: 0 }, { ...tripEnd, z: 0 }, 'human');
-  } else if (tripStart) {
-    simulation.beginParked({ ...tripStart, z: 0 }, headingAlongRoad(tripStart));
+    if (!canStart(tripMenu) || !tripMenu.destination) return;
+    simulation.beginTrip(
+      { x: tripMenu.start.x, y: tripMenu.start.y, z: 0 },
+      { x: tripMenu.destination.x, y: tripMenu.destination.y, z: 0 },
+      'policy',
+    );
+    tripMenu = startTrip(tripMenu);
+  } else if (tripMenu.destination) {
+    simulation.beginTrip(
+      { x: tripMenu.start.x, y: tripMenu.start.y, z: 0 },
+      { x: tripMenu.destination.x, y: tripMenu.destination.y, z: 0 },
+      'human',
+    );
+    tripMenu = startTrip(tripMenu);
   } else {
-    simulation.beginParked();
+    simulation.beginParked({ x: tripMenu.start.x, y: tripMenu.start.y, z: 0 }, simulation.getState().ego.transform.rotation);
+    tripMenu = justDrive(tripMenu);
   }
   gameStarted = true;
-  document.getElementById('start-menu')?.classList.add('hidden');
+  switchStack(tripMenu.stack);
+  setCameraMode(tripMenu.camera);
   inputState.forward = false;
   inputState.backward = false;
   inputState.left = false;
   inputState.right = false;
   inputState.brake = false;
-  setCameraMode('chase');
   captureEgoPose();
   prevEgoX = currEgoX;
   prevEgoY = currEgoY;
   prevEgoYaw = currEgoYaw;
   prevEgoRoll = currEgoRoll;
   prevEgoPitch = currEgoPitch;
+  syncTripMenuDom();
   syncDriveBadge();
   if (mode === 'manual') showDriveHintOnce();
 }
@@ -2983,6 +3048,7 @@ function hideChrome() {
 
 /** Screenshot / demo rigs: ?shot=cabin|cabin-a|cabin-d|cabin-wide|exterior|exterior-hood|side|wheel */
 function applyShot(kind: string) {
+  suppressArrivedMenu = true;
   beginGame('manual');
   hideChrome();
   takeManual(true);
@@ -3019,17 +3085,19 @@ function applyShot(kind: string) {
   }
 }
 
-/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive, plus hit-car|hit-pole|hit-sign|hit-ped */
+/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp, plus hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
+  suppressArrivedMenu = true;
   showAIView = true;
   document.getElementById('ai-view-panel')?.classList.add('visible');
   document.getElementById('decision-banner')?.classList.add('visible');
   perceptionViz?.setEnabled(true);
 
   if (kind === 'arrive') {
-    tripStart = { x: 0, y: 50 };
-    tripEnd = { x: 0, y: 78 };
+    armMenuTrip({ x: 0, y: 50 }, { x: 0, y: 78 });
     beginGame('autopilot');
+    simulation.getState().trafficVehicles = [];
+    simulation.getState().pedestrians = [];
     setCameraMode('orbit');
     orbitYaw = 0.2;
     orbitPitch = 0.34;
@@ -3037,9 +3105,20 @@ function applyDemo(kind: string) {
     camFollowReady = true;
     return;
   }
+  if (kind === 'arrive-opp') {
+    armMenuTrip({ x: 0, y: 55 }, { x: -5, y: 78 });
+    beginGame('autopilot');
+    simulation.getState().trafficVehicles = [];
+    simulation.getState().pedestrians = [];
+    setCameraMode('orbit');
+    orbitYaw = 0.15;
+    orbitPitch = 0.38;
+    orbitDist = 22;
+    camFollowReady = true;
+    return;
+  }
   if (kind === 'lane') {
-    tripStart = { x: 0, y: -90 };
-    tripEnd = { x: 0, y: 160 };
+    armMenuTrip({ x: 0, y: -90 }, { x: 0, y: 160 });
     beginGame('autopilot');
     setCameraMode('orbit');
     orbitYaw = -0.7;
@@ -3049,8 +3128,7 @@ function applyDemo(kind: string) {
     return;
   }
   if (kind === 'left') {
-    tripStart = { x: 0, y: -90 };
-    tripEnd = { x: -160, y: 0 };
+    armMenuTrip({ x: 0, y: -90 }, { x: -160, y: 0 });
     beginGame('autopilot');
     setCameraMode('orbit');
     orbitYaw = 0.35;
@@ -3060,8 +3138,7 @@ function applyDemo(kind: string) {
     return;
   }
   if (kind === 'right') {
-    tripStart = { x: 0, y: -90 };
-    tripEnd = { x: 160, y: 0 };
+    armMenuTrip({ x: 0, y: -90 }, { x: 160, y: 0 });
     beginGame('autopilot');
     setCameraMode('orbit');
     orbitYaw = -1.2;
@@ -3072,8 +3149,7 @@ function applyDemo(kind: string) {
   }
   if (kind === 'stop') {
     simulation.getState().pedestrians = [];
-    tripStart = { x: 0, y: -20 };
-    tripEnd = { x: 0, y: 80 };
+    armMenuTrip({ x: 0, y: -20 }, { x: 0, y: 80 });
     beginGame('autopilot');
     setCameraMode('orbit');
     orbitYaw = -0.85;
@@ -3175,7 +3251,7 @@ function animate(time: number) {
   const frameDt = Math.min((time - lastTime) / 1000, 0.25);
   lastTime = time;
 
-  if (gameStarted && !isPaused) {
+  if (gameStarted && !isPaused && !isTripMenuOpen()) {
     const humanInput = isManual() ? humanInputFromKeys() : undefined;
     simAccumulator += frameDt;
     if (simAccumulator > 0.25) simAccumulator = 0.25;
@@ -3190,6 +3266,17 @@ function animate(time: number) {
       updateEntityMeshes();
       updateDetectionMeshes();
       simAccumulator -= SIM_DT;
+      if (
+        !suppressArrivedMenu
+        && tripMenu.phase === 'driving'
+        && simulation.hasArrived()
+      ) {
+        const pos = simulation.getState().ego.transform.position;
+        tripMenu = onArrived(tripMenu, { x: pos.x, y: pos.y });
+        if (isPaused) setPaused(false);
+        syncTripMenuDom();
+        break;
+      }
       if (collisionShotHold && simulation.getState().collisionCount > 0 && collisionShotAt === 0) {
         collisionShotAt = time;
         const st = simulation.getState();
@@ -3294,6 +3381,9 @@ function updateAIView(drawRawScene: boolean) {
     occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
     controlSource: state.controlSource,
     rule: state.lastRule,
+    camera,
+    viewW: window.innerWidth,
+    viewH: window.innerHeight,
   };
 
   if (perceptionViz) {
@@ -3364,6 +3454,10 @@ async function init() {
     useOracle: false,
     maxDuration: 3600,
   });
+  {
+    const spawn = simulation.getState().ego.transform.position;
+    tripMenu = createTripMenu({ x: spawn.x, y: spawn.y });
+  }
 
   scene.remove(egoMesh);
   const egoGroup = await createEgoVehicle();
@@ -3458,6 +3552,23 @@ async function init() {
     switchStack,
     getTripDestination: () => simulation.getTripDestination(),
     hasArrived: () => simulation.hasArrived(),
+    getTripMenu: () => ({ ...tripMenu }),
+    pickMenuDestination(x: number, y: number) {
+      tripMenu = pickTripDestination(tripMenu, x, y);
+      syncTripMenuDom();
+    },
+    startFromMenu() {
+      beginGame('autopilot');
+    },
+    forceArrivedMenu() {
+      const pos = simulation.getState().ego.transform.position;
+      tripMenu = onArrived(tripMenu, { x: pos.x, y: pos.y });
+      syncTripMenuDom();
+    },
+    clearAgents() {
+      simulation.getState().trafficVehicles = [];
+      simulation.getState().pedestrians = [];
+    },
     getTripHeading: () => simulation.getTripHeading(),
     getEgo: () => {
       const e = simulation.getState().ego;

@@ -29,6 +29,19 @@ function ensurePopover(doc: Document): HTMLElement {
   return el;
 }
 
+/** Keep help copy under the F1/F2/F3 switcher (top ~10px + ~48px + gap). */
+export const VIEW_SWITCHER_GAP = 8;
+export const VIEW_SWITCHER_FALLBACK_BOTTOM = 58;
+
+export function popoverMinTop(doc: Document): number {
+  const tabs = doc.getElementById('view-switcher');
+  if (tabs instanceof HTMLElement) {
+    const bottom = tabs.getBoundingClientRect().bottom;
+    if (bottom > 0) return Math.ceil(bottom) + VIEW_SWITCHER_GAP;
+  }
+  return VIEW_SWITCHER_FALLBACK_BOTTOM + VIEW_SWITCHER_GAP;
+}
+
 function placePopover(anchor: HTMLElement, el: HTMLElement): void {
   const doc = el.ownerDocument;
   const view = doc.defaultView;
@@ -38,12 +51,13 @@ function placePopover(anchor: HTMLElement, el: HTMLElement): void {
   const r = (panel instanceof HTMLElement ? panel : anchor).getBoundingClientRect();
   const pw = Math.min(280, Math.max(180, vw - 16));
   el.style.width = `${pw}px`;
-  const ph = Math.min(el.offsetHeight || 160, vh - 16);
+  const minTop = popoverMinTop(doc);
+  const ph = Math.min(el.offsetHeight || 160, Math.max(80, vh - minTop - 8));
   let left = r.left - pw - 8;
   if (left < 8) left = Math.min(vw - pw - 8, r.right + 8);
   left = Math.max(8, Math.min(left, vw - pw - 8));
-  let top = r.top;
-  if (top + ph > vh - 8) top = Math.max(8, vh - ph - 8);
+  let top = Math.max(r.top, minTop);
+  if (top + ph > vh - 8) top = Math.max(minTop, vh - ph - 8);
   el.style.left = `${Math.round(left)}px`;
   el.style.top = `${Math.round(top)}px`;
 }

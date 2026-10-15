@@ -91,3 +91,26 @@ export function destinationOnMinimap(
 export function destPinRadius(scale: number): number {
   return Math.max(6.5, scale * 2.4);
 }
+
+/** Teardrop pin used on the radar and the start-menu city map. */
+export function paintDestPin(
+  ctx: CanvasRenderingContext2D,
+  p: MapPoint,
+  scale: number,
+): void {
+  const r = destPinRadius(scale);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y + r * 0.9);
+  ctx.bezierCurveTo(p.x + r * 0.95, p.y + r * 0.05, p.x + r * 0.72, p.y - r * 0.95, p.x, p.y - r * 0.95);
+  ctx.bezierCurveTo(p.x - r * 0.72, p.y - r * 0.95, p.x - r * 0.95, p.y + r * 0.05, p.x, p.y + r * 0.9);
+  ctx.closePath();
+  ctx.fillStyle = ROUTE_DEST;
+  ctx.fill();
+  ctx.strokeStyle = ROUTE_DEST_RING;
+  ctx.lineWidth = 1.7;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(p.x, p.y - r * 0.28, r * 0.26, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}

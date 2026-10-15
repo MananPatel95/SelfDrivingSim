@@ -9,6 +9,9 @@ import type { EgoState, Entity, LidarPoint, PlannerOutput, Vec3 } from '../sim/t
 import type { Track } from '../stacks/perception';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
+import { spriteHitsHudColumn } from '../ui/hudPanels';
+
+const _labelNdc = new THREE.Vector3();
 
 export type VizStack = 'tesla' | 'waymo' | 'waabi';
 
@@ -35,6 +38,9 @@ export interface PerceptionVizInput {
   occupancy?: BEVOccupancy;
   controlSource?: 'policy' | 'human' | 'oracle';
   rule?: { reason: string; severity: DecisionInfo['severity'] } | null;
+  camera?: THREE.Camera;
+  viewW?: number;
+  viewH?: number;
 }
 
 function pathColor(severity: DecisionInfo['severity']): number {
@@ -121,6 +127,9 @@ function makeLabelSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
+/** World-space % sprites drew huge over the HUD when a track sat near the camera. */
+export const DRAW_WORLD_LABEL_SPRITES = false;
+
 export class PerceptionVisualizer {
   readonly group = new THREE.Group();
   private points: THREE.Points;
@@ -186,8 +195,22 @@ export class PerceptionVisualizer {
     this.updatePredictions(input);
     this.updatePlan(input, decision);
     this.updateLabels(input);
+    this.clipLabelsToHudColumn(input);
     this.updateFrustums(input);
     return decision;
+  }
+
+  /** Hide world labels that would be sliced by the 300px right-side HUD column. */
+  private clipLabelsToHudColumn(input: PerceptionVizInput) {
+    const cam = input.camera;
+    const vw = input.viewW ?? 0;
+    const vh = input.viewH ?? 0;
+    if (!cam || vw < 8 || vh < 8 || this.labels.length === 0) return;
+    for (const sprite of this.labels) {
+      _labelNdc.copy(sprite.position).project(cam);
+      const sx = (_labelNdc.x * 0.5 + 0.5) * vw;
+      sprite.visible = _labelNdc.z < 1 && !spriteHitsHudColumn(sx, vw);
+    }
   }
 
   private updatePoints(input: PerceptionVizInput) {
@@ -361,6 +384,14 @@ export class PerceptionVisualizer {
   }
 
   private updateLabels(input: PerceptionVizInput) {
+    if (!DRAW_WORLD_LABEL_SPRITES) {
+      if (this.labels.length > 0) {
+        for (const s of this.labels) this.group.remove(s);
+        this.labels = [];
+        this.lastLabelKey = '';
+      }
+      return;
+    }
     const ego = input.ego;
     const keyParts: string[] = [];
     const items: Array<{ text: string; color: string; x: number; y: number; z: number }> = [];

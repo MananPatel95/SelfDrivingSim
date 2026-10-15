@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { bindPanelHelp, dismissPanelHelp, HUD_HELP_POPOVER_ID, panelHelpIsOpen } from './panelHelp';
+import { bindPanelHelp, dismissPanelHelp, HUD_HELP_POPOVER_ID, panelHelpIsOpen, popoverMinTop } from './panelHelp';
 import { PANEL_WIDTH } from './hudPanels';
 
 const INDEX_HTML = readFileSync(resolve(__dirname, '../../index.html'), 'utf8');
@@ -93,6 +93,15 @@ describe('HUD panel DOM', () => {
     bevHelp.click();
     expect(document.getElementById(HUD_HELP_POPOVER_ID)!.textContent).toMatch(/TTC/);
     expect(document.getElementById(HUD_HELP_POPOVER_ID)!.textContent).toMatch(/\+1s/);
+  });
+
+  it('keeps the ? popover below the F1/F2/F3 tab bar', () => {
+    const tabs = document.createElement('div');
+    tabs.id = 'view-switcher';
+    tabs.getBoundingClientRect = () =>
+      ({ top: 10, bottom: 58, left: 410, right: 870, width: 460, height: 48, x: 410, y: 10, toJSON() { return {}; } }) as DOMRect;
+    document.body.appendChild(tabs);
+    expect(popoverMinTop(document)).toBe(66);
   });
 
   it('does not capture WASD while a popover is open', () => {

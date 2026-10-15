@@ -82,6 +82,18 @@ One card dragged off the stack, still clear of the minimap / speed HUD / banner.
 ### autopilot_engaged.png
 Centre banner after T / banner click re-engages Auto.
 
+### 28-start-menu.png
+Launch overlay over the orbiting city: **AUTONOMY CITY: How Machines See**, F1–F3 cards, chase / first person, city map with the start triangle.
+
+### 28-start-menu-dest.png
+Same overlay after a map click: purple preview and a pink curb pin. Start is enabled.
+
+### 29-arrived-menu.png
+**Arrived — choose next destination** after a pink-pad stop. The white triangle is the new start.
+
+### 30-second-trip.png
+Second trip underway from the arrived menu without a reload (HUD visible, dest pin on the minimap).
+
 ## Environment Effects
 
 ### 07-night-fog.png
@@ -128,6 +140,12 @@ Same trip. Minimap shows the purple remaining route and the pink destination pin
 
 ### 26-destination-pullover-stop.png
 Arrival: ego pulled over onto the pad and stopped. Speed ~0, nose in the right-hand roadside, pin beside the car.
+
+### 27-destination-opposite-uturn.png
+`?seed=3&demo=arrive-opp`. Left-curb dest. Ego is in a legal intersection U-turn (or the loop onto the opposite heading), moving, AI View rendered, no huge green `%` over the HUD.
+
+### 28-destination-opposite-arrived.png
+Same trip after the U-turn. Sedan parked on the left-curb pad, heading-aligned, Arrived / ARRIVED, pin hidden, body on asphalt.
 
 ## Modern cabin and Kenney sedan-sports
 

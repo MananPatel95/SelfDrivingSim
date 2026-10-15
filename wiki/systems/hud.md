@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-14
-sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30, 32]
+updated: 2026-10-15
+sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30, 31, 32, 33]
 ---
 
 # HUD and menus
@@ -12,19 +12,23 @@ Tesla **Detections** counts vision boxes (`hudDetectionCount`), including `stop_
 
 Parked or driving in manual: the decision banner is **Manual — press T to re-engage**, not “Cruising: lane clear” ([[ai-view]]). The banner is a button: click it (or press **T**) to re-engage Auto from the current pose. A short **Autopilot engaged** flash follows. WASD still takes over on a new key press.
 
-Right-side cards (stack explainer, AI View, info, and on F3 the Waabi BEV + Sim World card) share one width (`min(300px, 100vw − 24px)`) and one right edge, stacked with an 8px gap. Each header has **?**, collapse, and close, and is draggable. **?** opens a popover (no backdrop) with the long uses / unlike / how-to-read copy; it closes on click-outside or Esc and does not swallow WASD. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]). The view-info card itself is only the stack name, a one-line sensor summary, and the current camera mode ([[pr-32]]).
+Right-side cards (stack explainer, AI View, info, and on F3 the Waabi BEV + Sim World card) share one width (`min(300px, 100vw − 24px)`) and one right edge, stacked with an 8px gap. Each header has **?**, collapse, and close, and is draggable. **?** opens a popover (no backdrop) with the long uses / unlike / how-to-read copy; it sits **below the F1/F2/F3 tab bar**, closes on click-outside or Esc, and does not swallow WASD. World-space `stop_sign #id` confidence sprites stay off ([[pr-33]]) so they cannot slice behind the 300px column; if they are drawn they are hidden when their screen-x hits `hudColumnLeft`. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]). The view-info card itself is only the stack name, a one-line sensor summary, and the current camera mode ([[pr-32]]).
 
-Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. The end point is the pink pin. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
+Start / arrived menu: a glass overlay over a slowly orbiting city. Title is **AUTONOMY CITY: How Machines See**. The car’s current pose is the start (white triangle). Click the north-up city map (minimap colours, larger) or **Random destination** to set a pink curb pad via `snapTripEnd` + `resolveTripDestination` ([[pr-33]]): the pad sits on the arrival-side right curb; a left-of-approach click is an opposite-side dest (legal U-turn). F1 / F2 / F3 cards pick the stack; Chase / First person pick the camera. **Start** / Enter begins an autopilot `beginTrip`. **Just drive** still parks with no route. The sim does not step while the overlay is open. Esc on the first-launch menu does nothing; Esc on the arrived variant dismisses it; Esc while driving still opens the pause menu. After `hasArrived()` the same overlay returns as **Arrived — choose next destination** with the parked pose as the new start; Continue / Start calls `beginTrip` again without reloading. `?demo=` / `?shot=` skip the overlay and do not reopen it on arrival. Overlay cards use the same HUD glass (`#2a5a72` / `#7fd7ff`) as the right-side panels.
 
-Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots. `arrive` is a mid-block northbound trip onto the pink pad.
+This **supersedes** the two-click start-then-end map from [[pr-13]] / [[pr-19]] for the live overlay. Autopilot still needs a destination to *start* from the menu; T can cruise with no trip after you are in the car.
+
+Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots. `arrive` is a mid-block northbound trip onto the pink pad; `arrive-opp` is a left-curb dest that U-turns at the next junction.
 
 ## Key files
 
 - `game/src/main.ts`
 - `game/index.html`
+- `game/src/ui/startMenu.ts`
 - `game/src/ui/minimapRoute.ts`
 - `game/src/stacks/tesla.ts`
 - `game/src/sim/startDrive.test.ts`
+- `game/src/ui/startMenu.test.ts`
 - `game/src/ui/hudPanels.ts`
 - `game/src/ui/panelHelp.ts`
 - `game/src/ui/viewCopy.ts`

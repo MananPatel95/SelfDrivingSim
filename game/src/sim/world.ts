@@ -106,6 +106,41 @@ export function snapToRoad(x: number, y: number): Vec3 {
   return vec3(cx, ny, 0);
 }
 
+const SNAP_ROAD_HALF = 7;
+
+/**
+ * Snap a trip *end* click. Near a junction, stay on the start road so the pad
+ * is not teleported onto the cross street. Keeps the click's side of the road
+ * (clamped to asphalt) so a left-curb click stays an opposite-side dest.
+ */
+export function snapTripEnd(start: Vec3, x: number, y: number): Vec3 {
+  const nx = nearestGridLine(x);
+  const ny = nearestGridLine(y);
+  const dNS = Math.abs(x - nx);
+  const dEW = Math.abs(y - ny);
+  const startNS = Math.abs(start.x - nearestGridLine(start.x))
+    <= Math.abs(start.y - nearestGridLine(start.y));
+  const nearJunction = dNS < 14 && dEW < 14;
+  let snapped: Vec3;
+  if (nearJunction && startNS && dNS <= 8) {
+    snapped = vec3(nearestGridLine(start.x), y, 0);
+  } else if (nearJunction && !startNS && dEW <= 8) {
+    snapped = vec3(x, nearestGridLine(start.y), 0);
+  } else {
+    snapped = snapToRoad(x, y);
+  }
+  const onNS = Math.abs(snapped.x - nearestGridLine(snapped.x))
+    <= Math.abs(snapped.y - nearestGridLine(snapped.y));
+  if (onNS) {
+    const axis = nearestGridLine(snapped.x);
+    const lat = Math.max(-SNAP_ROAD_HALF, Math.min(SNAP_ROAD_HALF, x - axis));
+    return vec3(axis + lat, snapped.y, 0);
+  }
+  const axis = nearestGridLine(snapped.y);
+  const lat = Math.max(-SNAP_ROAD_HALF, Math.min(SNAP_ROAD_HALF, y - axis));
+  return vec3(snapped.x, axis + lat, 0);
+}
+
 /** Manhattan route along the road grid, sampled every few metres for the planner. */
 export function roadRoute(start: Vec3, end: Vec3): Vec3[] {
   const onNS = (p: Vec3) => Math.abs(p.x - nearestGridLine(p.x))
