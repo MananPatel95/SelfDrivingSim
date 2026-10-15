@@ -35,7 +35,8 @@ import {
   clampCosmeticAttitude,
   meshYawForHeading,
 } from './sim/vehicleVisual';
-import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
+import { STACK_VIEW_COPY, CAMERA_VIEW_COPY, aiViewTitle, panelHelpCopy, type StackProfile as ViewStack, type CameraMode as ViewCamera } from './ui/viewCopy';
+import { bindPanelHelp, dismissPanelHelp, setPanelHelpCopy } from './ui/panelHelp';
 import {
   DEST_PIN_COLOR,
   ROUTE_CORE,
@@ -258,6 +259,7 @@ const PANEL_EL: Record<PanelId, string> = {
   explainer: 'view-explainer',
   'ai-view': 'ai-view-panel',
   info: 'info-card',
+  bev: 'bev-overlay',
 };
 let egoWheels: Array<{ pivot: THREE.Group; mesh: THREE.Mesh; front: boolean; spinAxis?: 'x' | 'y' }> = [];
 const entityMeshes = new Map<number, THREE.Mesh>();
@@ -1626,6 +1628,9 @@ function setPanelClosed(id: PanelId, closed: boolean) {
 
 function bindHudPanels() {
   let drag: { id: PanelId; dx: number; dy: number } | null = null;
+  bindPanelHelp(document, {
+    copy: (id) => panelHelpCopy(id, currentStack, cameraMode),
+  });
   document.querySelectorAll('.hud-panel-min').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       ev.preventDefault();
@@ -1809,14 +1814,12 @@ function updateViewExplainer(profile: StackProfile = currentStack) {
   const stack = STACK_VIEW_COPY[profile];
   const cam = CAMERA_VIEW_COPY[cameraMode];
   setText('view-explainer-title', stack.title);
-  setText('view-explainer-uses', stack.uses);
-  setText('view-explainer-diff', stack.diff);
+  setText('view-explainer-uses', stack.summary ?? stack.uses);
   setText('camera-explainer-title', cam.title);
-  setText('camera-explainer-uses', cam.uses);
-  setText('camera-explainer-diff', cam.diff);
-  setText('ai-view-header', `${aiViewTitle(profile)}  ·  V hide · G ground truth`);
-  setText('ai-view-raw-label', `${stack.rawLabel} — click for 1st person`);
+  setText('ai-view-header', aiViewTitle(profile));
+  setText('ai-view-raw-label', stack.rawLabel);
   setText('ai-view-perc-label', stack.percLabel);
+  setPanelHelpCopy((id) => panelHelpCopy(id, profile, cameraMode));
   syncCompareChrome();
 }
 
@@ -2689,6 +2692,10 @@ function setupInput() {
   document.addEventListener('keydown', (e) => {
     if (e.repeat && (e.key === 'Escape' || e.key === 't' || e.key === 'T')) return;
     if (e.key === 'Escape') {
+      if (dismissPanelHelp()) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       if (isTripMenuOpen()) {
         if (tripMenu.phase === 'arrived') {
@@ -3374,6 +3381,9 @@ function updateAIView(drawRawScene: boolean) {
     occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
     controlSource: state.controlSource,
     rule: state.lastRule,
+    camera,
+    viewW: window.innerWidth,
+    viewH: window.innerHeight,
   };
 
   if (perceptionViz) {

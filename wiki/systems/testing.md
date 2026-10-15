@@ -1,7 +1,7 @@
 ---
 tags: [system]
-updated: 2026-10-14
-sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 33]
+updated: 2026-10-15
+sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33]
 ---
 
 # Testing and screenshots
@@ -17,7 +17,7 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 - `trafficStop.test.ts` — several NPCs at an all-way stop: each full-stops, no overlap, they leave in arrival order
 - `trafficFlow.test.ts` — random-walk exits, full-span reverse lanes, four cars arriving together, 2-minute N-car soak (progress, no reverse, no box camping)
 
-[[pr-25]] added `hudPanels.test.ts` (no overlapping rects at 1280×720 and 1920×1080; collapsed and dragged cards miss the minimap/banner) and `reengage.test.ts` (takeover → re-engage → replan; cruise with no trip; stop/yield still applied).
+[[pr-25]] added `hudPanels.test.ts` (no overlapping rects at 1280×720 and 1920×1080; collapsed and dragged cards miss the minimap/banner) and `reengage.test.ts` (takeover → re-engage → replan; cruise with no trip; stop/yield still applied). Layout tests also assert one shared width and one right edge for F1 (explainer + AI View) and F3 (those plus BEV). `hudPanelDom.test.ts` (happy-dom) checks the `?` popover open / click-outside / Esc path and that index.html uses `--hud-panel-width`.
 
 Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
@@ -27,7 +27,7 @@ Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spati
 
 `startMenu.test.ts` covers the overlay state machine: start → pick dest → driving → arrived menu (current pose as new start) → new dest → second trip. Clicks snap through `snapTripEnd` + `resolveTripDestination` (same-side and opposite-side curb). Map world↔canvas round-trips so start/dest pins stay aligned. `?demo=` / `?shot=` still skip the overlay. Live shots: `docs/screenshots/28-start-menu.png`, `29-arrived-menu.png`, `30-second-trip.png`.
 
-Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
+Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. HUD column shots are `hud_f1_panels.png`, `hud_f2_panels.png`, `hud_f3_panels.png`, and `hud_f3_help_popover.png`. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
 
 ## Key files
 
@@ -38,6 +38,8 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/trafficStop.test.ts`
 - `game/src/sim/trafficFlow.test.ts`
 - `game/src/ui/hudPanels.test.ts`
+- `game/src/ui/hudPanelDom.test.ts`
+- `game/src/ui/viewCopy.test.ts`
 - `game/src/sim/reengage.test.ts`
 - `game/src/sim/destination.test.ts`
 - `game/src/ui/startMenu.test.ts`

@@ -64,6 +64,15 @@ First person at about 50 km/h at an intersection.
 ### compare_fp_straight.png / compare_fp_steer_left.png / compare_fp_steer_right.png / compare_fp_intersection_50.png
 Side-by-side of the Tesla Model 3/Y reference (left) and the live hood shot (right).
 
+### hud_f1_panels.png / hud_f2_panels.png / hud_f3_panels.png
+Shared 300px right column on F1 / F2 / F3: view-info (name + one-line sensors + camera), AI View, and on F3 Waabi BEV + Sim World. Same right edge, 8px gaps, no overlap.
+
+### hud_f3_help_popover.png
+F3 view-info **?** popover to the left of the column (USES / unlike / camera copy), below the F1/F2/F3 tab bar. Closes on click-outside or Esc.
+
+### hud_f1_help_popover.png
+F1 **?** popover below the F1/F2/F3 tabs — the switcher stays fully visible.
+
 ### hud_panels_open.png
 Right-side column with explainer, AI View, and info all open — no overlap.
 

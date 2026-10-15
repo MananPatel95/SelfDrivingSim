@@ -1,7 +1,7 @@
 ---
 tags: [overview]
-updated: 2026-10-14
-sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28, 29, 30, 31, 33]
+updated: 2026-10-15
+sources: [1, 2, 3, 19, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33]
 ---
 
 # Overview
@@ -23,7 +23,7 @@ It is an educational sim, not a product of the named companies.
 - Ego vs cars / poles / signs / pedestrians uses mesh-matched OBBs and capsules, a spatial hash, and an impulse that can spin and shove traffic, snap street furniture above ~22 km/h, and tumble pedestrians. A counted hit increments the HUD and drops autopilot to manual.
 - Autopilot does not full-brake for roadside poles, trees, signs, or buildings off the asphalt, so left turns at corner poles complete. Contact with a pole still collides.
 - Reproducible shots: `?seed=` (default 3) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp|hit-car|hit-pole|hit-sign|hit-ped`.
-- Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). Live first person is a locked left-seat Tesla-style cockpit; the GLB and debug rays are hidden ([[ego-mesh]], [[pr-25]]). Right-side HUD cards stack, collapse, close, and drag.
+- Ego exterior is Kenney’s CC0 sedan-sports GLB (silver paint, dark glass, wheels in the arches). Live first person is a locked left-seat Tesla-style cockpit; the GLB and debug rays are hidden ([[ego-mesh]], [[pr-25]]). Right-side HUD cards share a 300px column, collapse, close, drag, and each has a **?** popover ([[hud]]).
 
 ## How to run
 
