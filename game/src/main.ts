@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { destinationPinWorld, PAD_ALONG, PAD_WIDTH, tripRoute } from './sim/rightLane';
+import { destinationPinWorld, LANE_OFFSET, PAD_ALONG, PAD_WIDTH, tripRoute } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
   applyCameraLayers,
@@ -95,6 +95,7 @@ import {
   type CityLook,
 } from './render/cityLook';
 import { tiledGroundMaterial } from './render/cityTextures';
+import { createSignGroup, getSignAssets } from './render/trafficSigns';
 import { dampAngle, headingFromVelocity, pedestrianMeshYaw } from './sim/pedestrianVisual';
 import { PostFx } from './render/postFx';
 import { LIDAR_CONFIGS } from './sensors/lidar';
@@ -298,6 +299,19 @@ let collisionShotAt = 0;
 let collisionCam: { x: number; y: number; z: number; lookX: number; lookY: number; lookZ: number } | null = null;
 let poleInstanced: THREE.InstancedMesh | null = null;
 let poleEntityIds: number[] = [];
+let signPoleInst: THREE.InstancedMesh | null = null;
+let stopBladeInst: THREE.InstancedMesh | null = null;
+let yieldBladeInst: THREE.InstancedMesh | null = null;
+type SignRecord = {
+  id: number;
+  kind: 'stop_sign' | 'yield_sign';
+  x: number;
+  y: number;
+  yaw: number;
+  poleIndex: number;
+  bladeIndex: number;
+};
+let signRecords: SignRecord[] = [];
 const signMeshes = new Map<number, THREE.Object3D>();
 const furnitureVisuals = new Map<number, THREE.Object3D>();
 const poleDummy = new THREE.Object3D();
@@ -837,53 +851,11 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       return pole;
     }
 
-    case 'stop_sign': {
-      const group = new THREE.Group();
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.07, 2.7, 8),
-        new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
-      );
-      pole.position.y = 1.35;
-      group.add(pole);
-      const rim = new THREE.Mesh(
-        new THREE.BoxGeometry(0.16, 1.15, 1.15),
-        new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }),
-      );
-      rim.position.y = 2.62;
-      group.add(rim);
-      const face = new THREE.Mesh(
-        new THREE.BoxGeometry(0.18, 0.92, 0.92),
-        new THREE.MeshLambertMaterial({ color: 0xc81e1e }),
-      );
-      face.position.y = 2.62;
-      group.add(face);
-      return group as unknown as THREE.Mesh;
-    }
+    case 'stop_sign':
+      return createSignGroup('stop_sign') as unknown as THREE.Mesh;
 
-    case 'yield_sign': {
-      const group = new THREE.Group();
-      const pole = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.07, 2.5, 8),
-        new THREE.MeshLambertMaterial({ color: 0x3a3a3a }),
-      );
-      pole.position.y = 1.25;
-      group.add(pole);
-      const board = new THREE.Mesh(
-        new THREE.ConeGeometry(0.7, 1.15, 3),
-        new THREE.MeshLambertMaterial({ color: 0xf4f4f4 }),
-      );
-      board.position.y = 2.55;
-      board.rotation.z = Math.PI;
-      group.add(board);
-      const inner = new THREE.Mesh(
-        new THREE.ConeGeometry(0.42, 0.7, 3),
-        new THREE.MeshLambertMaterial({ color: 0xc81e1e }),
-      );
-      inner.position.y = 2.5;
-      inner.rotation.z = Math.PI;
-      group.add(inner);
-      return group as unknown as THREE.Mesh;
-    }
+    case 'yield_sign':
+      return createSignGroup('yield_sign') as unknown as THREE.Mesh;
     
     default: {
       const geometry = new THREE.BoxGeometry(2, 2, 2);
@@ -966,6 +938,10 @@ function rebuildStaticCity() {
   staticCityMeshes = [];
   poleInstanced = null;
   poleEntityIds = [];
+  signPoleInst = null;
+  stopBladeInst = null;
+  yieldBladeInst = null;
+  signRecords = [];
   signMeshes.clear();
   const statics = simulation.getState().worldMap.staticEntities;
   const dummy = new THREE.Object3D();
@@ -1048,6 +1024,10 @@ function rebuildStaticCity() {
 
   poleInstanced = null;
   poleEntityIds = [];
+  signPoleInst = null;
+  stopBladeInst = null;
+  yieldBladeInst = null;
+  signRecords = [];
   signMeshes.clear();
   const poles = statics.filter(e => e.classType === 'pole');
   if (poles.length > 0) {
@@ -1073,14 +1053,62 @@ function rebuildStaticCity() {
   }
 
   const signs = statics.filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign');
-  for (const sign of signs) {
-    const mesh = createEntityMesh(sign.classType) as THREE.Mesh;
-    mesh.position.set(sign.transform.position.x, 0, -sign.transform.position.y);
-    mesh.rotation.y = meshYawForHeading(sign.transform.rotation);
-    mesh.userData.entityId = sign.id;
-    scene.add(mesh);
-    staticCityMeshes.push(mesh);
-    signMeshes.set(sign.id, mesh);
+  const stops = signs.filter(e => e.classType === 'stop_sign');
+  const yields = signs.filter(e => e.classType === 'yield_sign');
+  const signAssets = getSignAssets();
+  const poseSignDummy = (x: number, y: number, yaw: number, hidden = false) => {
+    dummy.position.set(x, 0, -y);
+    dummy.rotation.set(0, meshYawForHeading(yaw), 0);
+    dummy.scale.set(hidden ? 0 : 1, hidden ? 0 : 1, hidden ? 0 : 1);
+    dummy.updateMatrix();
+  };
+  if (signs.length > 0) {
+    signPoleInst = new THREE.InstancedMesh(signAssets.poleGeo, signAssets.poleMat, signs.length);
+    signPoleInst.castShadow = true;
+    signPoleInst.frustumCulled = false;
+    signPoleInst.userData.sharedSignAssets = true;
+    signs.forEach((sign, i) => {
+      poseSignDummy(sign.transform.position.x, sign.transform.position.y, sign.transform.rotation);
+      signPoleInst!.setMatrixAt(i, dummy.matrix);
+      signRecords.push({
+        id: sign.id,
+        kind: sign.classType as 'stop_sign' | 'yield_sign',
+        x: sign.transform.position.x,
+        y: sign.transform.position.y,
+        yaw: sign.transform.rotation,
+        poleIndex: i,
+        bladeIndex: sign.classType === 'stop_sign'
+          ? stops.indexOf(sign)
+          : yields.indexOf(sign),
+      });
+    });
+    signPoleInst.instanceMatrix.needsUpdate = true;
+    scene.add(signPoleInst);
+    staticCityMeshes.push(signPoleInst);
+  }
+  if (stops.length > 0) {
+    stopBladeInst = new THREE.InstancedMesh(signAssets.stopGeo, signAssets.stopMat, stops.length);
+    stopBladeInst.frustumCulled = false;
+    stopBladeInst.userData.sharedSignAssets = true;
+    stops.forEach((sign, i) => {
+      poseSignDummy(sign.transform.position.x, sign.transform.position.y, sign.transform.rotation);
+      stopBladeInst!.setMatrixAt(i, dummy.matrix);
+    });
+    stopBladeInst.instanceMatrix.needsUpdate = true;
+    scene.add(stopBladeInst);
+    staticCityMeshes.push(stopBladeInst);
+  }
+  if (yields.length > 0) {
+    yieldBladeInst = new THREE.InstancedMesh(signAssets.yieldGeo, signAssets.yieldMat, yields.length);
+    yieldBladeInst.frustumCulled = false;
+    yieldBladeInst.userData.sharedSignAssets = true;
+    yields.forEach((sign, i) => {
+      poseSignDummy(sign.transform.position.x, sign.transform.position.y, sign.transform.rotation);
+      yieldBladeInst!.setMatrixAt(i, dummy.matrix);
+    });
+    yieldBladeInst.instanceMatrix.needsUpdate = true;
+    scene.add(yieldBladeInst);
+    staticCityMeshes.push(yieldBladeInst);
   }
 
   const stopLines: Array<{ x: number; y: number; z: number; ry?: number }> = [];
@@ -1252,18 +1280,39 @@ function updateFurnitureVisuals() {
     poleInstanced.instanceMatrix.needsUpdate = true;
   }
 
+  if (signPoleInst) {
+    for (const rec of signRecords) {
+      const snapped = broken.some(b => b.id === rec.id);
+      poleDummy.position.set(rec.x, 0, -rec.y);
+      poleDummy.rotation.set(0, meshYawForHeading(rec.yaw), 0);
+      poleDummy.scale.set(snapped ? 0 : 1, snapped ? 0 : 1, snapped ? 0 : 1);
+      poleDummy.updateMatrix();
+      signPoleInst.setMatrixAt(rec.poleIndex, poleDummy.matrix);
+      const blade = rec.kind === 'stop_sign' ? stopBladeInst : yieldBladeInst;
+      if (blade && rec.bladeIndex >= 0) blade.setMatrixAt(rec.bladeIndex, poleDummy.matrix);
+    }
+    signPoleInst.instanceMatrix.needsUpdate = true;
+    if (stopBladeInst) stopBladeInst.instanceMatrix.needsUpdate = true;
+    if (yieldBladeInst) yieldBladeInst.instanceMatrix.needsUpdate = true;
+  }
+
   for (const b of broken) {
     if (b.classType === 'stop_sign' || b.classType === 'yield_sign') {
-      const mesh = signMeshes.get(b.id);
-      if (mesh) {
-        const t = Math.min(1, b.fallAngle / (Math.PI / 2));
-        const along = 1.35 * t;
-        mesh.position.set(b.x + b.fallDirX * along, 0.02, -(b.y + b.fallDirY * along));
-        mesh.rotation.order = 'YXZ';
-        mesh.rotation.y = meshYawForHeading(b.yaw);
-        mesh.rotation.x = b.fallDirY * b.fallAngle;
-        mesh.rotation.z = -b.fallDirX * b.fallAngle;
+      let mesh = furnitureVisuals.get(b.id) ?? signMeshes.get(b.id);
+      if (!mesh) {
+        mesh = createSignGroup(b.classType);
+        mesh.userData.entityId = b.id;
+        scene.add(mesh);
+        furnitureVisuals.set(b.id, mesh);
+        signMeshes.set(b.id, mesh);
       }
+      const t = Math.min(1, b.fallAngle / (Math.PI / 2));
+      const along = 1.35 * t;
+      mesh.position.set(b.x + b.fallDirX * along, 0.02, -(b.y + b.fallDirY * along));
+      mesh.rotation.order = 'YXZ';
+      mesh.rotation.y = meshYawForHeading(b.yaw);
+      mesh.rotation.x = b.fallDirY * b.fallAngle;
+      mesh.rotation.z = -b.fallDirX * b.fallAngle;
       continue;
     }
     let mesh = furnitureVisuals.get(b.id);
@@ -1733,7 +1782,9 @@ function applyQuality(level: QualityLevel) {
 }
 
 function disposeObject(obj: THREE.Object3D) {
+  if (obj.userData.sharedSignAssets) return;
   obj.traverse(child => {
+    if (child.userData.sharedSignAssets) return;
     const mesh = child as THREE.Mesh;
     if (mesh.geometry) mesh.geometry.dispose();
     const mat = mesh.material;
@@ -3692,6 +3743,75 @@ async function init() {
     egoPose() {
       const e = simulation.getState().ego;
       return { x: e.transform.position.x, y: e.transform.position.y, yaw: e.transform.rotation };
+    },
+    signList() {
+      return simulation.getState().worldMap.staticEntities
+        .filter(e => e.classType === 'stop_sign' || e.classType === 'yield_sign')
+        .map(e => ({
+          id: e.id,
+          kind: e.classType,
+          x: e.transform.position.x,
+          y: e.transform.position.y,
+          yaw: e.transform.rotation,
+        }));
+    },
+    approachSign(id: number, dist = 9) {
+      const e = simulation.getState().worldMap.staticEntities.find(s => s.id === id);
+      if (!e) return null;
+      const yaw = e.transform.rotation;
+      const heading = yaw + Math.PI;
+      const fx = Math.cos(heading);
+      const fy = Math.sin(heading);
+      const rx = Math.sin(heading);
+      const ry = -Math.cos(heading);
+      const sideIn = 8.4 - LANE_OFFSET;
+      simulation.getState().trafficVehicles = [];
+      simulation.getState().pedestrians = [];
+      simulation.beginParked({
+        x: e.transform.position.x - rx * sideIn - fx * dist,
+        y: e.transform.position.y - ry * sideIn - fy * dist,
+        z: 0,
+      }, heading);
+      captureEgoPose();
+      prevEgoX = currEgoX;
+      prevEgoY = currEgoY;
+      prevEgoYaw = currEgoYaw;
+      prevEgoRoll = currEgoRoll;
+      prevEgoPitch = currEgoPitch;
+      setCameraMode('hood');
+      return {
+        id,
+        kind: e.classType,
+        x: e.transform.position.x,
+        y: e.transform.position.y,
+        yaw,
+        heading,
+      };
+    },
+    lookAtSignFace(id: number, dist = 3.8, side = 1.55) {
+      const e = simulation.getState().worldMap.staticEntities.find(s => s.id === id);
+      if (!e) return null;
+      const yaw = e.transform.rotation;
+      const heading = yaw + Math.PI;
+      const fx = Math.cos(yaw);
+      const fy = Math.sin(yaw);
+      const rx = Math.sin(heading);
+      const ry = -Math.cos(heading);
+      const sx = e.transform.position.x;
+      const sy = e.transform.position.y;
+      const cx = sx + fx * dist - rx * side;
+      const cy = sy + fy * dist - ry * side;
+      collisionCam = {
+        x: cx,
+        y: 1.72,
+        z: -cy,
+        lookX: sx,
+        lookY: 2.52,
+        lookZ: -sy,
+      };
+      debugSideCam = null;
+      debugHeroCam = null;
+      return { id, kind: e.classType, x: sx, y: sy, yaw };
     },
     freezeSim() {
       isPaused = true;

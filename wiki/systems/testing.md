@@ -21,7 +21,7 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 
 Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
-`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures. `pedestrianVisual.test.ts` asserts walking heading stays within 10° of `atan2(velocity)`.
+`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures. `pedestrianVisual.test.ts` asserts walking heading stays within 10° of `atan2(velocity)`. `trafficSigns.test.ts` asserts shared pole/stop/yield materials, a blade that faces local +X at `SIGN_BLADE_Y`, and an 8-vertex flat-top octagon.
 
 `destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset 5.775 m, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on the **arrival road** (`onArrivalAsphalt` + `distanceToRightCurb` ~0.3 m), not `|x| < 7` (N–S only) or `pointOnAsphalt` (OR of both axes). Eastbound unit cases use the Y curb so `|x| < 7` would wrongly fail x≈50. The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. `perceptionViz.test.ts` asserts world-space `%` sprites stay capped, fade with distance, and hide under the HUD. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs (those two demos clear traffic and pedestrians so a ped cannot steal the arrival).
 
@@ -52,6 +52,7 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/render/f3Perf.test.ts`
 - `game/src/render/cityLook.test.ts`
 - `game/src/sim/pedestrianVisual.test.ts`
+- `game/src/render/trafficSigns.test.ts`
 - `game/src/sim/collision.test.ts`
 - `game/src/sim/collisionSim.test.ts`
 - `docs/screenshots/README.md`

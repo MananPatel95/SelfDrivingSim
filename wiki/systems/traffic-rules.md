@@ -1,6 +1,6 @@
 ---
 tags: [system]
-updated: 2026-10-12
+updated: 2026-10-15
 sources: [3, 5, 20, 24]
 ---
 
@@ -24,7 +24,7 @@ AI cars no longer ride one full-map lane until it dies. They **random-walk the g
 
 NPC IDM follow is **same-heading only**, and the ego is in the leader set (`egoAsTraffic`), so cross-traffic in the box is not treated as a car to queue behind. Pedestrian yield from [[pr-5]] still applies on the approach, not inside the box.
 
-3D `stop_sign` / `yield_sign` meshes sit on the right of each signed approach (`signPose`); white stop-line quads mark signed approaches.
+3D `stop_sign` / `yield_sign` meshes sit on the right of each signed approach (`signPose`); white stop-line quads mark signed approaches. Visuals are North-American MUTCD blades (red octagon **STOP**, inverted-triangle **YIELD**) facing oncoming traffic. Placement and `decideIntersection` did not change.
 
 ## Key files
 
@@ -35,3 +35,4 @@ NPC IDM follow is **same-heading only**, and the ego is in the leader set (`egoA
 - `game/src/sim/trafficStop.test.ts`
 - `game/src/sim/trafficFlow.test.ts`
 - `game/src/sim/recovery.ts`
+- `game/src/render/trafficSigns.ts`

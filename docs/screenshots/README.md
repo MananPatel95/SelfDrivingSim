@@ -131,6 +131,15 @@ Full stop at an all-way stop. Red stop sign, `stop_sign` label, banner "Stopping
 ### 18-yield-intersection.png
 Yield approach with a `yield_sign` on the right of the minor road.
 
+### 39-stop-f1.png
+F1 hood close-up of a North-American stop: red octagon, white border, white STOP, pole.
+
+### 40-yield-f1.png
+F1 hood close-up of a yield: inverted triangle, thick red border, white field, YIELD.
+
+### 41-signs-wide.png
+F1 wide shot of an approach with the NA sign on the right, facing oncoming traffic.
+
 ### 19-minimap-intersection-mix.png
 Minimap marks stop (red), yield (yellow), and uncontrolled (grey) junctions.
 
