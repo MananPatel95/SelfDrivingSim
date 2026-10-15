@@ -3,7 +3,7 @@
  * Layout math is DOM-free so Vitest can check overlaps at common resolutions.
  */
 
-export type PanelId = 'explainer' | 'ai-view' | 'info';
+export type PanelId = 'explainer' | 'ai-view' | 'info' | 'bev';
 
 export interface PanelState {
   id: PanelId;
@@ -23,12 +23,45 @@ export interface Rect {
 }
 
 export const PANEL_STORAGE_KEY = 'autonomy-hud-panels';
-export const PANEL_IDS: readonly PanelId[] = ['explainer', 'ai-view', 'info'];
+export const PANEL_IDS: readonly PanelId[] = ['explainer', 'ai-view', 'info', 'bev'];
+
+/** Shared docked/floating width. Shrinks only when the viewport cannot fit 300px + gutter. */
+export const PANEL_WIDTH = 300;
+export const PANEL_GUTTER = 24;
+
+export function panelWidthForViewport(vw: number): number {
+  return Math.min(PANEL_WIDTH, Math.max(160, vw - PANEL_GUTTER));
+}
+
+/** Left edge of the docked right-side column (STACK_RIGHT = 10). */
+export function hudColumnLeft(vw: number): number {
+  return vw - 10 - panelWidthForViewport(vw);
+}
+
+/** True when a world label would be sliced by the right-side HUD column. */
+export function spriteHitsHudColumn(screenX: number, vw: number, halfPx = 90): boolean {
+  return screenX + halfPx > hudColumnLeft(vw) - 8;
+}
+
+/** True when a world label overlaps the right column or reserved HUD chrome. */
+export function spriteHitsReservedHud(
+  screenX: number,
+  screenY: number,
+  vw: number,
+  vh: number,
+  halfW = 48,
+  halfH = 12,
+): boolean {
+  if (spriteHitsHudColumn(screenX, vw, halfW)) return true;
+  const box = { id: 'label', x: screenX - halfW, y: screenY - halfH, w: halfW * 2, h: halfH * 2 };
+  return reservedHudRects(vw, vh).some((r) => rectsOverlap(box, r, 6));
+}
 
 export const PANEL_SIZE: Record<PanelId, { w: number; h: number; collapsedH: number }> = {
-  explainer: { w: 360, h: 260, collapsedH: 36 },
-  'ai-view': { w: 440, h: 210, collapsedH: 36 },
-  info: { w: 350, h: 380, collapsedH: 36 },
+  explainer: { w: PANEL_WIDTH, h: 108, collapsedH: 36 },
+  'ai-view': { w: PANEL_WIDTH, h: 196, collapsedH: 36 },
+  info: { w: PANEL_WIDTH, h: 320, collapsedH: 36 },
+  bev: { w: PANEL_WIDTH, h: 280, collapsedH: 36 },
 };
 
 const GEAR = { size: 36, top: 10, right: 10, gap: 8 };
@@ -46,6 +79,7 @@ export function defaultStates(): Record<PanelId, PanelState> {
     explainer: defaultPanelState('explainer'),
     'ai-view': defaultPanelState('ai-view'),
     info: defaultPanelState('info'),
+    bev: defaultPanelState('bev'),
   };
 }
 
@@ -176,7 +210,7 @@ export function layoutPanels(
     const id = docked[i]!;
     const size = PANEL_SIZE[id];
     const h = Math.max(32, natural[i]! * scale);
-    const w = Math.min(size.w, Math.max(220, vw * 0.34));
+    const w = panelWidthForViewport(vw);
     rects.push({
       id,
       x: vw - STACK_RIGHT - w,
@@ -191,11 +225,12 @@ export function layoutPanels(
     const st = states[id]!;
     const size = PANEL_SIZE[id];
     const h = st.collapsed ? size.collapsedH : size.h;
+    const w = panelWidthForViewport(vw);
     const raw = {
       id,
-      x: st.x ?? vw - STACK_RIGHT - size.w,
+      x: st.x ?? vw - STACK_RIGHT - w,
       y: st.y ?? STACK_TOP,
-      w: size.w,
+      w,
       h,
     };
     rects.push(avoidReserved(raw, reserved, vw, vh));

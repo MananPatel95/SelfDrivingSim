@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-14
-sources: [3, 6, 12, 20, 24, 29]
+sources: [3, 6, 12, 20, 24, 29, 31, 33, 34]
 ---
 
 # Decisions
@@ -40,6 +40,7 @@ World collision response is also TypeScript (`collision.ts`): SAT / capsule over
 - [[pr-13]]: map start/end; both buttons required a full trip. **Supersedes** the compass UI.
 - [[pr-19]]: **Just drive** with no trip; autopilot still needs both map points. **Supersedes** the “manual requires a route” rule from #13.
 - [[pr-25]]: **T** / the Manual banner re-engages from the current pose (replan to the trip destination, or cruise with no trip). WASD still takes over on a new press. **Supersedes** “once you take over there is no Auto”.
+- Start / arrived overlay: the live menu no longer asks for a start click. The car’s current pose is the start; the user picks a view, camera, and destination (map click or random, via `snapTripEnd` + `resolveTripDestination` so opposite-side clicks U-turn). Arrival reopens the same overlay. **Just drive** remains. This **supersedes** the two-click start-then-end overlay from [[pr-13]] / [[pr-19]]. Planner / `tripRoute` stay the destination API — the menu only calls `beginTrip` / `beginParked`.
 
 ## Right-hand traffic and stop/yield mix
 

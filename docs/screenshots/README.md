@@ -64,6 +64,15 @@ First person at about 50 km/h at an intersection.
 ### compare_fp_straight.png / compare_fp_steer_left.png / compare_fp_steer_right.png / compare_fp_intersection_50.png
 Side-by-side of the Tesla Model 3/Y reference (left) and the live hood shot (right).
 
+### hud_f1_panels.png / hud_f2_panels.png / hud_f3_panels.png
+Shared 300px right column on F1 / F2 / F3: view-info (name + one-line sensors + camera), AI View, and on F3 Waabi BEV + Sim World. Same right edge, 8px gaps, no overlap.
+
+### hud_f3_help_popover.png
+F3 view-info **?** popover to the left of the column (USES / unlike / camera copy), below the F1/F2/F3 tab bar. Closes on click-outside or Esc.
+
+### hud_f1_help_popover.png
+F1 **?** popover below the F1/F2/F3 tabs — the switcher stays fully visible.
+
 ### hud_panels_open.png
 Right-side column with explainer, AI View, and info all open — no overlap.
 
@@ -75,6 +84,18 @@ One card dragged off the stack, still clear of the minimap / speed HUD / banner.
 
 ### autopilot_engaged.png
 Centre banner after T / banner click re-engages Auto.
+
+### 28-start-menu.png
+Launch overlay over the orbiting city: **AUTONOMY CITY: How Machines See**, F1–F3 cards, chase / first person, city map with the start triangle.
+
+### 28-start-menu-dest.png
+Same overlay after a map click: purple preview and a pink curb pin. Start is enabled.
+
+### 29-arrived-menu.png
+**Arrived — choose next destination** after a pink-pad stop. The white triangle is the new start.
+
+### 30-second-trip.png
+Second trip underway from the arrived menu without a reload (HUD visible, dest pin on the minimap).
 
 ## Environment Effects
 
@@ -122,6 +143,12 @@ Same trip. Minimap shows the purple remaining route and the pink destination pin
 
 ### 26-destination-pullover-stop.png
 Arrival: ego pulled over onto the pad and stopped. Speed ~0, nose in the right-hand roadside, pin beside the car.
+
+### 27-destination-opposite-uturn.png
+`?seed=3&demo=arrive-opp`. Left-curb dest. Ego is in a legal intersection U-turn (or the loop onto the opposite heading), moving, AI View rendered, no huge green `%` over the HUD.
+
+### 28-destination-opposite-arrived.png
+Same trip after the U-turn. Sedan parked on the left-curb pad, heading-aligned, Arrived / ARRIVED, pin hidden, body on asphalt.
 
 ## Modern cabin and Kenney sedan-sports
 

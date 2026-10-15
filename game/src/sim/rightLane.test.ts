@@ -4,14 +4,22 @@ import { vec3 } from './math';
 import { createPlannerState, planTrajectory } from '../planning/planner';
 import { createEgoState, updateVehicle, vehicleInputFromAccel } from './vehicle';
 import {
+  CURB_CLEARANCE,
   LANE_OFFSET,
+  PAD_WIDTH,
   PULL_OVER_OFFSET,
+  ROAD_HALF,
+  SEDAN_HALF_WIDTH,
+  distanceToRightCurb,
   inRightLane,
   lateralFromCenter,
   mergeIntoLaneRoute,
+  onArrivalAsphalt,
   placeInRightLane,
   roadsideDestination,
+  resolveTripDestination,
   rightLaneRoute,
+  sedanCorners,
   straddlesCenter,
   tripRoute,
   turnKind,
@@ -137,5 +145,58 @@ describe('right-hand traffic lanes', () => {
     const mid = route[Math.floor(route.length / 2)]!;
     expect(mid.x).toBeLessThan(tail.x);
     expect(inRightLane(mid.x, mid.y, Math.PI / 2)).toBe(true);
+  });
+
+  it('keeps the parked sedan ~0.3 m off the curb on every heading', () => {
+    expect(PULL_OVER_OFFSET).toBeCloseTo(ROAD_HALF - CURB_CLEARANCE - SEDAN_HALF_WIDTH);
+    expect(PAD_WIDTH).toBeCloseTo(2 * (ROAD_HALF - PULL_OVER_OFFSET));
+    const poses: Array<{ x: number; y: number; yaw: number }> = [
+      { x: PULL_OVER_OFFSET, y: 40, yaw: Math.PI / 2 },
+      { x: -PULL_OVER_OFFSET, y: 78, yaw: -Math.PI / 2 },
+      { x: 50, y: -PULL_OVER_OFFSET, yaw: 0 },
+      { x: -50, y: PULL_OVER_OFFSET, yaw: Math.PI },
+    ];
+    for (const pose of poses) {
+      const corners = sedanCorners(pose.x, pose.y, pose.yaw);
+      for (const c of corners) {
+        expect(onArrivalAsphalt(c.x, c.y, pose.yaw)).toBe(true);
+        expect(distanceToRightCurb(c.x, c.y, pose.yaw)).toBeGreaterThan(0.12);
+      }
+      const rightGap = Math.min(...corners.map((c) => distanceToRightCurb(c.x, c.y, pose.yaw)));
+      expect(rightGap).toBeCloseTo(CURB_CLEARANCE, 2);
+      const padOuter = lateralFromCenter(pose.x, pose.y, pose.yaw) + PAD_WIDTH / 2;
+      expect(padOuter).toBeCloseTo(ROAD_HALF, 5);
+    }
+  });
+
+  it('eastbound asphalt follows the Y curb — |x|<7 is the wrong oracle', () => {
+    const dest = roadsideDestination(vec3(50, 0, 0), 0);
+    expect(dest.y).toBeCloseTo(-PULL_OVER_OFFSET);
+    const corners = sedanCorners(dest.x, dest.y, 0);
+    for (const c of corners) {
+      expect(Math.abs(c.x)).toBeGreaterThan(7);
+      expect(onArrivalAsphalt(c.x, c.y, 0)).toBe(true);
+      expect(distanceToRightCurb(c.x, c.y, 0)).toBeGreaterThan(0.12);
+    }
+    const overCurb = sedanCorners(50, -(ROAD_HALF + 0.4), 0);
+    const rightmost = overCurb.reduce((a, b) => (
+      distanceToRightCurb(a.x, a.y, 0) < distanceToRightCurb(b.x, b.y, 0) ? a : b
+    ));
+    expect(onArrivalAsphalt(rightmost.x, rightmost.y, 0)).toBe(false);
+    expect(distanceToRightCurb(rightmost.x, rightmost.y, 0)).toBeLessThan(0);
+  });
+
+  it('snaps an opposite-side click onto the left curb and arrives heading south', () => {
+    const resolved = resolveTripDestination(vec3(0, 22, 0), vec3(-4.5, 78, 0));
+    expect(resolved.opposite).toBe(true);
+    expect(resolved.pad.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    expect(resolved.arrivalHeading).toBeCloseTo(-Math.PI / 2, 5);
+    const route = tripRoute(vec3(0, 22, 0), vec3(-4.5, 78, 0));
+    const tail = route[route.length - 1]!;
+    expect(tail.x).toBeCloseTo(-PULL_OVER_OFFSET, 1);
+    expect(tail.y).toBeCloseTo(78, 0);
+    const prev = route[route.length - 2]!;
+    expect(tail.y).toBeLessThan(prev.y);
+    expect(Math.max(...route.map(p => p.y))).toBeGreaterThan(95);
   });
 });

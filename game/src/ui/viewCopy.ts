@@ -1,20 +1,25 @@
 /**
  * Short copy for the top-right of each stack / camera view:
- * what this view uses, and how it differs from the others.
+ * a one-line summary on the card, longer uses/diff in the ? popover.
  */
 
 export type StackProfile = 'tesla' | 'waymo' | 'waabi';
 export type CameraMode = 'chase' | 'hood' | 'bev' | 'orbit';
+export type PanelHelpId = 'explainer' | 'ai-view' | 'info' | 'bev';
 
 export interface ViewCopy {
   title: string;
+  /** One-line “what this stack uses” for the compact view-info card. */
+  summary?: string;
   uses: string;
   diff: string;
 }
 
-export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string; percLabel: string }> = {
+export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string; percLabel: string; blurb: string }> = {
   tesla: {
     title: 'F1 · Tesla-style',
+    summary: 'Cameras only → occupancy voxels from pixels',
+    blurb: 'Cameras only — depth from pixels, no lidar or map.',
     uses: 'Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. Lights and signs are read from the image.',
     diff: 'Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range and night depth.',
     rawLabel: 'Front camera (vision)',
@@ -22,6 +27,8 @@ export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string
   },
   waymo: {
     title: 'F2 · Waymo-style',
+    summary: 'Lidar + radar + cameras → 3D boxes on an HD map',
+    blurb: 'Lidar + radar + cameras, fused on a prior HD map.',
     uses: 'Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
     diff: 'Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes. This stack is multi-sensor + geofenced map: more redundant, only works where the map exists.',
     rawLabel: 'Ego camera (context)',
@@ -29,6 +36,8 @@ export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string
   },
   waabi: {
     title: 'F3 · Waabi-style',
+    summary: 'Lidar + camera + radar → occupancy grid + 1–3 s forecast',
+    blurb: 'Bird’s-eye occupancy — where space will be in 1–3 s.',
     uses: 'Lidar, cameras, and radar fused into a bird’s-eye occupancy grid, plus 1 s / 2 s / 3 s future occupancy and a fan of scored trajectories. Mid-level reps stay readable.',
     diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Sim World), not just “what is that object now?”',
     rawLabel: 'Ego camera (context)',
@@ -60,5 +69,58 @@ export const CAMERA_VIEW_COPY: Record<CameraMode, ViewCopy> = {
 };
 
 export function aiViewTitle(profile: StackProfile): string {
-  return `AI View — ${STACK_VIEW_COPY[profile].title}`;
+  const short = STACK_VIEW_COPY[profile].title.split('·')[0]!.trim();
+  return `AI View · ${short}`;
+}
+
+export function panelHelpCopy(
+  id: PanelHelpId,
+  stack: StackProfile,
+  camera: CameraMode,
+): { title: string; body: string } {
+  const s = STACK_VIEW_COPY[stack];
+  const cam = CAMERA_VIEW_COPY[camera];
+  if (id === 'explainer') {
+    return {
+      title: s.title,
+      body: [
+        `Uses: ${s.uses}`,
+        `Unlike the others: ${s.diff}`,
+        `${cam.title}: ${cam.uses}`,
+        `Unlike the other cameras: ${cam.diff}`,
+      ].join('\n\n'),
+    };
+  }
+  if (id === 'ai-view') {
+    const how: Record<StackProfile, string> = {
+      tesla: 'Left inset is the raw front camera (click it for first person). Right inset draws vision boxes: magenta = pedestrians, green = cars and stop/yield signs. Cyan voxels in the world are occupied cells inferred from pixels — there is no lidar cloud.',
+      waymo: 'Left inset is the ego camera for context. Right inset draws fused lidar/radar boxes with track IDs on the HD map. These are current object tracks, not a future occupancy forecast.',
+      waabi: 'Left inset is the ego camera. Right inset is a 2D bird’s-eye occupancy map (same idea as the bigger Waabi BEV panel): warm cells are occupied, the cyan dot is you.',
+    };
+    return {
+      title: aiViewTitle(stack),
+      body: [
+        how[stack],
+        `This panel shows ${s.percLabel.toLowerCase()}. V hides the panel. G overlays ground-truth misses (red = missed, orange = extra).`,
+      ].join('\n\n'),
+    };
+  }
+  if (id === 'bev') {
+    return {
+      title: 'Waabi BEV + Sim World',
+      body: [
+        'Top row is bird’s-eye occupancy. Current is now. +1s / +2s / +3s are where the stack thinks space will be occupied. Heat is blue (low) → red (high). The cyan dot is the ego car.',
+        'The lower fan is scored trajectories: orange = candidates, green = the chosen path.',
+        'The table is Sim World — adversarial variants (timing / speed / path). ✓ passed, ✗ failed. TTC is time-to-collision; amber under 2 s is tight.',
+        'World boxes are current tracks. Cyan voxels are occupied cells in the same BEV frame.',
+      ].join('\n\n'),
+    };
+  }
+  return {
+    title: 'Stack info',
+    body: [
+      'I toggles this card. It is the longer baseline for the active stack: sensors, internal representation, strengths, weaknesses, and a real-world example.',
+      s.uses,
+    ].join('\n\n'),
+  };
 }

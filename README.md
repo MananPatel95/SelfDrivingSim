@@ -143,7 +143,8 @@ make dev
 
 | Key | Action |
 |-----|--------|
-| Esc / ⚙ | Pause / settings (Resume, Restart, Quality, Perception, Shadow, camera, controls) |
+| Enter | Start / continue the trip from the start or arrived menu |
+| Esc / ⚙ | Close the arrived menu, or pause / settings while driving |
 | WASD / arrows | Drive (W throttle, S brake then reverse, A/D steer; takes over from autopilot) |
 | Space | Handbrake (rear lock / oversteer) |
 | T | Toggle AUTOPILOT / MANUAL (re-engage from current pose) |

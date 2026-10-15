@@ -6,7 +6,13 @@ import {
   overlapsReserved,
   parsePanelStates,
   panelsKeyAction,
+  panelWidthForViewport,
+  hudColumnLeft,
+  spriteHitsHudColumn,
+  spriteHitsReservedHud,
   PANEL_IDS,
+  PANEL_SIZE,
+  PANEL_WIDTH,
   type PanelId,
   type PanelState,
 } from './hudPanels';
@@ -28,9 +34,21 @@ describe('HUD panel layout', () => {
   for (const { w, h } of SIZES) {
     it(`stacks open panels without overlap at ${w}×${h}`, () => {
       const rects = layoutPanels(allOpen(), w, h, { open: [...PANEL_IDS] });
-      expect(rects).toHaveLength(3);
+      expect(rects).toHaveLength(PANEL_IDS.length);
       expect(overlappingPairs(rects)).toEqual([]);
       expect(overlapsReserved(rects, w, h)).toEqual([]);
+    });
+
+    it(`gives docked panels one width and one right edge at ${w}×${h}`, () => {
+      const f1 = layoutPanels(allOpen(), w, h, { open: ['explainer', 'ai-view'] });
+      const f3 = layoutPanels(allOpen(), w, h, { open: ['explainer', 'ai-view', 'bev'] });
+      for (const rects of [f1, f3]) {
+        expect(new Set(rects.map((r) => r.w)).size).toBe(1);
+        expect(new Set(rects.map((r) => r.x + r.w)).size).toBe(1);
+        expect(rects[0]!.w).toBe(panelWidthForViewport(w));
+        expect(rects[0]!.w).toBeLessThanOrEqual(PANEL_WIDTH);
+        expect(rects[0]!.x + rects[0]!.w).toBe(w - 10);
+      }
     });
 
     it(`keeps a collapsed panel in the column at ${w}×${h}`, () => {
@@ -53,6 +71,19 @@ describe('HUD panel layout', () => {
       expect(expl.x).toBeGreaterThan(220);
     });
   }
+
+  it('uses one 300px width for every panel size', () => {
+    const widths = new Set(PANEL_IDS.map((id) => PANEL_SIZE[id].w));
+    expect(widths).toEqual(new Set([PANEL_WIDTH]));
+    expect(panelWidthForViewport(1920)).toBe(300);
+    expect(panelWidthForViewport(320)).toBe(296);
+    expect(hudColumnLeft(1280)).toBe(970);
+    expect(spriteHitsHudColumn(970, 1280)).toBe(true);
+    expect(spriteHitsHudColumn(400, 1280)).toBe(false);
+    expect(spriteHitsReservedHud(980, 80, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(80, 120, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(400, 360, 1280, 720)).toBe(false);
+  });
 
   it('round-trips localStorage JSON', () => {
     const raw = JSON.stringify({

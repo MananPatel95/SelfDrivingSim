@@ -10,6 +10,9 @@ import type { Track } from '../stacks/perception';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
 import { writeOccupancyRgbaAiView } from './occupancyPaint';
+import { spriteHitsReservedHud } from '../ui/hudPanels';
+
+const _labelNdc = new THREE.Vector3();
 
 export interface VizWorkStats {
   predArrayAllocs: number;
@@ -54,6 +57,9 @@ export interface PerceptionVizInput {
   occupancy?: BEVOccupancy;
   controlSource?: 'policy' | 'human' | 'oracle';
   rule?: { reason: string; severity: DecisionInfo['severity'] } | null;
+  camera?: THREE.Camera;
+  viewW?: number;
+  viewH?: number;
 }
 
 function pathColor(severity: DecisionInfo['severity']): number {
@@ -122,6 +128,27 @@ export function computeDecision(input: PerceptionVizInput): DecisionInfo {
   return { text: `Cruising: lane clear, ${Math.round(speed * 3.6)} km/h`, severity: 'go' };
 }
 
+export const LABEL_TARGET_PX = 16;
+export const LABEL_MAX_PX = 22;
+export const LABEL_ASPECT = 4;
+export const LABEL_FADE_START = 36;
+export const LABEL_FADE_END = 90;
+export const LABEL_NEAR_HIDE = 3.5;
+
+/** World height so a label stays ~16–22 px tall at this camera distance. */
+export function labelWorldHeight(dist: number, viewH: number, fovDeg: number): number {
+  const vFov = (fovDeg * Math.PI) / 180;
+  const worldPerPx = (2 * Math.max(0.6, dist) * Math.tan(vFov / 2)) / Math.max(1, viewH);
+  return Math.min(LABEL_MAX_PX, LABEL_TARGET_PX) * worldPerPx;
+}
+
+export function labelOpacityForDistance(dist: number): number {
+  if (dist < LABEL_NEAR_HIDE) return 0;
+  if (dist >= LABEL_FADE_END) return 0;
+  if (dist <= LABEL_FADE_START) return 0.88;
+  return 0.88 * (1 - (dist - LABEL_FADE_START) / (LABEL_FADE_END - LABEL_FADE_START));
+}
+
 function makeLabelSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -135,10 +162,18 @@ function makeLabelSprite(text: string, color: string): THREE.Sprite {
   ctx.fillText(text, 128, 40);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sprite.scale.set(4.2, 1.05, 1);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  sprite.scale.set(LABEL_ASPECT * 0.4, 0.4, 1);
   return sprite;
 }
+
+/** On, but capped / faded / HUD-clipped so they cannot cover the panels. */
+export const DRAW_WORLD_LABEL_SPRITES = true;
 
 export class PerceptionVisualizer {
   readonly group = new THREE.Group();
@@ -221,8 +256,38 @@ export class PerceptionVisualizer {
     this.updatePredictions(input);
     this.updatePlan(input, decision);
     this.updateLabels(input);
+    this.layoutWorldLabels(input);
     this.updateFrustums(input);
     return decision;
+  }
+
+  /** Cap screen size, fade with distance, and hide labels under HUD chrome. */
+  private layoutWorldLabels(input: PerceptionVizInput) {
+    const cam = input.camera;
+    const vw = input.viewW ?? 0;
+    const vh = input.viewH ?? 0;
+    if (this.labels.length === 0) return;
+    const fov = cam instanceof THREE.PerspectiveCamera ? cam.fov : 60;
+    const camPos = cam?.position;
+    for (const sprite of this.labels) {
+      const dist = camPos
+        ? camPos.distanceTo(sprite.position)
+        : 20;
+      const h = labelWorldHeight(dist, vh > 0 ? vh : 720, fov);
+      sprite.scale.set(h * LABEL_ASPECT, h, 1);
+      const opacity = labelOpacityForDistance(dist);
+      const mat = sprite.material as THREE.SpriteMaterial;
+      mat.opacity = opacity;
+      if (!cam || vw < 8 || vh < 8) {
+        sprite.visible = opacity > 0.04;
+        continue;
+      }
+      _labelNdc.copy(sprite.position).project(cam);
+      const sx = (_labelNdc.x * 0.5 + 0.5) * vw;
+      const sy = (1 - (_labelNdc.y * 0.5 + 0.5)) * vh;
+      const behind = _labelNdc.z >= 1 || _labelNdc.z < -1;
+      sprite.visible = !behind && opacity > 0.04 && !spriteHitsReservedHud(sx, sy, vw, vh);
+    }
   }
 
   private updatePoints(input: PerceptionVizInput) {
@@ -429,6 +494,14 @@ export class PerceptionVisualizer {
   }
 
   private updateLabels(input: PerceptionVizInput) {
+    if (!DRAW_WORLD_LABEL_SPRITES) {
+      if (this.labels.length > 0) {
+        for (const s of this.labels) this.group.remove(s);
+        this.labels = [];
+        this.lastLabelKey = '';
+      }
+      return;
+    }
     const ego = input.ego;
     const keyParts: string[] = [];
     const items: Array<{ text: string; color: string; x: number; y: number; z: number }> = [];
