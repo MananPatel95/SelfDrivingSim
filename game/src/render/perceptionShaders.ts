@@ -33,12 +33,14 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
       uTime: u.uTime,
       uSweep: u.uSweep,
       uDecay: { value: LIDAR_DECAY_S },
-      uPointSize: { value: 0.32 },
+      uPointSize: { value: 0.38 },
     },
     vertexColors: true,
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     toneMapped: false,
+    blending: THREE.AdditiveBlending,
     vertexShader: `
       uniform float uTime;
       uniform float uSweep;
@@ -51,15 +53,16 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
       void main() {
         vColor = color;
         float age = uTime - aBirth;
-        vAlpha = exp(-age / max(uDecay, 0.001));
-        if (age < 0.0 || age > uDecay * 1.05) vAlpha = 0.0;
+        float live = step(0.0, age) * step(age, uDecay * 1.05);
+        vAlpha = exp(-age / max(uDecay, 0.001)) * live;
         float twoPi = 6.28318530718;
         float d = mod(uSweep - aAzimuth + twoPi, twoPi);
-        float beam = 1.0 - smoothstep(0.0, 0.22, d);
-        vColor = mix(vColor, vec3(0.85, 1.0, 1.0), beam * 0.85 * step(0.03, vAlpha));
+        float beam = (1.0 - smoothstep(0.0, 0.07, d)) * live;
+        vColor = mix(vColor, vec3(0.75, 1.0, 1.0), beam);
+        vAlpha = max(vAlpha, beam * 0.95);
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = max(2.6, uPointSize * (280.0 / max(0.8, -mv.z)) * (0.5 + 1.2 * beam));
+        gl_PointSize = max(2.4, uPointSize * (320.0 / max(0.8, -mv.z)) * (0.7 + 1.9 * beam));
       }
     `,
     fragmentShader: `
@@ -67,9 +70,11 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
       varying float vAlpha;
       void main() {
         vec2 p = gl_PointCoord * 2.0 - 1.0;
-        if (dot(p, p) > 1.0) discard;
+        float r2 = dot(p, p);
+        if (r2 > 1.0) discard;
         if (vAlpha < 0.03) discard;
-        gl_FragColor = vec4(vColor, vAlpha);
+        float core = 1.0 - smoothstep(0.0, 1.0, r2);
+        gl_FragColor = vec4(vColor * (0.45 + 0.85 * core), vAlpha * core);
       }
     `,
   });
@@ -267,16 +272,67 @@ export function makeRayMaterial(u: AnimUniforms): THREE.ShaderMaterial {
   });
 }
 
+/** Visual sweep width. Thin enough that returns, not the beam, dominate. */
+export const LIDAR_SWEEP_WEDGE_DEG = 4;
+
+/** Flat 3–5° sector in ego XY (Three +X forward). Shader fades by UV. */
+export function makeSweepWedgeGeometry(
+  radius = 56,
+  angleDeg = LIDAR_SWEEP_WEDGE_DEG,
+): THREE.BufferGeometry {
+  const half = (angleDeg * Math.PI) / 180 / 2;
+  const radialSegs = 5;
+  const angleSegs = 4;
+  const inner = 1.6;
+  const col = angleSegs + 1;
+  const positions = new Float32Array((radialSegs + 1) * col * 3);
+  const uvs = new Float32Array((radialSegs + 1) * col * 2);
+  let p = 0;
+  let t = 0;
+  for (let ri = 0; ri <= radialSegs; ri++) {
+    const dist = ri / radialSegs;
+    const r = inner + (radius - inner) * dist;
+    for (let ai = 0; ai <= angleSegs; ai++) {
+      const u = (ai / angleSegs) * 2 - 1;
+      const a = u * half;
+      positions[p++] = r * Math.cos(a);
+      positions[p++] = 0.1;
+      positions[p++] = r * Math.sin(a);
+      uvs[t++] = u;
+      uvs[t++] = dist;
+    }
+  }
+  const indices: number[] = [];
+  for (let ri = 0; ri < radialSegs; ri++) {
+    for (let ai = 0; ai < angleSegs; ai++) {
+      const a = ri * col + ai;
+      const b = a + col;
+      indices.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
+}
+
 export function makeSweepMaterial(u: AnimUniforms): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: { uSweep: u.uSweep },
     transparent: true,
     depthWrite: false,
+    depthTest: true,
     toneMapped: false,
     side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
     vertexShader: `
       uniform float uSweep;
+      varying float vU;
+      varying float vDist;
       void main() {
+        vU = uv.x;
+        vDist = uv.y;
         float c = cos(-uSweep);
         float s = sin(-uSweep);
         vec3 p = vec3(position.x * c - position.z * s, position.y, position.x * s + position.z * c);
@@ -284,8 +340,15 @@ export function makeSweepMaterial(u: AnimUniforms): THREE.ShaderMaterial {
       }
     `,
     fragmentShader: `
+      varying float vU;
+      varying float vDist;
       void main() {
-        gl_FragColor = vec4(0.55, 1.0, 0.95, 0.72);
+        float core = 1.0 - smoothstep(0.0, 0.28, abs(vU));
+        float edge = 1.0 - smoothstep(0.45, 1.0, abs(vU));
+        float dist = pow(1.0 - clamp(vDist, 0.0, 1.0), 1.35);
+        float alpha = (0.12 * edge + 0.32 * core) * dist;
+        if (alpha < 0.012) discard;
+        gl_FragColor = vec4(0.40, 0.95, 1.0, alpha);
       }
     `,
   });

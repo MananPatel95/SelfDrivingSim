@@ -12,7 +12,7 @@ Lidar clustering + tracking (`runPerception`) fused with radar-like returns (`fu
 
 The 3D overlay is a single preallocated `Points` cloud plus `InstancedMesh` boxes. Perception and buffer uploads stay at **10 Hz** ([[pr-34]]). Browser lidar keeps `cast_rays` in WASM, a **fixed beam** (no per-frame jitter), and reused direction/box arrays. Planner input still comes from `Simulation.step` (not this overlay).
 
-[[pr-37]] animates the display between ticks: a visible spinning 360° lidar sweep (1 rev/s). The 10 Hz WASM scan is cached ego-local in a reused buffer. Each display frame bakes only the azimuths the beam just crossed into **world** at the live ego pose; older slots stay put so ground rings do not drag with the car. The shader fades a ~0.28 s trail after `aBirth` (a comet, not a full ring). The beam mesh is parented to the live ego. Expanding radar pings, fused boxes with velocity arrows/trails, and HD-map lane dashes sit on the ego rig. No extra `cast_rays`.
+[[pr-37]] animates the display between ticks: a spinning 360° lidar sweep (1 rev/s). The 10 Hz WASM scan is cached ego-local in a reused buffer. Each display frame bakes only the azimuths the beam just crossed into **world** at the live ego pose; older slots stay put so ground rings do not drag with the car. The shader fades a ~0.28 s trail after `aBirth`. The beam is a **4° additive wedge** that fades with range (returns, not a cyan slab, are the main cue). Expanding radar pings, fused boxes with velocity arrows/trails, and HD-map lane dashes sit on the ego rig. No extra `cast_rays`.
 
 ## Public sources (educational stand-in)
 

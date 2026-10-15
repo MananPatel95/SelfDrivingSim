@@ -104,3 +104,23 @@ describe('perception world labels', () => {
     expect(vizWorkStats.planArrayAllocs).toBe(0);
   });
 });
+
+describe('lidar sweep wedge', () => {
+  it('stays a 3–5° sector instead of a tall slab', async () => {
+    const { LIDAR_SWEEP_WEDGE_DEG, makeSweepWedgeGeometry } = await import('./perceptionShaders');
+    expect(LIDAR_SWEEP_WEDGE_DEG).toBeGreaterThanOrEqual(3);
+    expect(LIDAR_SWEEP_WEDGE_DEG).toBeLessThanOrEqual(5);
+    const geo = makeSweepWedgeGeometry();
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(8);
+    expect(pos.count).toBeLessThan(80);
+    let maxY = 0;
+    let maxR = 0;
+    for (let i = 0; i < pos.count; i++) {
+      maxY = Math.max(maxY, pos.getY(i));
+      maxR = Math.max(maxR, Math.hypot(pos.getX(i), pos.getZ(i)));
+    }
+    expect(maxY).toBeLessThan(0.3);
+    expect(maxR).toBeGreaterThan(40);
+  });
+});

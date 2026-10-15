@@ -21,6 +21,7 @@ import {
   makeRadarMaterial,
   makeRayMaterial,
   makeSweepMaterial,
+  makeSweepWedgeGeometry,
   makeTrajMaterial,
   makeVoxelMaterial,
 } from './perceptionShaders';
@@ -403,13 +404,12 @@ export class PerceptionVisualizer {
     pGeom.setDrawRange(0, 0);
     this.points = new THREE.Points(pGeom, makeLidarPointsMaterial(this.uniforms));
     this.points.frustumCulled = false;
+    this.points.renderOrder = 4;
     this.group.add(this.points);
 
-    const sweepGeo = new THREE.BoxGeometry(72, 2.6, 0.14);
-    sweepGeo.translate(36, 1.15, 0);
-    this.sweep = new THREE.Mesh(sweepGeo, makeSweepMaterial(this.uniforms));
+    this.sweep = new THREE.Mesh(makeSweepWedgeGeometry(), makeSweepMaterial(this.uniforms));
     this.sweep.frustumCulled = false;
-    this.sweep.renderOrder = 3;
+    this.sweep.renderOrder = 1;
     this.rig.add(this.sweep);
 
     const ringGeo = new THREE.RingGeometry(0.92, 1.0, 48);
@@ -697,9 +697,9 @@ export class PerceptionVisualizer {
       const step = Math.max(1, Math.ceil(lidarPoints.length / MAX_POINTS));
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
-        if (p.z < 0.25 && (p.ring % 3) !== 0) continue;
+        if (p.z < 0.25 && (p.ring & 1) !== 0) continue;
         const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
-        pushLocal(p.x, p.y, p.z + 0.05, 0.10 + h * 0.16, 0.32 + h * 0.38, 0.78 - h * 0.4);
+        pushLocal(p.x, p.y, p.z + 0.05, 0.25 + h * 0.45, 0.70 + h * 0.28, 1.0);
       }
     }
 
