@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-13
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 33]
 ---
 
 # Wiki log
@@ -87,3 +87,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-13] ingest | PR #30 pink roadside destination + pull-over on arrival
 
 ## [2026-10-13] ingest | PR #30 park parallel on asphalt, hide pin, Arrived hold
+
+## [2026-10-14] ingest | PR #33 opposite-side pad, legal U-turn, HUD % sprite
+
+## [2026-10-14] ingest | PR #33 parked offset 5.775 m / heading-aware curb tests
