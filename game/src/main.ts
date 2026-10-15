@@ -1997,7 +1997,6 @@ function updateInfoCard() {
 }
 
 function switchStack(profile: StackProfile) {
-  if (profile === currentStack) return;
   currentStack = profile;
   document.querySelectorAll('.view-btn').forEach(btn => {
     const btnProfile = (btn as HTMLElement).dataset['profile'] as StackProfile;
@@ -2005,6 +2004,7 @@ function switchStack(profile: StackProfile) {
   });
   if (showInfoCard) updateInfoCard();
   updateOverlaysForStack(profile);
+  simulation.setPlannerStack(profile);
   console.log(`Switched to stack: ${profile}`);
 }
 
@@ -3055,6 +3055,7 @@ function armMenuTrip(start: { x: number; y: number }, end: { x: number; y: numbe
 }
 
 function beginGame(mode: 'manual' | 'autopilot') {
+  simulation.setPlannerStack(tripMenu.stack);
   if (mode === 'autopilot') {
     if (!canStart(tripMenu) || !tripMenu.destination) return;
     simulation.beginTrip(

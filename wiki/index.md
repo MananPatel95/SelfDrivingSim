@@ -19,6 +19,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
 - [Planning and autopilot](systems/planning.md) — right-hand route, corners, pink roadside pad, stop/yield cap
+- [Stack-faithful planning](systems/stack-planning.md) — F1 vision+nav, F2 HD lane graph, F3 occupancy forecast
 - [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled, random walk, deadlock breaker
 - [Pedestrians](systems/pedestrians.md) — sidewalks, crossings, tumble on hit
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
@@ -32,6 +33,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 
 - [Fixed timestep](concepts/fixed-timestep.md) — physics vs display rate
 - [Stack profiles](concepts/stack-profiles.md) — F1–F3, F4–F6 gone
+- [Public sources](concepts/public-sources.md) — what Tesla / Waymo / Waabi pages claim vs this sim
 - [Overview](overview.md) — what the project is now
 - [Decisions](decisions.md) — scope and WASM
 
@@ -83,7 +85,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
 - [PR #35](sources/pr-35.md) — isotropic ground, block fill, solid buildings, ped heading
 - [PR #36](sources/pr-36.md) — lane spawn, stop-sign recovery, A→B / Random menu
-- [PR #39](sources/pr-39.md) — left cheaper than U-turn+right; same-street opposite only
+- [PR #39](sources/pr-39.md) — left cheaper than U-turn+right; stack-faithful F1/F2/F3 planning
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

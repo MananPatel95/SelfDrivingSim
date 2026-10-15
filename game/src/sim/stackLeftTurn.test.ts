@@ -46,12 +46,25 @@ function startLeftTrip(): Simulation {
   return sim;
 }
 
-describe('live left turn — F1 / F2 / F3 share the driving planner', () => {
+describe('live left turn — each stack keeps the dest left', () => {
   it('beginTrip hands the planner a one-left route, not a U-turn+right', () => {
     const sim = startLeftTrip();
     const start = snapTripStart(50, 100, 0);
     const resolved = resolveTripDestination(start, vec3(104, 110, 0));
     expect(resolved.opposite).toBe(false);
+    expect(cardinalTurns(sim.getState().route)).toEqual(['left']);
+    expect(Math.min(...sim.getState().route.map(p => p.y))).toBeGreaterThan(90);
+    expect(sim.getTripDestination()!.y).toBeGreaterThan(100);
+  });
+
+  it.each(STACKS)('$label beginTrip is still one left after setPlannerStack', ({ stack }) => {
+    const sim = new Simulation({ seed: 3, lidarEveryN: 80 });
+    sim.getState().trafficVehicles = [];
+    sim.getState().pedestrians = [];
+    sim.setPlannerStack(stack);
+    const start = snapTripStart(50, 100, 0);
+    sim.beginTrip(start, vec3(104, 110, 0), 'policy');
+    expect(sim.getPlannerStack()).toBe(stack);
     expect(cardinalTurns(sim.getState().route)).toEqual(['left']);
     expect(Math.min(...sim.getState().route.map(p => p.y))).toBeGreaterThan(90);
     expect(sim.getTripDestination()!.y).toBeGreaterThan(100);

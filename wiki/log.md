@@ -115,3 +115,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #39 left cheaper than U-turn+right
 
 ## [2026-10-15] ingest | PR #39 live F1/F2/F3 planner follows the single left
+
+## [2026-10-15] ingest | PR #39 stack-faithful F1/F2/F3 planning (public-source notes)

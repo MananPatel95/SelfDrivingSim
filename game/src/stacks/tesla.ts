@@ -5,7 +5,12 @@
  * - Cameras only (no radar, no lidar)
  * - Depth from monocular inference (simulated with noise)
  * - No HD map; lanes are inferred
- * - End-to-end neural network (pixels → trajectory)
+ * - End-to-end neural network (pixels → trajectory) guided by a nav route
+ *
+ * Live planner (`planForStack('tesla')`): camera-FOV detections + pursuit of
+ * the Manhattan nav polyline. There is no trained net — that is the
+ * approximation. Public sources: Tesla AI Day / FSD blogs (vision-only,
+ * radar removed, no HD maps, E2E FSD).
  */
 
 import type {
@@ -378,7 +383,7 @@ function getDefaultSize(classType: string): Vec3 {
 export const TESLA_INFO_CARD = {
   name: 'Tesla-style: Vision Only',
   sensors: 'Publicly described: cameras only (Tesla states no radar or lidar is needed)',
-  internals: 'Depth from monocular inference, 3D occupancy voxels from cameras (pseudo-lidar), lanes inferred (no HD map), traffic light detection from vision, end-to-end neural network (pixels → trajectory)',
+  internals: 'Public: cameras-only E2E (pixels → trajectory) guided by a navigation route, no HD map. This sim: camera-FOV detections + pursuit of the nav polyline (no trained net). Depth / occupancy voxels remain HUD-only.',
   strengths: 'Lower cost sensors, no lidar or radar needed, works globally without pre-mapping, can read traffic signs/lights',
   weaknesses: 'Depth uncertainty at range (especially at night or in rain), no instant velocity measurements, dependent on good lighting and visibility',
   example: 'Tesla FSD is described as an end-to-end neural network using cameras only, without relying on detailed pre-built HD maps.',
