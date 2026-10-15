@@ -1,0 +1,96 @@
+{
+  "before": {
+    "frozenMix": {
+      "waymo": 7.38,
+      "waabi": 7.21,
+      "note": "prior frozen mix, static/lagging rings"
+    },
+    "driving": {
+      "waymo": 6.22,
+      "waabi": 5.85,
+      "note": "prior driving capture with full-scan world dump"
+    }
+  },
+  "after": {
+    "frozenMix": {
+      "waymo": {
+        "meanFrameMs": 119.57846153846297,
+        "fps": 8.362710032678796,
+        "hudFps": 7,
+        "speed": 0,
+        "work": {
+          "sim": 2.5,
+          "overlay": 0,
+          "viz": 0.900000000372529,
+          "render": 2.5,
+          "compare": 0
+        },
+        "ego": {
+          "x": 3.5,
+          "y": -50,
+          "yaw": 1.5707963267948966,
+          "speed": 0
+        }
+      },
+      "waabi": {
+        "meanFrameMs": 122.33384615384756,
+        "fps": 8.174352654149333,
+        "hudFps": 8,
+        "speed": 0,
+        "work": {
+          "sim": 2.5,
+          "overlay": 9.900000000372529,
+          "viz": 1.2000000001862645,
+          "render": 2.6000000000931323,
+          "compare": 0
+        },
+        "ego": {
+          "x": 3.5,
+          "y": -50,
+          "yaw": 1.5707963267948966,
+          "speed": 0
+        }
+      }
+    },
+    "driving": {
+      "waymo": {
+        "meanFrameMs": 158.8830769230769,
+        "fps": 6.293936518387978,
+        "hudFps": 7,
+        "speed": 0.08090504278793048,
+        "work": {
+          "sim": 1.6000000000931323,
+          "overlay": 0,
+          "viz": 0.20000000018626451,
+          "render": 1.8999999999068677,
+          "compare": 0
+        },
+        "ego": {
+          "x": 3.5,
+          "y": -49.315299766319626,
+          "yaw": 1.5707963267948966,
+          "speed": 10.769807726733415
+        }
+      },
+      "waabi": {
+        "meanFrameMs": 163.31999999999832,
+        "fps": 6.122948812147993,
+        "hudFps": 6,
+        "work": {
+          "sim": 3.8000000002793968,
+          "overlay": 0.5,
+          "viz": 0.3000000002793968,
+          "render": 2.1999999997206032,
+          "compare": 0
+        },
+        "ego": {
+          "x": 3.5,
+          "y": 8.074081706052798,
+          "yaw": 1.5707963267948966,
+          "speed": 7.505024948517502
+        }
+      },
+      "waabiNote": "F3-only recapture while still in lane (not arrived)"
+    }
+  }
+}

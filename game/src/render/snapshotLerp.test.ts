@@ -12,10 +12,12 @@ import {
   lerpAngle,
   lerpOccupancy,
   lidarAzimuth,
+  lidarAzimuthFromWorldThree,
   lidarDecayAlpha,
   lidarLocalToWorldThree,
   lidarSweepAge,
   lidarSweepAngle,
+  lidarSweepCrossed,
   rememberBirths,
   snapshotAlpha,
   worldToEgo,
@@ -125,6 +127,30 @@ describe('snapshot interpolation', () => {
     const back = worldToEgo(moved.x, -moved.z, moved.y, 5, 2, 0);
     expect(back.x).toBeCloseTo(10, 5);
     expect(back.y).toBeCloseTo(0, 5);
+  });
+
+  it('sweeps live-ego azimuth so world hits fade instead of dragging as a ring', () => {
+    const w = lidarLocalToWorldThree(10, 0, 0.4, 0, 0, 0);
+    expect(lidarAzimuthFromWorldThree(w.x, w.z, 0, 0, 0)).toBeCloseTo(0, 5);
+    const left = lidarLocalToWorldThree(0, 10, 0.4, 0, 0, 0);
+    expect(lidarAzimuthFromWorldThree(left.x, left.z, 0, 0, 0)).toBeCloseTo(Math.PI / 2, 5);
+    const later = lidarAzimuthFromWorldThree(w.x, w.z, 0, 4, 0);
+    expect(Math.abs(later)).toBeGreaterThan(0.3);
+    const age = lidarSweepAge(0, Math.PI * 1.5);
+    expect(lidarDecayAlpha(age)).toBeLessThan(0.4);
+    expect(lidarDecayAlpha(LIDAR_DECAY_S * 1.35)).toBeLessThan(0.3);
+  });
+
+  it('refreshes a hit only when the sweep crosses its azimuth, then leaves it in world', () => {
+    expect(lidarSweepCrossed(0.2, 0.1, 0.4)).toBe(true);
+    expect(lidarSweepCrossed(0, 0.1, 0.4)).toBe(false);
+    expect(lidarSweepCrossed(0, 6.2, 0.2)).toBe(true);
+    expect(lidarSweepCrossed(Math.PI, 6.2, 0.2)).toBe(false);
+    const atScan = lidarLocalToWorldThree(10, 0, 0.4, 0, 0, 0);
+    const atLaterEgo = lidarLocalToWorldThree(10, 0, 0.4, 8, 0, 0);
+    expect(atScan.x).toBeCloseTo(10, 5);
+    expect(atLaterEgo.x).toBeCloseTo(18, 5);
+    expect(atScan.x).not.toBeCloseTo(atLaterEgo.x, 5);
   });
 
   it('records first-seen times and drops ids that left the snapshot', () => {

@@ -4,8 +4,10 @@
  */
 
 export const PERCEPTION_PERIOD_MS = 100;
-export const LIDAR_SWEEP_PERIOD_S = 0.4;
-export const LIDAR_DECAY_S = 0.3;
+/** Visual 360° sweep (shader + beam). Independent of the 10 Hz WASM cast. */
+export const LIDAR_SWEEP_PERIOD_S = 1;
+/** Fade after the beam. ~100° trail at 1 rev/s — a comet, not a full ring. */
+export const LIDAR_DECAY_S = 0.28;
 export const BOX_POP_S = 0.22;
 
 export interface SnapPose {
@@ -120,11 +122,38 @@ export function lidarAzimuth(x: number, y: number): number {
   return Math.atan2(y, x);
 }
 
+/** Azimuth of a Three.js world point relative to live ego (matches the lidar decay shader). */
+export function lidarAzimuthFromWorldThree(
+  threeX: number,
+  threeZ: number,
+  egoX: number,
+  egoY: number,
+  egoYaw: number,
+): number {
+  const loc = worldToEgo(threeX, -threeZ, 0, egoX, egoY, egoYaw);
+  return lidarAzimuth(loc.x, loc.y);
+}
+
 export function lidarSweepAngle(timeS: number, periodS: number = LIDAR_SWEEP_PERIOD_S): number {
   const twoPi = Math.PI * 2;
   const p = periodS > 0 ? periodS : LIDAR_SWEEP_PERIOD_S;
   const f = timeS / p;
   return (f - Math.floor(f)) * twoPi;
+}
+
+/** True when a CCW sweep from `prev` to `curr` crossed `azimuth` (handles wrap). */
+export function lidarSweepCrossed(
+  azimuth: number,
+  prevSweep: number,
+  currSweep: number,
+): boolean {
+  const twoPi = Math.PI * 2;
+  let span = currSweep - prevSweep;
+  span = ((span % twoPi) + twoPi) % twoPi;
+  if (span <= 1e-9) return false;
+  let d = azimuth - prevSweep;
+  d = ((d % twoPi) + twoPi) % twoPi;
+  return d <= span;
 }
 
 /** Seconds since the sweep last crossed this azimuth. */

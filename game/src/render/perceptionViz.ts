@@ -29,9 +29,12 @@ import {
   type SnapPose,
   boxPopScale,
   interpolatePoses,
+  LIDAR_DECAY_S,
+  LIDAR_SWEEP_PERIOD_S,
   lidarAzimuth,
   lidarLocalToWorldThree,
   lidarSweepAngle,
+  lidarSweepCrossed,
   lerpOccupancy,
   rememberBirths,
   snapshotAlpha,
@@ -333,6 +336,16 @@ export class PerceptionVisualizer {
   private pointPos: Float32Array;
   private pointCol: Float32Array;
   private pointAz: Float32Array;
+  private pointBirth: Float32Array;
+  private scanLx = new Float32Array(MAX_POINTS);
+  private scanLy = new Float32Array(MAX_POINTS);
+  private scanLz = new Float32Array(MAX_POINTS);
+  private scanR = new Float32Array(MAX_POINTS);
+  private scanG = new Float32Array(MAX_POINTS);
+  private scanB = new Float32Array(MAX_POINTS);
+  private scanN = 0;
+  private lastSweep = Number.NaN;
+  private lastSweepTime = Number.NaN;
 
   private voxels: THREE.InstancedMesh;
   private futureVoxels: THREE.InstancedMesh;
@@ -373,10 +386,20 @@ export class PerceptionVisualizer {
     this.pointPos = new Float32Array(MAX_POINTS * 3);
     this.pointCol = new Float32Array(MAX_POINTS * 3);
     this.pointAz = new Float32Array(MAX_POINTS);
+    this.pointBirth = new Float32Array(MAX_POINTS);
+    this.pointBirth.fill(-1e6);
     const pGeom = new THREE.BufferGeometry();
-    pGeom.setAttribute('position', new THREE.BufferAttribute(this.pointPos, 3));
-    pGeom.setAttribute('color', new THREE.BufferAttribute(this.pointCol, 3));
-    pGeom.setAttribute('aAzimuth', new THREE.BufferAttribute(this.pointAz, 1));
+    const posAttr = new THREE.BufferAttribute(this.pointPos, 3);
+    const colAttr = new THREE.BufferAttribute(this.pointCol, 3);
+    const azAttr = new THREE.BufferAttribute(this.pointAz, 1);
+    const birthAttr = new THREE.BufferAttribute(this.pointBirth, 1);
+    posAttr.setUsage(THREE.DynamicDrawUsage);
+    colAttr.setUsage(THREE.DynamicDrawUsage);
+    birthAttr.setUsage(THREE.DynamicDrawUsage);
+    pGeom.setAttribute('position', posAttr);
+    pGeom.setAttribute('color', colAttr);
+    pGeom.setAttribute('aAzimuth', azAttr);
+    pGeom.setAttribute('aBirth', birthAttr);
     pGeom.setDrawRange(0, 0);
     this.points = new THREE.Points(pGeom, makeLidarPointsMaterial(this.uniforms));
     this.points.frustumCulled = false;
@@ -532,6 +555,7 @@ export class PerceptionVisualizer {
     this.uniforms.uPulse.value = 0.5 + 0.5 * Math.sin(tSec * 5.6);
     this.uniforms.uEgoPos.value.set(liveEgo.x, 0, -liveEgo.y);
     this.uniforms.uEgoYaw.value = liveEgo.yaw;
+    this.refreshLidarTrail(liveEgo, tSec);
 
     this.rig.position.set(liveEgo.x, 0, -liveEgo.y);
     this.rig.rotation.y = liveEgo.yaw;
@@ -649,20 +673,21 @@ export class PerceptionVisualizer {
     return mesh.geometry.getAttribute(name) as THREE.InstancedBufferAttribute;
   }
 
+  /**
+   * Cache the 10 Hz WASM scan in ego-local reused arrays. World positions are
+   * written later as the visual sweep crosses each azimuth (see refreshLidarTrail).
+   */
   private uploadPoints(input: PerceptionVizInput) {
     const { stack, lidarPoints } = input;
     let n = 0;
-    const ego = input.ego.transform;
     const pushLocal = (lx: number, ly: number, lz: number, r: number, g: number, b: number) => {
       if (n >= MAX_POINTS) return;
-      const w = lidarLocalToWorldThree(lx, ly, lz, ego.position.x, ego.position.y, ego.rotation);
-      const i = n * 3;
-      this.pointPos[i] = w.x;
-      this.pointPos[i + 1] = w.y;
-      this.pointPos[i + 2] = w.z;
-      this.pointCol[i] = r;
-      this.pointCol[i + 1] = g;
-      this.pointCol[i + 2] = b;
+      this.scanLx[n] = lx;
+      this.scanLy[n] = ly;
+      this.scanLz[n] = lz;
+      this.scanR[n] = r;
+      this.scanG[n] = g;
+      this.scanB[n] = b;
       this.pointAz[n] = lidarAzimuth(lx, ly);
       n++;
     };
@@ -678,11 +703,54 @@ export class PerceptionVisualizer {
       }
     }
 
-    (this.points.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
-    (this.points.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
+    for (let i = n; i < this.scanN; i++) this.pointBirth[i] = -1e6;
+    this.scanN = n;
     (this.points.geometry.getAttribute('aAzimuth') as THREE.BufferAttribute).needsUpdate = true;
     this.points.geometry.setDrawRange(0, n);
-    this.points.geometry.computeBoundingSphere();
+  }
+
+  /**
+   * Bake last-scan hits into world at the *live* ego pose as the beam passes.
+   * Older slots stay put so the trail does not drag with the car.
+   */
+  private refreshLidarTrail(liveEgo: { x: number; y: number; yaw: number }, tSec: number) {
+    if (this.scanN <= 0 || !stackOverlayFlags(this.stack).lidarPoints) return;
+    const sweep = lidarSweepAngle(tSec);
+    let prev = this.lastSweep;
+    const stale = !Number.isFinite(prev)
+      || !Number.isFinite(this.lastSweepTime)
+      || tSec - this.lastSweepTime > LIDAR_SWEEP_PERIOD_S * 0.75;
+    if (stale) {
+      const trail = (LIDAR_DECAY_S / Math.max(1e-6, LIDAR_SWEEP_PERIOD_S)) * Math.PI * 2;
+      prev = sweep - trail;
+    }
+    let wrote = 0;
+    for (let i = 0; i < this.scanN; i++) {
+      if (!lidarSweepCrossed(this.pointAz[i]!, prev, sweep)) continue;
+      const w = lidarLocalToWorldThree(
+        this.scanLx[i]!,
+        this.scanLy[i]!,
+        this.scanLz[i]!,
+        liveEgo.x,
+        liveEgo.y,
+        liveEgo.yaw,
+      );
+      const o = i * 3;
+      this.pointPos[o] = w.x;
+      this.pointPos[o + 1] = w.y;
+      this.pointPos[o + 2] = w.z;
+      this.pointCol[o] = this.scanR[i]!;
+      this.pointCol[o + 1] = this.scanG[i]!;
+      this.pointCol[o + 2] = this.scanB[i]!;
+      this.pointBirth[i] = tSec;
+      wrote++;
+    }
+    this.lastSweep = sweep;
+    this.lastSweepTime = tSec;
+    if (!wrote) return;
+    (this.points.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    (this.points.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
+    (this.points.geometry.getAttribute('aBirth') as THREE.BufferAttribute).needsUpdate = true;
   }
 
   private writeVoxelCell(

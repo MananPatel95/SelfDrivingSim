@@ -115,3 +115,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #37 GPU overlay animation, 10 Hz snapshot interpolation
 
 ## [2026-10-15] ingest | PR #37 public-stack overlay fidelity (Tesla Vision / Waymo Driver / Waabi UnO)
+
+## [2026-10-15] ingest | PR #37 world-anchored F2/F3 lidar sweep (no dragging rings)
+
+## [2026-10-15] ingest | PR #37 beam-gated F2/F3 lidar trail (live-ego bake, shader fade)

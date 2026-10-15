@@ -11,8 +11,8 @@ F1 / F2 / F3 are view modes over the same city and the same `Simulation`. They c
 | View | Public stack | What this sim draws |
 | --- | --- | --- |
 | F1 Tesla | Tesla Vision / Occupancy Network (cameras only) | Eight camera frustums, vision boxes, occupancy voxels. **No lidar.** |
-| F2 Waymo | 6th-gen Waymo Driver (13 cam / 4 lidar / 6 radar) + HD map | Spinning lidar sweep, world-anchored points, radar pings, fused boxes, lane dashes |
-| F3 Waabi | UnO / DIO occupancy forecast + DeTra-style trajectories | Lidar sweep as input, BEV occupancy now/+1s/+2s/+3s, candidate trajectory fan |
+| F2 Waymo | 6th-gen Waymo Driver (13 cam / 4 lidar / 6 radar) + HD map | Spinning lidar sweep, beam-gated world points, radar pings, fused boxes, lane dashes |
+| F3 Waabi | UnO / DIO occupancy forecast + DeTra-style trajectories | Same lidar sweep as input, BEV occupancy now/+1s/+2s/+3s, candidate trajectory fan |
 
 ## Key files
 

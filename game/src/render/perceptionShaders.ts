@@ -1,10 +1,11 @@
 /**
- * GPU overlay materials. Motion is driven by uTime / uSweep / uAlpha —
- * instance buffers are rewritten only on 10 Hz snapshots.
+ * GPU overlay materials. Motion is driven by uTime / uSweep / uAlpha.
+ * Box/voxel instance buffers rewrite on 10 Hz snapshots; lidar trail slots
+ * rewrite in-place as the visual sweep crosses each azimuth.
  */
 
 import * as THREE from 'three';
-import { BOX_POP_S, LIDAR_DECAY_S, LIDAR_SWEEP_PERIOD_S } from './snapshotLerp';
+import { BOX_POP_S, LIDAR_DECAY_S } from './snapshotLerp';
 
 export interface AnimUniforms {
   uTime: { value: number };
@@ -31,42 +32,34 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
     uniforms: {
       uTime: u.uTime,
       uSweep: u.uSweep,
-      uEgoPos: u.uEgoPos,
-      uEgoYaw: u.uEgoYaw,
       uDecay: { value: LIDAR_DECAY_S },
-      uPeriod: { value: LIDAR_SWEEP_PERIOD_S },
-      uPointSize: { value: 0.28 },
+      uPointSize: { value: 0.32 },
     },
     vertexColors: true,
     transparent: true,
     depthWrite: false,
     toneMapped: false,
     vertexShader: `
+      uniform float uTime;
       uniform float uSweep;
-      uniform vec3 uEgoPos;
-      uniform float uEgoYaw;
       uniform float uDecay;
-      uniform float uPeriod;
       uniform float uPointSize;
+      attribute float aBirth;
+      attribute float aAzimuth;
       varying vec3 vColor;
       varying float vAlpha;
       void main() {
         vColor = color;
-        vec3 rel = position - uEgoPos;
-        float c = cos(uEgoYaw);
-        float s = sin(uEgoYaw);
-        float localX = rel.x * c + rel.z * s;
-        float localZ = -rel.x * s + rel.z * c;
-        float az = atan(-localZ, localX);
+        float age = uTime - aBirth;
+        vAlpha = exp(-age / max(uDecay, 0.001));
+        if (age < 0.0 || age > uDecay * 1.05) vAlpha = 0.0;
         float twoPi = 6.28318530718;
-        float d = mod(uSweep - az + twoPi, twoPi);
-        float age = d / twoPi * uPeriod;
-        vAlpha = 0.16 + 0.84 * exp(-age / max(uDecay, 0.001));
+        float d = mod(uSweep - aAzimuth + twoPi, twoPi);
         float beam = 1.0 - smoothstep(0.0, 0.22, d);
-        vColor = mix(vColor, vec3(0.85, 1.0, 1.0), beam * 0.8);
+        vColor = mix(vColor, vec3(0.85, 1.0, 1.0), beam * 0.85 * step(0.03, vAlpha));
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = max(2.2, uPointSize * (260.0 / max(0.8, -mv.z)) * (0.55 + 0.9 * beam));
+        gl_PointSize = max(2.6, uPointSize * (280.0 / max(0.8, -mv.z)) * (0.5 + 1.2 * beam));
       }
     `,
     fragmentShader: `
