@@ -113,3 +113,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
 
 ## [2026-10-15] ingest | PR #39 left cheaper than U-turn+right
+
+## [2026-10-15] ingest | PR #39 live F1/F2/F3 planner follows the single left

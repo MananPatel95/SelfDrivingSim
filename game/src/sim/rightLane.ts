@@ -501,16 +501,19 @@ export function tripRoute(start: Vec3, end: Vec3, offset = LANE_OFFSET): Vec3[] 
  * Manhattan right-lane path to `goal` (or cruise ahead if goal is omitted).
  * A trip goal finishes with a roadside pull-over; cruise does not.
  * Same-street opposite-side pads loop via a legal intersection U-turn.
+ * Pass `resolved` from the original click so a later re-engage (or beginTrip
+ * that already snapped the pad) cannot flip a left into a U-turn+right.
  */
 export function mergeIntoLaneRoute(
   from: Vec3,
   heading: number,
   goal?: Vec3 | null,
   offset = LANE_OFFSET,
+  resolved?: ResolvedDestination | null,
 ): Vec3[] {
   const yaw = snapHeadingToGrid(heading);
   const axisFrom = axisPoint(from.x, from.y, yaw);
-  if (!goal) {
+  if (!goal && !resolved) {
     const dest = cruiseDestination(from.x, from.y, yaw);
     const rest = rightLaneRoute(axisFrom, dest, offset);
     const merge = rest[0] ?? placeInRightLane(from.x, from.y, yaw, offset);
@@ -522,8 +525,8 @@ export function mergeIntoLaneRoute(
     }
     return [...lead, ...rest.slice(1)];
   }
-  const resolved = resolveTripDestination(from, goal);
-  const rest = routeToPad(axisFrom, resolved, offset);
+  const dest = resolved ?? resolveTripDestination(from, goal!);
+  const rest = routeToPad(axisFrom, dest, offset);
   const merge = rest[0] ?? placeInRightLane(from.x, from.y, yaw, offset);
   const lead: Vec3[] = [];
   const steps = 8;

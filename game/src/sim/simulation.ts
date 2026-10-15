@@ -15,7 +15,7 @@ import {
   isLegitimatelyQueued, nudgeOrRespawn,
   applyTrafficImpulse, knockPedestrian,
 } from './world';
-import { LANE_OFFSET, lateralFromCenter, mergeIntoLaneRoute, placeTripStart, resolveTripDestination, snapTripStart } from './rightLane';
+import { LANE_OFFSET, lateralFromCenter, mergeIntoLaneRoute, placeTripStart, resolveTripDestination, snapTripStart, type ResolvedDestination } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
@@ -134,6 +134,8 @@ export class Simulation {
   /** Last map-trip destination. Null when Just-drive / cruise has no goal. */
   private tripDestination: Vec3 | null = null;
   private tripHeading = 0;
+  /** First resolve of the click — re-engage must not re-classify the pad. */
+  private tripResolved: ResolvedDestination | null = null;
   /** Frames of in-lane standstill while the pad is still ahead (replan trigger). */
   private stuckTicks = 0;
   private recovery: RecoveryState = createRecoveryState();
@@ -883,6 +885,7 @@ export class Simulation {
     this.state.controlSource = 'human';
     this.tripDestination = null;
     this.tripHeading = 0;
+    this.tripResolved = null;
     this.state.arrived = false;
     this.stuckTicks = 0;
     this.stopHoldSec = 0;
@@ -898,7 +901,8 @@ export class Simulation {
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
     const placed = placeTripStart(start, end);
     const resolved = resolveTripDestination(placed.pos, end);
-    const route = mergeIntoLaneRoute(placed.pos, placed.yaw, resolved.pad);
+    const route = mergeIntoLaneRoute(placed.pos, placed.yaw, resolved.pad, LANE_OFFSET, resolved);
+    this.tripResolved = resolved;
     this.faceAndPark(placed.yaw);
     this.state.ego = {
       ...this.state.ego,
@@ -1001,7 +1005,7 @@ export class Simulation {
     const from = ego.transform.position;
     const heading = ego.transform.rotation;
     const goal = this.tripDestination;
-    const route = mergeIntoLaneRoute(from, heading, goal);
+    const route = mergeIntoLaneRoute(from, heading, goal, LANE_OFFSET, this.tripResolved);
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'policy';

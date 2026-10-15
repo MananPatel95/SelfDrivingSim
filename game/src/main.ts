@@ -3613,6 +3613,14 @@ async function init() {
   if (shot) applyShot(shot);
   const demo = params.get('demo');
   if (demo) applyDemo(demo);
+  const stackParam = params.get('stack');
+  if (stackParam === 'tesla' || stackParam === 'waymo' || stackParam === 'waabi') {
+    switchStack(stackParam);
+    if (tripMenu.open) {
+      tripMenu = setTripStack(tripMenu, stackParam);
+      syncTripMenuDom();
+    }
+  }
   const ab = params.get('ab');
   if (ab && !shot && !demo) {
     const nums = ab.split(',').map(Number);
