@@ -78,18 +78,21 @@ import {
 } from './render/bevOverlay';
 import {
   applyDayNight,
+  applyTextureAnisotropy,
   asphaltMaterial,
+  buildingInstanceColor,
+  buildingPaletteMaterial,
   configureRendererLook,
   createCityLook,
   curbMaterial,
-  facadeMaterial,
   impostorMaterial,
-  instanceAO,
   makeGrassGround,
   sidewalkMaterial,
   updateSunRig,
   type CityLook,
 } from './render/cityLook';
+import { tiledGroundMaterial } from './render/cityTextures';
+import { dampAngle, headingFromVelocity, pedestrianMeshYaw } from './sim/pedestrianVisual';
 import { PostFx } from './render/postFx';
 import { LIDAR_CONFIGS } from './sensors/lidar';
 import type { LidarConfig } from './sim/types';
@@ -327,6 +330,7 @@ function initThreeJS() {
   sunLight.layers.enable(LAYER_EXTERIOR);
   scene.add(sunLight);
   cityLook = createCityLook(scene, sunLight);
+  applyTextureAnisotropy(renderer);
   cityLook.hemi.layers.enable(LAYER_WORLD);
   cityLook.hemi.layers.enable(LAYER_COCKPIT);
   cityLook.hemi.layers.enable(LAYER_EXTERIOR);
@@ -390,13 +394,18 @@ function buildCityRoads() {
   const gridSize = 6;
   const blockSize = 100;
   const roadWidth = 14;
-  const sidewalkWidth = 3;
+  const sidewalkWidth = 6.5;
   const halfSize = (gridSize * blockSize) / 2;
+  const gridLen = gridSize * blockSize;
 
   const tex = cityLook?.textures;
-  const asphaltMat = tex ? asphaltMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const sidewalkMat = tex ? sidewalkMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0xd0d0d0 });
+  const asphaltBase = tex ? asphaltMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0x2a2a2c });
+  const sidewalkBase = tex ? sidewalkMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0xc4c0b6 });
   const curbMat = tex ? curbMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0x555555 });
+  const asphaltNS = tiledGroundMaterial(asphaltBase, roadWidth, gridLen);
+  const asphaltEW = tiledGroundMaterial(asphaltBase, gridLen, roadWidth);
+  const sidewalkNS = tiledGroundMaterial(sidewalkBase, sidewalkWidth, gridLen);
+  const sidewalkEW = tiledGroundMaterial(sidewalkBase, gridLen, sidewalkWidth);
   const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffee66});
   const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff});
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x333333});
@@ -405,14 +414,14 @@ function buildCityRoads() {
   // Full-length asphalt + sidewalks + curbs as shared meshes (few draw calls)
   for (let i = 0; i <= gridSize; i++) {
     const pos = -halfSize + i * blockSize;
-    const nsRoad = new THREE.Mesh(new THREE.PlaneGeometry(roadWidth, gridSize * blockSize), asphaltMat);
+    const nsRoad = new THREE.Mesh(new THREE.PlaneGeometry(roadWidth, gridLen), asphaltNS);
     nsRoad.rotation.x = -Math.PI / 2;
     nsRoad.position.set(pos, 0.01, 0);
     nsRoad.receiveShadow = true;
     scene.add(nsRoad);
     cityRoadMeshes.push(nsRoad);
 
-    const ewRoad = new THREE.Mesh(new THREE.PlaneGeometry(gridSize * blockSize, roadWidth), asphaltMat);
+    const ewRoad = new THREE.Mesh(new THREE.PlaneGeometry(gridLen, roadWidth), asphaltEW);
     ewRoad.rotation.x = -Math.PI / 2;
     ewRoad.position.set(0, 0.01, -pos);
     ewRoad.receiveShadow = true;
@@ -420,13 +429,13 @@ function buildCityRoads() {
     cityRoadMeshes.push(ewRoad);
 
     for (const side of [-1, 1]) {
-      const sw = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.15, gridSize * blockSize), sidewalkMat);
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.15, gridLen), sidewalkNS);
       sw.position.set(pos + side * (roadWidth / 2 + sidewalkWidth / 2), 0.075, 0);
       sw.receiveShadow = true;
       scene.add(sw);
       cityRoadMeshes.push(sw);
 
-      const swE = new THREE.Mesh(new THREE.BoxGeometry(gridSize * blockSize, 0.15, sidewalkWidth), sidewalkMat);
+      const swE = new THREE.Mesh(new THREE.BoxGeometry(gridLen, 0.15, sidewalkWidth), sidewalkEW);
       swE.position.set(0, 0.075, -pos + side * (roadWidth / 2 + sidewalkWidth / 2));
       swE.receiveShadow = true;
       scene.add(swE);
@@ -478,8 +487,116 @@ function buildCityRoads() {
   addInstanced(new THREE.BoxGeometry(0.5, 0.02, 3.5), whiteMat, cross);
   addInstanced(new THREE.CylinderGeometry(0.1, 0.14, 6, 6), poleMat, poles);
   addInstanced(new THREE.SphereGeometry(0.28, 8, 6), glowMat, lamps);
+  fillBlockInteriors(gridSize, blockSize, roadWidth, sidewalkWidth, halfSize);
 
   console.log(`Built city roads: ${cityRoadMeshes.length} objects (instanced markings)`);
+}
+
+function fillBlockInteriors(
+  gridSize: number,
+  blockSize: number,
+  roadWidth: number,
+  sidewalkWidth: number,
+  halfSize: number,
+) {
+  const lot = blockSize - roadWidth - sidewalkWidth * 2;
+  if (lot < 8) return;
+  const plazaMat = new THREE.MeshLambertMaterial({ color: 0xb4aea2 });
+  const padMat = new THREE.MeshLambertMaterial({ color: 0x8c8880 });
+  const parkMat = new THREE.MeshLambertMaterial({ color: 0x3f4044 });
+  const stallMat = new THREE.MeshLambertMaterial({ color: 0xd8d4cc });
+  const benchMat = new THREE.MeshLambertMaterial({ color: 0x4a3728 });
+  const binMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+  const planterMat = new THREE.MeshLambertMaterial({ color: 0x3d5a34 });
+  const potMat = new THREE.MeshLambertMaterial({ color: 0x6a5a4a });
+  const lots: Array<{ x: number; y: number; z: number; sx?: number; sy?: number; sz?: number }> = [];
+  const plazas: typeof lots = [];
+  const parks: typeof lots = [];
+  const extras: typeof lots = [];
+  const stalls: Array<{ x: number; y: number; z: number; ry?: number }> = [];
+  const benches: typeof stalls = [];
+  const bins: typeof lots = [];
+  const planters: typeof lots = [];
+  const pots: typeof lots = [];
+
+  for (let i = 0; i < gridSize; i++) {
+    for (let j = 0; j < gridSize; j++) {
+      const cx = -halfSize + (i + 0.5) * blockSize;
+      const cy = -halfSize + (j + 0.5) * blockSize;
+      const kind = (i * 3 + j * 7) % 3;
+      const rec = { x: cx, y: 0.03, z: -cy, sx: lot, sy: 1, sz: lot };
+      if (kind === 0) plazas.push(rec);
+      else if (kind === 1) parks.push(rec);
+      else lots.push(rec);
+
+      // Visual-only 2×2 lot buildings, inset so they stay off the sidewalk.
+      const cell = lot * 0.30;
+      const gap = lot * 0.36;
+      const heights = [14 + ((i + j) % 4) * 4, 18, 12 + (i % 3) * 5, 22];
+      let h = 0;
+      for (const ox of [-1, 1]) {
+        for (const oz of [-1, 1]) {
+          extras.push({
+            x: cx + ox * gap * 0.5,
+            y: heights[h]! / 2,
+            z: -(cy + oz * gap * 0.5),
+            sx: cell,
+            sy: heights[h],
+            sz: cell,
+          });
+          h++;
+        }
+      }
+
+      if (kind === 1) {
+        const stallW = 2.6;
+        for (let r = -4; r <= 4; r++) {
+          for (const side of [-1, 1]) {
+            stalls.push({
+              x: cx + side * 9,
+              y: 0.045,
+              z: -(cy + r * stallW),
+              ry: Math.PI / 2,
+            });
+          }
+        }
+      }
+      for (const side of [-1, 1]) {
+        const curb = roadWidth / 2 + sidewalkWidth * 0.55;
+        benches.push({ x: cx + side * curb, y: 0.28, z: -cy, ry: side > 0 ? 0 : Math.PI });
+        benches.push({
+          x: cx,
+          y: 0.28,
+          z: -(cy + side * curb),
+          ry: Math.PI / 2,
+        });
+        bins.push({ x: cx + side * 4, y: 0.32, z: -(cy + side * curb) });
+        pots.push({ x: cx + side * curb, y: 0.18, z: -(cy + side * 8) });
+        planters.push({
+          x: cx + side * (gap * 0.15),
+          y: 0.22,
+          z: -cy,
+          sx: 1.6,
+          sy: 1,
+          sz: 1.6,
+        });
+      }
+    }
+  }
+
+  const addLot = (mat: THREE.MeshLambertMaterial, items: typeof lots) => {
+    if (items.length === 0) return;
+    addInstanced(new THREE.BoxGeometry(1, 0.04, 1), mat, items);
+  };
+  addLot(plazaMat, plazas);
+  addLot(padMat, lots);
+  addLot(parkMat, parks);
+  addInstanced(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x606070 }), extras);
+  addInstanced(new THREE.BoxGeometry(5.0, 0.02, 0.12), stallMat, stalls);
+  addInstanced(new THREE.BoxGeometry(1.2, 0.42, 0.38), benchMat, benches);
+  addInstanced(new THREE.CylinderGeometry(0.18, 0.2, 0.55, 8), binMat, bins);
+  addInstanced(new THREE.BoxGeometry(1, 0.36, 1), planterMat, planters);
+  addInstanced(new THREE.CylinderGeometry(0.22, 0.26, 0.36, 8), potMat, pots);
 }
 
 /** Pink roadside pad + map pin. Visible on asphalt; minimap uses the same color. */
@@ -630,7 +747,7 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
 
       const limb = (mat: THREE.Material, radius: number, length: number) => {
         const pivot = new THREE.Group();
-        const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, Math.max(0.05, length - radius * 2), 3, 6), mat);
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, Math.max(0.08, length - radius * 2), 8), mat);
         mesh.position.y = -length / 2;
         pivot.add(mesh);
         return pivot;
@@ -662,6 +779,8 @@ function createEntityMesh(classType: string, entity?: { boundingBox: { size: { x
       group.add(head);
 
       group.userData.walk = { leftLeg, rightLeg, leftArm, rightArm };
+      group.frustumCulled = false;
+      group.traverse((o) => { o.frustumCulled = false; });
       return group as unknown as THREE.Mesh;
     }
     
@@ -853,8 +972,7 @@ function rebuildStaticCity() {
   buildingFar = null;
   buildingRecords = [];
   if (buildings.length > 0) {
-    const night = cityLook?.night ?? false;
-    const nearMat = cityLook ? facadeMaterial(cityLook.textures, night) : new THREE.MeshLambertMaterial({ color: 0x667077 });
+    const nearMat = buildingPaletteMaterial();
     const farMat = impostorMaterial();
     const near = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), nearMat, buildings.length);
     const far = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), farMat, buildings.length);
@@ -871,7 +989,7 @@ function rebuildStaticCity() {
       dummy.updateMatrix();
       near.setMatrixAt(i, dummy.matrix);
       far.setMatrixAt(i, dummy.matrix);
-      near.setColorAt(i, instanceAO(b.transform.position.x, b.transform.position.y, b.boundingBox.size.z));
+      near.setColorAt(i, buildingInstanceColor(i, b.transform.position.x, b.transform.position.y, b.boundingBox.size.z));
       buildingRecords.push({
         x: b.transform.position.x,
         y: b.transform.position.y,
@@ -1052,7 +1170,13 @@ function updateEntityMeshes() {
       // Body faces along the sidewalk. The step cycle is applied below so the feet
       // move in that same direction (not a moonwalk toward the camera).
       mesh.rotation.order = 'YXZ';
-      mesh.rotation.y = Math.atan2(-Math.cos(face), Math.sin(face));
+      const want = headingFromVelocity(entity.velocity.x, entity.velocity.y, face);
+      const target = pedestrianMeshYaw(want);
+      const prev = Number.isFinite(mesh.userData.visualYaw) ? mesh.userData.visualYaw as number : target;
+      const visual = dampAngle(prev, target, SIM_DT);
+      mesh.userData.visualYaw = Number.isFinite(visual) ? visual : target;
+      mesh.rotation.y = mesh.userData.visualYaw;
+      mesh.updateMatrixWorld(true);
       if (tumbling) {
         const ped = entity as {
           tumbleHeight?: number; tumblePitch?: number; tumbleRoll?: number;
@@ -1531,8 +1655,9 @@ function syncDriveBadge() {
   if (badge) {
     badge.textContent = label;
     badge.classList.toggle('manual', manual);
+    if (photoMode) badge.classList.add('hidden');
   }
-  document.getElementById('takeover-btn')?.classList.toggle('hidden', !gameStarted || manual);
+  document.getElementById('takeover-btn')?.classList.toggle('hidden', photoMode || !gameStarted || manual);
   if (control) {
     control.textContent = label;
     control.className = 'status-value' + (manual ? ' status-warning' : '');
@@ -1889,9 +2014,9 @@ function syncCompareChrome() {
   document.getElementById('view-explainer')?.classList.toggle('hidden', compareMode);
   document.getElementById('bev-overlay')?.classList.toggle('visible', bevOverlayEnabled && !compareMode);
   document.getElementById('left-hud-stack')?.classList.toggle('hidden', compareMode);
-  document.getElementById('drive-badge')?.classList.toggle('hidden', compareMode);
+  document.getElementById('drive-badge')?.classList.toggle('hidden', compareMode || photoMode);
   document.getElementById('drive-hint')?.classList.toggle('visible', false);
-  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView && !compareMode);
+  document.getElementById('decision-banner')?.classList.toggle('visible', showAIView && !compareMode && !photoMode);
   document.getElementById('minimap')?.classList.toggle('hidden', compareMode);
   applyPanelDom();
 }
@@ -2687,8 +2812,8 @@ function setupInput() {
             newTimeOfDay === 'night',
             newTimeOfDay === 'night' ? QUALITY[qualityLevel].fogFar * 0.7 : QUALITY[qualityLevel].fogFar,
           );
-          if (buildingNear && cityLook) {
-            buildingNear.material = facadeMaterial(cityLook.textures, cityLook.night);
+          if (buildingNear) {
+            buildingNear.material = buildingPaletteMaterial();
           }
         } else if (newTimeOfDay === 'night') {
           scene.background = new THREE.Color(0x0a0a1a);
@@ -2943,6 +3068,7 @@ function hideChrome() {
   document.getElementById('status-panel')?.classList.add('hidden');
   document.getElementById('left-hud-stack')?.classList.add('hidden');
   document.getElementById('drive-badge')?.classList.add('hidden');
+  document.getElementById('takeover-btn')?.classList.add('hidden');
   document.getElementById('ai-view-panel')?.classList.remove('visible');
   document.getElementById('decision-banner')?.classList.remove('visible');
   document.getElementById('view-explainer')?.classList.add('hidden');
@@ -3329,7 +3455,7 @@ function updateAIView(drawRawScene: boolean) {
   if (banner) {
     const engaged = performance.now() < autopilotBannerUntil;
     banner.textContent = engaged ? 'Autopilot engaged' : lastDecision.text;
-    banner.classList.toggle('visible', !compareMode);
+    banner.classList.toggle('visible', !compareMode && !photoMode);
     banner.classList.toggle('slow', !engaged && lastDecision.severity === 'slow');
     banner.classList.toggle('brake', !engaged && lastDecision.severity === 'brake');
   }
@@ -3458,6 +3584,82 @@ async function init() {
     setLowSideCam() {
       debugSideCam = { height: 0.28, side: 5.8, lookY: 0.36 };
     },
+    lookWorld(x: number, y: number, z: number, lx: number, ly: number, lz: number) {
+      debugSideCam = null;
+      debugHeroCam = null;
+      collisionCam = { x, y, z, lookX: lx, lookY: ly, lookZ: lz };
+    },
+    clearLookWorld() {
+      collisionCam = null;
+    },
+    pedPose() {
+      const ped = simulation.getState().pedestrians.find(p =>
+        p.state === 'walking' && Math.hypot(p.velocity.x, p.velocity.y) > 0.25
+      );
+      if (!ped) return null;
+      const mesh = entityMeshes.get(ped.id);
+      return {
+        x: ped.transform.position.x,
+        y: ped.transform.position.y,
+        yaw: ped.transform.rotation,
+        vx: ped.velocity.x,
+        vy: ped.velocity.y,
+        mesh: mesh
+          ? { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vis: mesh.visible }
+          : null,
+      };
+    },
+    walkingPeds() {
+      updateEntityMeshes();
+      const blocked = (x: number, y: number) => buildingRecords.some(b =>
+        Math.abs(x - b.x) < b.sx / 2 + 1.4 && Math.abs(y - b.y) < b.sy / 2 + 1.4
+      );
+      return simulation.getState().pedestrians
+        .filter(p => p.state === 'walking' && Math.hypot(p.velocity.x, p.velocity.y) > 0.25)
+        .map(p => {
+          const mesh = entityMeshes.get(p.id);
+          return {
+            id: p.id,
+            x: p.transform.position.x,
+            y: p.transform.position.y,
+            yaw: p.transform.rotation,
+            vx: p.velocity.x,
+            vy: p.velocity.y,
+            blocked: blocked(p.transform.position.x, p.transform.position.y),
+            mesh: mesh
+              ? { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z, vis: mesh.visible }
+              : null,
+          };
+        });
+    },
+    lookPed(id: number) {
+      updateEntityMeshes();
+      const ped = simulation.getState().pedestrians.find(p => p.id === id);
+      const mesh = entityMeshes.get(id);
+      if (!ped || !mesh) return null;
+      mesh.frustumCulled = false;
+      mesh.traverse((o) => { o.frustumCulled = false; });
+      mesh.updateMatrixWorld(true);
+      const mx = mesh.position.x;
+      const mz = mesh.position.z;
+      const fx = Math.cos(ped.transform.rotation);
+      const fy = Math.sin(ped.transform.rotation);
+      collisionCam = {
+        x: mx - fx * 1.8 + fy * 1.6,
+        y: 2.15,
+        z: mz + fy * 1.8 + fx * 1.6,
+        lookX: mx,
+        lookY: 0.95,
+        lookZ: mz,
+      };
+      debugSideCam = null;
+      debugHeroCam = null;
+      return { id, mx, mz, yaw: ped.transform.rotation, vx: ped.velocity.x, vy: ped.velocity.y };
+    },
+    egoPose() {
+      const e = simulation.getState().ego;
+      return { x: e.transform.position.x, y: e.transform.position.y, yaw: e.transform.rotation };
+    },
     freezeSim() {
       isPaused = true;
     },
@@ -3465,19 +3667,12 @@ async function init() {
       isPaused = false;
     },
     setPhotoHud() {
-      photoMode = true;
-      showPhysDebug = true;
-      showAIView = false;
-      showGroundTruth = false;
-      const box = document.getElementById('phys-debug-toggle') as HTMLInputElement | null;
-      if (box) box.checked = true;
-      document.getElementById('phys-debug')?.classList.add('visible');
-      document.getElementById('ai-view-panel')?.classList.remove('visible');
-      document.getElementById('view-explainer')?.classList.add('hidden');
-      document.getElementById('bev-overlay')?.classList.remove('visible');
-      document.getElementById('decision-banner')?.classList.remove('visible');
-      document.getElementById('drive-hint')?.classList.remove('visible');
-      perceptionViz?.setEnabled(false);
+      hideChrome();
+      showPhysDebug = false;
+      document.getElementById('phys-debug')?.classList.remove('visible');
+    },
+    camPose() {
+      return { x: camera.position.x, y: camera.position.y, z: camera.position.z };
     },
     enablePhysDebug() {
       showPhysDebug = true;

@@ -201,3 +201,17 @@ Same 3/4 orbit, Look Low vs Look High (lamp bloom).
 
 ### verify-start-menu-look.png
 #31 start menu over the #34 city look (orbit backdrop).
+
+## City look cleanup (post-#34)
+
+### verify-road-closeup.png
+Asphalt at a few metres: isotropic grain, no long streaks or moiré.
+
+### verify-sidewalk-closeup.png
+Sidewalk slab close-up: same noise treatment, no grout stripes.
+
+### verify-block-wide.png
+One city block from a high 3/4: widened sidewalks, plaza/pad/parking, lot buildings, benches.
+
+### verify-ped-walk.png
+Walking pedestrian; body and feet face the velocity heading.
