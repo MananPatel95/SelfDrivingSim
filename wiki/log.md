@@ -117,3 +117,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #39 live F1/F2/F3 planner follows the single left
 
 ## [2026-10-15] ingest | PR #39 stack-faithful F1/F2/F3 planning (public-source notes)
+
+## [2026-10-15] ingest | PR #39 cross-street pad 12 m past junction, clear of poles/signs

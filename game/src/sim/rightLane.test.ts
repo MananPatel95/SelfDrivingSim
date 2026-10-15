@@ -5,7 +5,10 @@ import { createPlannerState, planTrajectory } from '../planning/planner';
 import { createEgoState, updateVehicle, vehicleInputFromAccel } from './vehicle';
 import {
   CURB_CLEARANCE,
+  DEST_PAD_ALONG_CLEAR,
   LANE_OFFSET,
+  PAD_ALONG,
+  PAD_JUNCTION_GAP,
   PAD_WIDTH,
   PULL_OVER_OFFSET,
   ROAD_HALF,
@@ -269,6 +272,58 @@ describe('right-hand traffic lanes', () => {
     expect(turns).toEqual(['left']);
     expect(Math.min(...route.map(p => p.y))).toBeGreaterThan(90);
     expect(Math.max(...route.map(p => p.y))).toBeLessThan(resolved.pad.y + 8);
+  });
+
+  it('parks a corner left dest in the curb lane, 12 m past poles, signs, and crosswalks', () => {
+    const start = snapTripStart(50, 100, 0);
+    const end = vec3(104, 110, 0);
+    const resolved = resolveTripDestination(start, end);
+    const ix = 100;
+    const iy = 100;
+    expect(resolved.opposite).toBe(false);
+    expect(resolved.arrivalHeading).toBeCloseTo(Math.PI / 2, 5);
+    expect(resolved.pad.x).toBeCloseTo(ix + PULL_OVER_OFFSET, 5);
+    expect(resolved.pad.y).toBeCloseTo(iy + DEST_PAD_ALONG_CLEAR, 5);
+
+    const nearEdge = resolved.pad.y - PAD_ALONG / 2;
+    expect(nearEdge).toBeGreaterThanOrEqual(iy + ROAD_HALF + PAD_JUNCTION_GAP - 0.01);
+    expect(lateralFromCenter(resolved.pad.x, resolved.pad.y, resolved.arrivalHeading))
+      .toBeCloseTo(PULL_OVER_OFFSET, 5);
+
+    const halfAlong = PAD_ALONG / 2;
+    const halfLat = PAD_WIDTH / 2;
+    const padHits = (x: number, y: number, r = 0.2) => (
+      x >= resolved.pad.x - halfLat - r
+      && x <= resolved.pad.x + halfLat + r
+      && y >= resolved.pad.y - halfAlong - r
+      && y <= resolved.pad.y + halfAlong + r
+    );
+
+    const map = generateCityMap(3, CITY);
+    const furniture = map.staticEntities.filter(e => (
+      e.classType === 'pole' || e.classType === 'stop_sign' || e.classType === 'yield_sign'
+    ));
+    expect(furniture.some(e => (
+      Math.abs(e.transform.position.x - ix) < 14 && Math.abs(e.transform.position.y - iy) < 14
+    ))).toBe(true);
+    for (const e of furniture) {
+      expect(padHits(e.transform.position.x, e.transform.position.y)).toBe(false);
+    }
+
+    // Visual lamps / painted bars sit ~9–10 m off the crossing (main.ts city roads).
+    const lamp = ROAD_HALF + 2;
+    const walk = ROAD_HALF + 2.2;
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+      expect(padHits(ix + dx * lamp, iy + dy * lamp)).toBe(false);
+    }
+    for (const s of [-3, 0, 3]) {
+      expect(padHits(ix + s * 0.9, iy + walk)).toBe(false);
+      expect(padHits(ix + walk, iy + s * 0.9)).toBe(false);
+    }
+
+    const opposite = resolveTripDestination(vec3(0, 22, 0), vec3(-4.5, 78, 0));
+    expect(opposite.opposite).toBe(true);
+    expect(opposite.pad.y).toBeCloseTo(78, 0);
   });
 
   it('does not loop for a cross-street dest that used to look opposite', () => {

@@ -30,8 +30,16 @@ export const PAD_WIDTH = 2 * (ROAD_HALF - PULL_OVER_OFFSET);
 export const PULL_OVER_LENGTH = 16;
 /** Straight, road-parallel tail so the nose matches the curb at the stop. */
 export const PULL_OVER_STRAIGHT = 10;
-/** Keep the pad out of the intersection box. */
+/** Keep a same-street pad out of the intersection box (center-to-center). */
 export const DEST_INTERSECTION_CLEAR = 16;
+/**
+ * Metres past the asphalt box to the near edge of a cross-street pad.
+ * Poles, stop/yield signs, and painted crosswalks sit ~9–10 m from the
+ * crossing; a 16 m center leaves the 8.4 m bay overlapping them.
+ */
+export const PAD_JUNCTION_GAP = 12;
+/** Arrival-heading distance from the crossing to the pad center. */
+export const DEST_PAD_ALONG_CLEAR = ROAD_HALF + PAD_JUNCTION_GAP + PAD_ALONG / 2;
 /** Mid-block spawn: stay this far from a grid crossing so the car is not on a stop line. */
 export const SPAWN_INTERSECTION_CLEAR = 24;
 /** City grid step (matches `world.ts` MAP_BLOCK). */
@@ -258,11 +266,13 @@ export function placeTripStart(start: Vec3, end: Vec3): { pos: Vec3; yaw: number
  * Slide a roadside pad out of a junction.
  * Same-street: park *before* the box (backward along the approach).
  * Cross-street (`keepClickSide`): stay on the click's arm so a left-turn dest
- * just past the corner is not dragged back onto the approach street.
+ * just past the corner is not dragged back onto the approach street, and
+ * sit far enough that the 8.4 m bay is past poles, signs, and crosswalks.
  */
 export function slideOffIntersection(point: Vec3, heading: number, keepClickSide = false): Vec3 {
   const yaw = snapHeadingToGrid(heading);
-  if (!nearGridCrossing(point.x, point.y)) {
+  const minAlong = keepClickSide ? DEST_PAD_ALONG_CLEAR : DEST_INTERSECTION_CLEAR;
+  if (!nearGridCrossing(point.x, point.y, minAlong)) {
     return placeInRightLane(point.x, point.y, yaw, PULL_OVER_OFFSET);
   }
   const ix = nearestGridLine(point.x);
@@ -271,7 +281,7 @@ export function slideOffIntersection(point: Vec3, heading: number, keepClickSide
   const fy = Math.sin(yaw);
   const along = (point.x - ix) * fx + (point.y - iy) * fy;
   const targetAlong = keepClickSide
-    ? (along >= 0 ? 1 : -1) * DEST_INTERSECTION_CLEAR
+    ? Math.sign(along || 1) * Math.max(Math.abs(along), minAlong)
     : (along >= 0 ? -DEST_INTERSECTION_CLEAR : Math.min(along, -DEST_INTERSECTION_CLEAR));
   return placeInRightLane(ix + fx * targetAlong, iy + fy * targetAlong, yaw, PULL_OVER_OFFSET);
 }
