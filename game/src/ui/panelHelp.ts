@@ -110,6 +110,7 @@ function onDocumentKeydown(ev: Event): void {
   const key = (ev as KeyboardEvent).key;
   if (key !== 'Escape') return;
   ev.preventDefault();
+  ev.stopPropagation();
   dismissPanelHelp();
 }
 

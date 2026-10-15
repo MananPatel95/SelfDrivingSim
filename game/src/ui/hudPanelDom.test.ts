@@ -86,7 +86,9 @@ describe('HUD panel DOM', () => {
 
     help.click();
     expect(panelHelpIsOpen()).toBe(true);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(true);
     expect(panelHelpIsOpen()).toBe(false);
 
     const bevHelp = stack.querySelector<HTMLButtonElement>('.hud-panel-help[data-help="bev"]')!;

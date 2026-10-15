@@ -68,7 +68,10 @@ Side-by-side of the Tesla Model 3/Y reference (left) and the live hood shot (rig
 Shared 300px right column on F1 / F2 / F3: view-info (name + one-line sensors + camera), AI View, and on F3 Waabi BEV + Sim World. Same right edge, 8px gaps, no overlap.
 
 ### hud_f3_help_popover.png
-F3 view-info **?** popover to the left of the column (USES / unlike / camera copy). Closes on click-outside or Esc.
+F3 view-info **?** popover to the left of the column (USES / unlike / camera copy), below the F1/F2/F3 tab bar. Closes on click-outside or Esc.
+
+### hud_f1_help_popover.png
+F1 **?** popover below the F1/F2/F3 tabs — the switcher stays fully visible.
 
 ### hud_panels_open.png
 Right-side column with explainer, AI View, and info all open — no overlap.
