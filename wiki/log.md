@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
 ---
 
 # Wiki log
@@ -121,3 +121,9 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #37 beam-gated F2/F3 lidar trail (live-ego bake, shader fade)
 
 ## [2026-10-15] ingest | PR #37 thin additive 4° F2/F3 lidar wedge (points on hit)
+
+## [2026-10-15] ingest | PR #38 North-American stop/yield sign visuals
+
+## [2026-10-15] ingest | PR #38 yield lettering + streetlight clearance
+
+## [2026-10-15] merge | origin/main (#37 perception anim) into PR #38 NA traffic signs

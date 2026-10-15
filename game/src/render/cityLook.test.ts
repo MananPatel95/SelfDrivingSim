@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { applyVertexAO, instanceAO, FOG_FAR_DEFAULT, SKY_DAY } from './cityLook';
+import { applyVertexAO, cornerStreetLampOffsets, instanceAO, FOG_FAR_DEFAULT, SKY_DAY } from './cityLook';
+import { signPose } from '../sim/intersectionRules';
+import { vec3 } from '../sim/math';
 import { getCityTextures } from './cityTextures';
 
 describe('city look helpers', () => {
@@ -26,6 +28,16 @@ describe('city look helpers', () => {
   it('keeps fog far tight enough to hide pop-in', () => {
     expect(FOG_FAR_DEFAULT).toBeLessThanOrEqual(280);
     expect(SKY_DAY).toBeGreaterThan(0);
+  });
+
+  it('keeps corner streetlights off stop / yield posts', () => {
+    const inter = { center: vec3(0, 0, 0), signedHeadings: [0, Math.PI / 2, Math.PI, -Math.PI / 2] } as Parameters<typeof signPose>[0];
+    const lamps = cornerStreetLampOffsets(14).map(o => ({ x: o.x, y: -o.z }));
+    for (const heading of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const pose = signPose(inter, heading);
+      const nearest = Math.min(...lamps.map(l => Math.hypot(l.x - pose.x, l.y - pose.y)));
+      expect(nearest).toBeGreaterThan(4.5);
+    }
   });
 
   it('builds procedural textures without throwing', () => {

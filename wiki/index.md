@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
 ---
 
 # Wiki index
@@ -22,7 +22,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled, random walk, deadlock breaker
 - [Pedestrians](systems/pedestrians.md) — sidewalks, crossings, tumble on hit
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
-- [City look](systems/city-look.md) — sun/PCF, ACES, textures, bloom/LUT
+- [City look](systems/city-look.md) — sun/PCF, ACES, textures, bloom/LUT, NA stop/yield signs
 - [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 sedan-sports + cockpit
 - [HUD and menus](systems/hud.md) — start / arrived menu, 300px right column, ? popovers, pink dest pin, seed/demo, collision count
 - [Data engine](systems/data-engine.md) — Python mine/label/train
@@ -85,6 +85,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #35](sources/pr-35.md) — isotropic ground, block fill, solid buildings, ped heading
 - [PR #36](sources/pr-36.md) — lane spawn, stop-sign recovery, A→B / Random menu
 - [PR #37](sources/pr-37.md) — GPU overlay animation, 10 Hz snapshot interpolation
+- [PR #38](sources/pr-38.md) — MUTCD stop/yield blades, instanced, face oncoming traffic
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 
