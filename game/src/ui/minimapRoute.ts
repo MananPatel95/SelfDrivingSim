@@ -9,6 +9,8 @@ export const ROUTE_CORE = '#c45cff';
 export const ROUTE_DEST = '#ff2d8a';
 export const ROUTE_DEST_RING = '#ffffff';
 export const DEST_PIN_COLOR = 0xff2d8a;
+/** A→B / Random start pin on the city map. */
+export const ROUTE_START = '#5dff9a';
 
 export interface MapPoint {
   x: number;
@@ -97,6 +99,7 @@ export function paintDestPin(
   ctx: CanvasRenderingContext2D,
   p: MapPoint,
   scale: number,
+  color: string = ROUTE_DEST,
 ): void {
   const r = destPinRadius(scale);
   ctx.beginPath();
@@ -104,7 +107,7 @@ export function paintDestPin(
   ctx.bezierCurveTo(p.x + r * 0.95, p.y + r * 0.05, p.x + r * 0.72, p.y - r * 0.95, p.x, p.y - r * 0.95);
   ctx.bezierCurveTo(p.x - r * 0.72, p.y - r * 0.95, p.x - r * 0.95, p.y + r * 0.05, p.x, p.y + r * 0.9);
   ctx.closePath();
-  ctx.fillStyle = ROUTE_DEST;
+  ctx.fillStyle = color;
   ctx.fill();
   ctx.strokeStyle = ROUTE_DEST_RING;
   ctx.lineWidth = 1.7;
@@ -113,4 +116,12 @@ export function paintDestPin(
   ctx.arc(p.x, p.y - r * 0.28, r * 0.26, 0, Math.PI * 2);
   ctx.fillStyle = '#fff';
   ctx.fill();
+}
+
+export function paintStartPin(
+  ctx: CanvasRenderingContext2D,
+  p: MapPoint,
+  scale: number,
+): void {
+  paintDestPin(ctx, p, scale, ROUTE_START);
 }

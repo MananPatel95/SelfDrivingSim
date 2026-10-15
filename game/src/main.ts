@@ -49,6 +49,7 @@ import {
 } from './ui/minimapRoute';
 import {
   canStart,
+  clickTripMap,
   createTripMenu,
   dismissTripMenu,
   drawStartCityMap,
@@ -60,7 +61,9 @@ import {
   onArrived,
   pickRandomDestination,
   pickTripDestination,
+  resetTripPoints,
   setTripCamera,
+  setTripMode,
   setTripStack,
   startMapToWorld,
   startTrip,
@@ -175,7 +178,7 @@ let showAIView = true;
 let showInfoCard = false;
 let isPaused = false;
 let gameStarted = false;
-let tripMenu: TripMenuState = createTripMenu({ x: 3.5, y: -22 });
+let tripMenu: TripMenuState = createTripMenu({ x: 3.5, y: -50 });
 let menuOrbitYaw = 0.85;
 const MENU_ORBIT_SPEED = 0.11;
 let suppressArrivedMenu = false;
@@ -2791,14 +2794,29 @@ function setupInput() {
     const sx = (ev.clientX - rect.left) * (startMap.width / rect.width);
     const sy = (ev.clientY - rect.top) * (startMap.height / rect.height);
     const world = startMapToWorld(sx, sy, startMap.width, startMap.height);
-    tripMenu = pickTripDestination(tripMenu, world.x, world.y);
+    tripMenu = clickTripMap(tripMenu, world.x, world.y);
+    previewMenuStart();
     syncTripMenuDom();
   });
   document.getElementById('start-manual')?.addEventListener('click', () => beginGame('manual'));
   document.getElementById('start-auto')?.addEventListener('click', () => beginGame('autopilot'));
-  document.getElementById('start-random')?.addEventListener('click', () => {
-    tripMenu = pickRandomDestination(tripMenu);
+  document.getElementById('start-reset')?.addEventListener('click', () => {
+    tripMenu = resetTripPoints(tripMenu);
+    previewMenuStart();
     syncTripMenuDom();
+  });
+  document.getElementById('start-reroll')?.addEventListener('click', () => {
+    tripMenu = pickRandomDestination(tripMenu);
+    previewMenuStart();
+    syncTripMenuDom();
+  });
+  document.querySelectorAll('#start-mode-seg button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = (btn as HTMLElement).dataset['mode'] as 'ab' | 'random';
+      tripMenu = setTripMode(tripMenu, mode);
+      previewMenuStart();
+      syncTripMenuDom();
+    });
   });
   document.querySelectorAll('.stack-card').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2848,6 +2866,11 @@ function syncTripMenuDom() {
   document.querySelectorAll('#start-camera-seg button').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset['camera'] === tripMenu.camera);
   });
+  document.querySelectorAll('#start-mode-seg button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['mode'] === tripMenu.mode);
+  });
+  document.getElementById('start-reset')?.classList.toggle('hidden', tripMenu.mode === 'random');
+  document.getElementById('start-reroll')?.classList.toggle('hidden', tripMenu.mode !== 'random');
   const auto = document.getElementById('start-auto') as HTMLButtonElement | null;
   if (auto) {
     auto.disabled = !canStart(tripMenu);
@@ -2882,17 +2905,27 @@ function drawStartMap() {
   const heading = simulation?.getState().ego.transform.rotation;
   drawStartCityMap(ctx, canvas.width, canvas.height, {
     start: tripMenu.start,
-    startHeading: heading,
+    startHeading: heading ?? tripMenu.startHeading,
+    startLocked: tripMenu.startLocked,
     destination: tripMenu.destination,
     buildings,
     route,
   });
 }
 
+function previewMenuStart() {
+  if (!simulation || !tripMenu.startLocked) return;
+  simulation.previewSpawn(
+    { x: tripMenu.start.x, y: tripMenu.start.y, z: 0 },
+    tripMenu.startHeading,
+  );
+}
+
 function armMenuTrip(start: { x: number; y: number }, end: { x: number; y: number }) {
   tripMenu = pickTripDestination(createTripMenu(start, {
     stack: tripMenu.stack,
     camera: tripMenu.camera,
+    startLocked: true,
   }), end.x, end.y);
 }
 
@@ -3491,9 +3524,17 @@ async function init() {
     hasArrived: () => simulation.hasArrived(),
     getTripMenu: () => ({ ...tripMenu }),
     pickMenuDestination(x: number, y: number) {
-      tripMenu = pickTripDestination(tripMenu, x, y);
+      tripMenu = clickTripMap(tripMenu, x, y);
+      previewMenuStart();
       syncTripMenuDom();
     },
+    setMenuMode(mode: 'ab' | 'random') {
+      tripMenu = setTripMode(tripMenu, mode);
+      previewMenuStart();
+      syncTripMenuDom();
+    },
+    startRecovery: () => simulation.startRecovery(),
+    getRecovery: () => simulation.getRecovery(),
     startFromMenu() {
       beginGame('autopilot');
     },

@@ -9,6 +9,9 @@ import {
   PAD_WIDTH,
   PULL_OVER_OFFSET,
   ROAD_HALF,
+  SPAWN_INTERSECTION_CLEAR,
+  isValidLaneSpawn,
+  snapTripStart,
   SEDAN_HALF_WIDTH,
   distanceToRightCurb,
   inRightLane,
@@ -198,5 +201,16 @@ describe('right-hand traffic lanes', () => {
     const prev = route[route.length - 2]!;
     expect(tail.y).toBeLessThan(prev.y);
     expect(Math.max(...route.map(p => p.y))).toBeGreaterThan(95);
+  });
+
+  it('snaps a start click into a mid-block right-hand lane, off the stop line', () => {
+    const nearSign = snapTripStart(8.2, -10, Math.PI / 2);
+    expect(isValidLaneSpawn(nearSign.x, nearSign.y, Math.PI / 2)).toBe(true);
+    expect(nearSign.x).toBeCloseTo(LANE_OFFSET, 5);
+    expect(Math.abs(nearSign.y)).toBeGreaterThanOrEqual(SPAWN_INTERSECTION_CLEAR - 0.01);
+    const mid = snapTripStart(4, -50, Math.PI / 2);
+    expect(mid.x).toBeCloseTo(LANE_OFFSET, 5);
+    expect(mid.y).toBeCloseTo(-50, 5);
+    expect(isValidLaneSpawn(mid.x, mid.y, Math.PI / 2)).toBe(true);
   });
 });

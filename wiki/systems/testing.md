@@ -25,7 +25,7 @@ Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spati
 
 `destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset 5.775 m, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on the **arrival road** (`onArrivalAsphalt` + `distanceToRightCurb` ~0.3 m), not `|x| < 7` (N–S only) or `pointOnAsphalt` (OR of both axes). Eastbound unit cases use the Y curb so `|x| < 7` would wrongly fail x≈50. The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. `perceptionViz.test.ts` asserts world-space `%` sprites stay capped, fade with distance, and hide under the HUD. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs (those two demos clear traffic and pedestrians so a ped cannot steal the arrival).
 
-`startMenu.test.ts` covers the overlay state machine: start → pick dest → driving → arrived menu (current pose as new start) → new dest → second trip. Clicks snap through `snapTripEnd` + `resolveTripDestination` (same-side and opposite-side curb). Map world↔canvas round-trips so start/dest pins stay aligned. `?demo=` / `?shot=` still skip the overlay. Live shots: `docs/screenshots/28-start-menu.png`, `29-arrived-menu.png`, `30-second-trip.png`.
+`startMenu.test.ts` covers A → B (start then dest, reset, arrived default start) and Random (both pins, reroll), plus curb snaps and map pin round-trips. `recovery.test.ts` covers valid `beginTrip` spawn, reverse re-merge from the sidewalk, and not sitting forever at a clear stop. `rightLane.test.ts` also snaps a start click off the stop line. `?demo=` / `?shot=` still skip the overlay. Live shots: `docs/screenshots/28-start-menu.png`, `29-arrived-menu.png`, `30-second-trip.png`.
 
 Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are captured from the running Vite app (headless Chrome or a live session), not from unit tests. HUD column shots are `hud_f1_panels.png`, `hud_f2_panels.png`, `hud_f3_panels.png`, and `hud_f3_help_popover.png`. Intersection shots 16–20 use `?seed=3` and `?demo=`. Cabin/sedan shots for [[pr-22]] are `cabin3_cockpit_*.png` (including `cabin3_cockpit_wide.png`), `cabin3_exterior_*.png` (including `cabin3_exterior_hood.png`), and `cabin3_wheel_closeup.png` (staged; **superseded** as a live-view record by the driving stills from [[pr-25]]). Traffic-flow shots 21–23 for [[pr-24]] use `?seed=3&demo=mix` and `?demo=stop`.
 
@@ -43,6 +43,7 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/sim/reengage.test.ts`
 - `game/src/sim/destination.test.ts`
 - `game/src/ui/startMenu.test.ts`
+- `game/src/sim/recovery.test.ts`
 - `game/src/render/perceptionViz.test.ts`
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`

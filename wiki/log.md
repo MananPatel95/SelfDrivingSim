@@ -105,3 +105,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#31 start menu, #33 dest) into PR #32 HUD panels
 
 ## [2026-10-15] merge | origin/main (#31 start, #32 HUD, #33 dest) into PR #34 view perf
+
+## [2026-10-15] ingest | spawn-menu-modes lane spawn, stop recovery, A→B / Random menu

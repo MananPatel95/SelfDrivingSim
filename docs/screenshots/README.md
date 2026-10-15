@@ -97,6 +97,21 @@ Same overlay after a map click: purple preview and a pink curb pin. Start is ena
 ### 30-second-trip.png
 Second trip underway from the arrived menu without a reload (HUD visible, dest pin on the minimap).
 
+### 35-ab-mode.png
+Start menu **A → B** with no points set. Start is disabled. Trip toggle and Reset / Just drive / Start.
+
+### 35-ab-mode-dest.png
+A → B after start + dest: green-pin lane start, pink pad, purple preview, Start enabled.
+
+### 36-random-mode.png
+**Random** mode with both ends and **Reroll**.
+
+### 37-lane-spawn.png
+After Start: sedan in the right-hand lane, mid-block, aligned with the road — not on the sidewalk or a stop line.
+
+### 38-reverse-recovery.png
+Autopilot reverse re-merge after `startRecovery()`.
+
 ## Environment Effects
 
 ### 07-night-fog.png

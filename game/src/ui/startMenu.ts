@@ -4,13 +4,14 @@
  */
 
 import { nearestGridLine, snapTripEnd } from '../sim/world';
-import { manhattanCorners, resolveTripDestination } from '../sim/rightLane';
+import { headingAlongRoadPoint, manhattanCorners, resolveTripDestination, snapTripStart } from '../sim/rightLane';
 import { vec3 } from '../sim/math';
 import {
   ROUTE_CORE,
   ROUTE_DEST,
   ROUTE_HALO,
   paintDestPin,
+  paintStartPin,
   routeStrokeWidths,
   type MapPoint,
 } from './minimapRoute';
@@ -18,6 +19,7 @@ import { STACK_VIEW_COPY, type StackProfile } from './viewCopy';
 
 export type TripPhase = 'start' | 'driving' | 'arrived';
 export type TripCamera = 'chase' | 'hood';
+export type TripMode = 'ab' | 'random';
 
 export interface TripPoint {
   x: number;
@@ -29,8 +31,12 @@ export interface TripMenuState {
   open: boolean;
   stack: StackProfile;
   camera: TripCamera;
+  mode: TripMode;
   start: TripPoint;
+  startLocked: boolean;
+  startHeading: number;
   destination: TripPoint | null;
+  parkedStart: TripPoint | null;
 }
 
 export const START_MAP_HALF = 300;
@@ -42,15 +48,27 @@ export function stackBlurb(profile: StackProfile): string {
   return STACK_VIEW_COPY[profile].blurb;
 }
 
+export function snapMenuStart(clickX: number, clickY: number, heading?: number): TripPoint {
+  const pos = snapTripStart(clickX, clickY, heading);
+  return { x: pos.x, y: pos.y };
+}
+
 export function createTripMenu(start: TripPoint, extras?: Partial<TripMenuState>): TripMenuState {
+  const snapped = snapMenuStart(start.x, start.y);
+  const heading = headingAlongRoadPoint(snapped.x, snapped.y);
   return {
     phase: 'start',
     open: true,
     stack: 'tesla',
     camera: 'chase',
-    start: { x: start.x, y: start.y },
+    mode: 'ab',
+    start: snapped,
+    startLocked: false,
+    startHeading: heading,
     destination: null,
+    parkedStart: null,
     ...extras,
+    start: extras?.start ? snapMenuStart(extras.start.x, extras.start.y, extras.startHeading) : snapped,
   };
 }
 
@@ -96,12 +114,62 @@ export function pickTripDestination(state: TripMenuState, clickX: number, clickY
   return { ...state, destination: snapMenuDestination(state.start, clickX, clickY) };
 }
 
+/** Map click for the live overlay: A→B is start then end; a third click resets. */
+export function clickTripMap(state: TripMenuState, clickX: number, clickY: number): TripMenuState {
+  if (state.mode === 'random') {
+    return pickTripDestination(state, clickX, clickY);
+  }
+  if (state.startLocked && state.destination) {
+    const parked = state.parkedStart;
+    return {
+      ...state,
+      start: parked ?? state.start,
+      startLocked: !!parked,
+      startHeading: parked ? headingAlongRoadPoint(parked.x, parked.y) : state.startHeading,
+      destination: null,
+    };
+  }
+  if (!state.startLocked) {
+    const start = snapMenuStart(clickX, clickY);
+    return {
+      ...state,
+      start,
+      startLocked: true,
+      startHeading: headingAlongRoadPoint(start.x, start.y),
+    };
+  }
+  return pickTripDestination(state, clickX, clickY);
+}
+
+export function resetTripPoints(state: TripMenuState): TripMenuState {
+  const parked = state.parkedStart;
+  if (parked) {
+    return {
+      ...state,
+      start: parked,
+      startLocked: true,
+      startHeading: headingAlongRoadPoint(parked.x, parked.y),
+      destination: null,
+    };
+  }
+  return { ...state, startLocked: false, destination: null };
+}
+
+export function setTripMode(
+  state: TripMenuState,
+  mode: TripMode,
+  rng: () => number = Math.random,
+): TripMenuState {
+  if (mode === state.mode) return state;
+  if (mode === 'random') return rollRandomTrip({ ...state, mode }, rng);
+  return { ...state, mode };
+}
+
 export function pickRandomDestination(
   state: TripMenuState,
   rng: () => number = Math.random,
 ): TripMenuState {
-  const dest = randomMenuDestination(state.start, rng);
-  return { ...state, destination: dest };
+  return rollRandomTrip(state, rng);
 }
 
 export function randomMenuDestination(start: TripPoint, rng: () => number = Math.random): TripPoint {
@@ -117,8 +185,36 @@ export function randomMenuDestination(start: TripPoint, rng: () => number = Math
   return snapMenuDestination(start, start.x + 120, start.y + 180);
 }
 
+export function randomMenuStart(rng: () => number = Math.random): TripPoint {
+  const roads = [-200, -100, 0, 100, 200];
+  const along = roads[Math.floor(rng() * roads.length)]!;
+  const t = (rng() * 2 - 1) * 160;
+  const ns = rng() < 0.5;
+  const click = ns ? { x: along, y: t } : { x: t, y: along };
+  return snapMenuStart(click.x, click.y);
+}
+
+export function rollRandomTrip(
+  state: TripMenuState,
+  rng: () => number = Math.random,
+): TripMenuState {
+  let start = randomMenuStart(rng);
+  if (state.phase === 'arrived' && state.parkedStart && rng() < 0.35) {
+    start = state.parkedStart;
+  }
+  const dest = randomMenuDestination(start, rng);
+  return {
+    ...state,
+    mode: 'random',
+    start,
+    startLocked: true,
+    startHeading: headingAlongRoadPoint(start.x, start.y),
+    destination: dest,
+  };
+}
+
 export function canStart(state: TripMenuState): boolean {
-  return state.open && state.destination !== null;
+  return state.open && state.startLocked && state.destination !== null;
 }
 
 export function startTrip(state: TripMenuState): TripMenuState {
@@ -131,12 +227,17 @@ export function justDrive(state: TripMenuState): TripMenuState {
 }
 
 export function onArrived(state: TripMenuState, current: TripPoint): TripMenuState {
+  const start = snapMenuStart(current.x, current.y);
   return {
     ...state,
     phase: 'arrived',
     open: true,
-    start: { x: current.x, y: current.y },
+    mode: 'ab',
+    start,
+    startLocked: true,
+    startHeading: headingAlongRoadPoint(start.x, start.y),
     destination: null,
+    parkedStart: start,
   };
 }
 
@@ -161,18 +262,26 @@ export function menuBanner(state: TripMenuState): string | null {
 
 export function menuLead(state: TripMenuState): string {
   if (state.phase === 'arrived') {
-    return 'The car is parked on the pink pad. Pick a view, drop a new destination, and continue.';
+    return 'The car is parked on the pink pad. Pick A → B or Random, then continue.';
   }
-  return 'Watch how three public-style stacks see the same street. Choose a view, click a destination, then Start.';
+  return 'Watch how three public-style stacks see the same street. Choose a view, A → B or Random, then Start.';
 }
 
 export function menuStatus(state: TripMenuState): string {
+  if (state.mode === 'random') {
+    return state.destination
+      ? 'Random path set. Press Start or Enter, or Reroll for another pair.'
+      : 'Reroll to pick a random start and destination.';
+  }
+  if (!state.startLocked) {
+    return 'Click the map to set the start (green pin), then the destination (pink pad).';
+  }
   if (!state.destination) {
     return state.phase === 'arrived'
-      ? 'Click the map for the next destination, or pick a random one.'
-      : 'Click the map to choose a destination, or pick a random one.';
+      ? 'Start is the parked car. Click the map for the next destination, or Reset to move the start.'
+      : 'Start set. Click the map for the destination (pink pad).';
   }
-  return 'Destination set. Press Start or Enter to drive there on autopilot.';
+  return 'Start and destination set. Press Start or Enter. Click again or Reset to clear.';
 }
 
 export function worldToStartMap(
@@ -214,6 +323,7 @@ export function startMapToWorld(
 export interface StartMapDrawOpts {
   start: TripPoint;
   startHeading?: number;
+  startLocked?: boolean;
   destination: TripPoint | null;
   buildings?: ReadonlyArray<{ x: number; y: number; hx: number; hy: number }>;
   route?: ReadonlyArray<TripPoint>;
@@ -285,6 +395,12 @@ export function drawStartCityMap(
     };
     stroke(Math.max(5, halo * 0.35), ROUTE_HALO);
     stroke(Math.max(2.2, core * 0.35), ROUTE_CORE);
+  }
+
+  if (opts.startLocked !== false) {
+    const pin = to(opts.start.x, opts.start.y);
+    const scale = Math.max(1.1, (w / 210) * 0.55);
+    paintStartPin(ctx, pin, scale);
   }
 
   if (opts.destination) {

@@ -41,6 +41,8 @@ export interface StopBook {
 export const DEADLOCK_WAIT = 3;
 export const GO_HOLD = 0.8;
 export const CLEARING_SPEED = 5.2;
+/** Seconds held at the line before a stop counts even if speed never quite hits 0.25. */
+export const STOP_SIGN_DWELL = 1.2;
 
 export interface RuleDecision {
   maxSpeed: number;
@@ -193,6 +195,26 @@ function earliestArrivalId(waiting: Array<{ o: RoadUser; arrivedAt: number }>): 
   if (waiting.length === 0) return null;
   waiting.sort((a, b) => a.arrivedAt - b.arrivedAt || a.o.id - b.o.id);
   return waiting[0]!.o.id;
+}
+
+/** True when nothing in the box or on the crosswalk is blocking a post-dwell release. */
+export function stopWayClear(
+  self: RoadUser,
+  inter: ControlledIntersection,
+  others: RoadUser[],
+  peds: ReadonlyArray<{ x: number; y: number; state?: string }>,
+  book: StopBook,
+): boolean {
+  if (pedInCrosswalk(inter, peds)) return false;
+  if (someoneInBox(inter, others, self.id)) return false;
+  const mine = book.arrivals.get(self.id);
+  if (!mine || mine.intersectionId !== inter.id) return !pedInCrosswalk(inter, peds) && !someoneInBox(inter, others, self.id);
+  const waiting = waitingHere(book, [self, ...others], inter);
+  for (const { o, arrivedAt } of waiting) {
+    if (o.id === self.id) continue;
+    if (arrivedAt < mine.arrivedAt - 0.12) return false;
+  }
+  return true;
 }
 
 function canLeaveStop(

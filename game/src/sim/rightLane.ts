@@ -32,6 +32,8 @@ export const PULL_OVER_LENGTH = 16;
 export const PULL_OVER_STRAIGHT = 10;
 /** Keep the pad out of the intersection box. */
 export const DEST_INTERSECTION_CLEAR = 16;
+/** Mid-block spawn: stay this far from a grid crossing so the car is not on a stop line. */
+export const SPAWN_INTERSECTION_CLEAR = 24;
 /** City grid step (matches `world.ts` MAP_BLOCK). */
 export const GRID_STEP = 100;
 /** Click this far left of the naive approach counts as an opposite-side dest. */
@@ -196,6 +198,60 @@ function lastHeading(route: Vec3[], fallback = 0): number {
 
 function nearGridCrossing(x: number, y: number, clear = DEST_INTERSECTION_CLEAR): boolean {
   return Math.abs(x - nearestGridLine(x)) < clear && Math.abs(y - nearestGridLine(y)) < clear;
+}
+
+export function isNearIntersection(x: number, y: number, clear = SPAWN_INTERSECTION_CLEAR): boolean {
+  return nearGridCrossing(x, y, clear);
+}
+
+/** Default travel heading on the road this point sits on (north on N–S, east on E–W). */
+export function headingAlongRoadPoint(x: number, y: number): number {
+  const ns = Math.abs(x - nearestGridLine(x)) <= Math.abs(y - nearestGridLine(y));
+  return ns ? Math.PI / 2 : 0;
+}
+
+/**
+ * Snap a map start click onto the right-hand driving lane, aligned to the grid,
+ * and slide it off any junction so the sedan is not on a sidewalk or stop line.
+ */
+export function snapTripStart(x: number, y: number, heading?: number): Vec3 {
+  const yaw = snapHeadingToGrid(heading ?? headingAlongRoadPoint(x, y));
+  const ns = Math.abs(Math.sin(yaw)) >= Math.abs(Math.cos(yaw));
+  const snapped = ns
+    ? vec3(nearestGridLine(x), y, 0)
+    : vec3(x, nearestGridLine(y), 0);
+  let placed = placeInRightLane(snapped.x, snapped.y, yaw, LANE_OFFSET);
+  if (nearGridCrossing(placed.x, placed.y, SPAWN_INTERSECTION_CLEAR)) {
+    const ix = nearestGridLine(placed.x);
+    const iy = nearestGridLine(placed.y);
+    const fx = Math.cos(yaw);
+    const fy = Math.sin(yaw);
+    const along = (placed.x - ix) * fx + (placed.y - iy) * fy;
+    const away = along >= 0 ? SPAWN_INTERSECTION_CLEAR : -SPAWN_INTERSECTION_CLEAR;
+    placed = placeInRightLane(ix + fx * away, iy + fy * away, yaw, LANE_OFFSET);
+  }
+  return placed;
+}
+
+export function isValidLaneSpawn(x: number, y: number, heading: number): boolean {
+  const yaw = snapHeadingToGrid(heading);
+  return inRightLane(x, y, yaw)
+    && !nearGridCrossing(x, y, SPAWN_INTERSECTION_CLEAR - 2)
+    && Math.abs(normalizeAngle(heading - yaw)) < 0.2;
+}
+
+/** Place the ego at a legal lane start, then aim it along the first trip segment. */
+export function placeTripStart(start: Vec3, end: Vec3): { pos: Vec3; yaw: number } {
+  const hint = snapTripStart(start.x, start.y);
+  let yaw = headingAlongRoadPoint(hint.x, hint.y);
+  if (sameGridRoad(hint, end)) {
+    yaw = snapHeadingToGrid(Math.atan2(end.y - hint.y, end.x - hint.x));
+  } else {
+    const probe = rightLaneRoute(hint, end);
+    const next = probe[Math.min(1, probe.length - 1)] ?? end;
+    yaw = snapHeadingToGrid(Math.atan2(next.y - hint.y, next.x - hint.x));
+  }
+  return { pos: placeInRightLane(hint.x, hint.y, yaw, LANE_OFFSET), yaw };
 }
 
 /** Slide a roadside pad backward along the approach so it is not in a junction. */

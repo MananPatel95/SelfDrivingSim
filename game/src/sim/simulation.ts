@@ -15,11 +15,13 @@ import {
   isLegitimatelyQueued, nudgeOrRespawn,
   applyTrafficImpulse, knockPedestrian,
 } from './world';
-import { mergeIntoLaneRoute, placeInRightLane, tripRoute } from './rightLane';
+import { LANE_OFFSET, lateralFromCenter, mergeIntoLaneRoute, placeTripStart, resolveTripDestination, snapTripStart } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
+  approachingIntersection,
   decideIntersection,
+  stopWayClear,
 } from './intersectionRules';
 
 export type ZoneType = 'city';
@@ -53,6 +55,18 @@ import {
   type CollisionBody,
   type FurnitureBreak,
 } from './collision';
+import {
+  brakeToStopInput,
+  createRecoveryState,
+  isOffLane,
+  isOffPath,
+  recoveryFinished,
+  reverseAnchor,
+  reverseRejoinInput,
+  shouldStartRecovery,
+  STOP_STUCK_RECOVER,
+  type RecoveryState,
+} from './recovery';
 
 export interface SimulationConfig {
   seed: number;
@@ -122,6 +136,11 @@ export class Simulation {
   private tripHeading = 0;
   /** Frames of in-lane standstill while the pad is still ahead (replan trigger). */
   private stuckTicks = 0;
+  private recovery: RecoveryState = createRecoveryState();
+  private recoverFrom: Vec3 | null = null;
+  private stopHoldSec = 0;
+  private offPathTicks = 0;
+  private haveMoved = false;
   private prevEgoX = 0;
   private prevEgoY = 0;
   private spatialGrid = new SpatialGrid(8);
@@ -165,7 +184,8 @@ export class Simulation {
     this.contactIds.clear();
     this.contactHoldUntil.clear();
     const worldMap = generateCityMap(this.config.seed, this.config.cityConfig);
-    const spawnPoint = worldMap.spawnPoints[0] ?? vec3(0, 0, 0);
+    const rawSpawn = worldMap.spawnPoints[0] ?? vec3(3.5, -50, 0);
+    const spawnPoint = snapTripStart(rawSpawn.x, rawSpawn.y, Math.PI / 2);
     const ego = createEgoState('car', spawnPoint, Math.PI / 2);
     const trafficVehicles = this.spawnTrafficVehicles(worldMap, 20);
     const pedestrians = this.spawnPedestrians(worldMap, 22);
@@ -585,11 +605,15 @@ export class Simulation {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
     }
 
-    if (this.state.arrived && this.state.controlSource !== 'human') {
+    if (this.state.controlSource !== 'human') {
+      vehicleInput = this.applyRecovery(vehicleInput, lastRule, dt);
+    }
+
+    if (this.state.arrived && this.state.controlSource !== 'human' && this.recovery.phase === 'idle') {
       vehicleInput = { throttle: 0, steering: 0, brake: 1 };
-    } else if (this.state.controlSource !== 'human' && lastRule.mustStop) {
+    } else if (this.state.controlSource !== 'human' && lastRule.mustStop && this.recovery.phase === 'idle') {
       vehicleInput = { ...vehicleInput, throttle: 0, brake: 1 };
-    } else if (this.state.controlSource !== 'human' && lastRule.maxSpeed < 8) {
+    } else if (this.state.controlSource !== 'human' && lastRule.maxSpeed < 8 && this.recovery.phase === 'idle') {
       const speed = vec3Length(this.state.ego.velocity);
       if (speed > lastRule.maxSpeed + 0.3) {
         vehicleInput = { ...vehicleInput, throttle: 0, brake: Math.max(vehicleInput.brake, 0.45) };
@@ -861,33 +885,53 @@ export class Simulation {
     this.tripHeading = 0;
     this.state.arrived = false;
     this.stuckTicks = 0;
+    this.stopHoldSec = 0;
+    this.recovery = createRecoveryState();
+    this.recoverFrom = null;
+    this.offPathTicks = 0;
+    this.haveMoved = false;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
   }
 
   /** Place the car on a start point and follow a right-hand-lane road route to a roadside pad. */
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
-    const route = tripRoute(start, end);
-    const next = route[Math.min(1, route.length - 1)] ?? end;
-    const placed = route[0] ?? placeInRightLane(start.x, start.y, 0);
-    const yaw = Math.atan2(next.y - placed.y, next.x - placed.x);
-    this.faceAndPark(yaw);
+    const placed = placeTripStart(start, end);
+    const resolved = resolveTripDestination(placed.pos, end);
+    const route = mergeIntoLaneRoute(placed.pos, placed.yaw, resolved.pad);
+    this.faceAndPark(placed.yaw);
     this.state.ego = {
       ...this.state.ego,
-      transform: { position: { x: placed.x, y: placed.y, z: 0 }, rotation: yaw },
+      transform: { position: { x: placed.pos.x, y: placed.pos.y, z: 0 }, rotation: placed.yaw },
     };
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = mode;
-    const pad = route[route.length - 1] ?? { x: end.x, y: end.y, z: 0 };
+    const pad = resolved.pad;
     this.tripDestination = { x: pad.x, y: pad.y, z: 0 };
     this.tripHeading = route.length >= 2
       ? Math.atan2(pad.y - route[route.length - 2]!.y, pad.x - route[route.length - 2]!.x)
-      : yaw;
+      : placed.yaw;
     this.state.arrived = false;
     this.stuckTicks = 0;
+    this.stopHoldSec = 0;
+    this.recovery = createRecoveryState();
+    this.recoverFrom = null;
+    this.offPathTicks = 0;
+    this.haveMoved = false;
     this.prevEgoX = this.state.ego.transform.position.x;
     this.prevEgoY = this.state.ego.transform.position.y;
+  }
+
+  /** Move the parked preview pose without starting a trip (start-menu A→B / Random). */
+  previewSpawn(at: Vec3, yaw?: number): void {
+    const heading = yaw ?? this.state.ego.transform.rotation;
+    const pos = snapTripStart(at.x, at.y, heading);
+    this.faceAndPark(heading);
+    this.state.ego = {
+      ...this.state.ego,
+      transform: { position: { x: pos.x, y: pos.y, z: 0 }, rotation: heading },
+    };
   }
 
   getTripDestination(): Vec3 | null {
@@ -963,12 +1007,93 @@ export class Simulation {
     this.state.controlSource = 'policy';
     this.state.arrived = false;
     this.stuckTicks = 0;
+    this.stopHoldSec = 0;
+    this.recovery = createRecoveryState();
+    this.recoverFrom = null;
+    this.offPathTicks = 0;
+    this.stopBook.arrivals.delete(-1);
     if (goal && route.length >= 2) {
       const tail = route[route.length - 1]!;
       const prev = route[route.length - 2]!;
       this.tripHeading = Math.atan2(tail.y - prev.y, tail.x - prev.x);
     }
     return { mode: goal ? 'trip' : 'cruise', route };
+  }
+
+  getRecovery(): RecoveryState {
+    return { ...this.recovery, target: this.recovery.target ? { ...this.recovery.target } : null };
+  }
+
+  /** Test hook: start a reverse re-merge from the current pose. */
+  startRecovery(): void {
+    const ego = this.state.ego;
+    this.recovery = {
+      phase: vec3Length(ego.velocity) > 0.35 ? 'braking' : 'reversing',
+      ticks: 0,
+      target: reverseAnchor(ego.transform.position.x, ego.transform.position.y, ego.transform.rotation),
+    };
+    this.recoverFrom = { x: ego.transform.position.x, y: ego.transform.position.y, z: 0 };
+  }
+
+  private applyRecovery(input: VehicleInput, lastRule: RuleDecision, dt: number): VehicleInput {
+    const ego = this.state.ego;
+    const speed = vec3Length(ego.velocity);
+    const pos = ego.transform.position;
+    const yaw = ego.transform.rotation;
+    const stopping = lastRule.reason.startsWith('Stopping');
+    if (stopping && speed < 0.45) this.stopHoldSec += dt;
+    else if (!stopping) this.stopHoldSec = 0;
+    if (speed > 2) this.haveMoved = true;
+    if (isOffPath(pos.x, pos.y, this.state.route)) this.offPathTicks += 1;
+    else this.offPathTicks = 0;
+
+    const self = entityToRoadUser(egoAsTraffic(ego));
+    const others = this.state.trafficVehicles.map(entityToRoadUser);
+    const hit = approachingIntersection(self, this.state.worldMap.controlledIntersections);
+    const wayClear = !hit || stopWayClear(
+      self,
+      hit.inter,
+      others,
+      this.state.pedestrians,
+      this.stopBook,
+    );
+    const stopStuckClear = stopping && speed < 0.45 && this.stopHoldSec >= STOP_STUCK_RECOVER && wayClear;
+
+    const nearPad = !!this.tripDestination
+      && vec3Distance(pos, this.tripDestination) < 30;
+    if (this.recovery.phase === 'idle') {
+      if (!nearPad && shouldStartRecovery({
+        arrived: this.state.arrived,
+        human: this.state.controlSource === 'human',
+        offLane: isOffLane(pos.x, pos.y, yaw),
+        offPath: this.haveMoved && this.offPathTicks >= 24,
+        speed,
+        stopStuckClear,
+      })) {
+        this.startRecovery();
+      } else {
+        return input;
+      }
+    }
+
+    this.recovery.ticks += 1;
+    if (this.recovery.phase === 'braking') {
+      if (speed < 0.3) {
+        this.recovery.phase = 'reversing';
+        this.recovery.target = reverseAnchor(pos.x, pos.y, yaw);
+        this.recoverFrom = { x: pos.x, y: pos.y, z: 0 };
+      }
+      return brakeToStopInput(input.steering);
+    }
+
+    const from = this.recoverFrom ?? pos;
+    if (recoveryFinished(pos.x, pos.y, yaw, from, this.state.route) || this.recovery.ticks > 180) {
+      this.reengageAutopilot();
+      return input;
+    }
+    const lat = lateralFromCenter(pos.x, pos.y, yaw);
+    const steer = Math.max(-0.7, Math.min(0.7, (lat - LANE_OFFSET) * 0.22));
+    return reverseRejoinInput(steer);
   }
   
   acceptRide(rideId: number): void {

@@ -20,7 +20,7 @@ AI cars no longer ride one full-map lane until it dies. They **random-walk the g
 
 **Deadlock breaker:** if every waiting car at a junction has waited more than ~3 s (`DEADLOCK_WAIT`), the earliest arrival (then lowest id) goes. That breaks four-way arrive-together cycles (FCFS ties all yield to the right; uncontrolled four-way the same).
 
-**Stuck:** speed < 0.3 m/s for > 6 s while not legitimately queued → replan; > 10 s → respawn off-screen. Occupants crawling in the box are nudged after ~1.6 s.
+**Stuck:** speed < 0.3 m/s for > 6 s while not legitimately queued → replan; > 10 s → respawn off-screen. Occupants crawling in the box are nudged after ~1.6 s. The ego additionally reverse-remerges if it is off-lane / off-path or held at a clear stop longer than 2.4 s (`recovery.ts`); NPC cars still never reverse.
 
 NPC IDM follow is **same-heading only**, and the ego is in the leader set (`egoAsTraffic`), so cross-traffic in the box is not treated as a car to queue behind. Pedestrian yield from [[pr-5]] still applies on the approach, not inside the box.
 
@@ -34,3 +34,4 @@ NPC IDM follow is **same-heading only**, and the ego is in the leader set (`egoA
 - `game/src/sim/simulation.ts`
 - `game/src/sim/trafficStop.test.ts`
 - `game/src/sim/trafficFlow.test.ts`
+- `game/src/sim/recovery.ts`
