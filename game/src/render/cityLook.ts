@@ -4,7 +4,8 @@
  */
 
 import * as THREE from 'three';
-import { getCityTextures, type CityTextures } from './cityTextures';
+import { applyTextureAnisotropy, getCityTextures, type CityTextures } from './cityTextures';
+export { applyTextureAnisotropy };
 
 export const SKY_DAY = 0x87b8d8;
 export const SKY_NIGHT = 0x0a1020;
@@ -158,18 +159,21 @@ export function curbMaterial(tex: CityTextures): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ map: tex.curb, color: 0xffffff });
 }
 
-export function facadeMaterial(tex: CityTextures, night: boolean): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({
-    map: tex.facade,
-    emissive: new THREE.Color(0xffe6b0),
-    emissiveIntensity: night ? 1.15 : 0.55,
-    emissiveMap: tex.windows,
-    color: 0xffffff,
-  });
+export const BUILDING_COLORS = [0x606070, 0x707080, 0x556065, 0x4a5560, 0x505a60];
+
+/** Pre-#34 solid buildings (no window-grid atlas). Instance colour picks the shade. */
+export function buildingPaletteMaterial(): THREE.MeshLambertMaterial {
+  return new THREE.MeshLambertMaterial({ color: 0xffffff });
 }
 
 export function impostorMaterial(): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ color: 0x5a626c });
+}
+
+export function buildingInstanceColor(index: number, x: number, y: number, height: number): THREE.Color {
+  const base = new THREE.Color(BUILDING_COLORS[index % BUILDING_COLORS.length]!);
+  const ao = instanceAO(x, y, height);
+  return base.multiply(ao);
 }
 
 export function applyVertexAO(geo: THREE.BufferGeometry, strength = 0.28) {

@@ -105,3 +105,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#31 start menu, #33 dest) into PR #32 HUD panels
 
 ## [2026-10-15] merge | origin/main (#31 start, #32 HUD, #33 dest) into PR #34 view perf
+
+## [2026-10-15] ingest | cursor/city-look-fix-7cdd asphalt noise, block fill, pre-#34 buildings, ped heading
