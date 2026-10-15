@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Simulation } from '../sim/simulation';
 import { vec3 } from '../sim/math';
-import { PULL_OVER_OFFSET, roadsideDestination } from '../sim/rightLane';
+import { PULL_OVER_OFFSET, resolveTripDestination } from '../sim/rightLane';
 import {
-  approachHeading,
   canStart,
   createTripMenu,
   dismissTripMenu,
@@ -73,14 +72,23 @@ describe('start menu state flow', () => {
     expect(menu.destination).not.toBeNull();
   });
 
-  it('snaps a map click to the nearest right-hand curb pad', () => {
+  it('snaps a map click to the arrival-side curb pad', () => {
     const start = { x: 3.5, y: -22 };
     const dest = snapMenuDestination(start, 12, 80);
-    const heading = approachHeading(start, { x: 0, y: 80 });
-    const expected = roadsideDestination(vec3(0, 80, 0), heading);
-    expect(dest.x).toBeCloseTo(expected.x, 5);
-    expect(dest.y).toBeCloseTo(expected.y, 5);
+    const expected = resolveTripDestination(vec3(start.x, start.y, 0), vec3(12, 80, 0));
+    expect(dest.x).toBeCloseTo(expected.pad.x, 5);
+    expect(dest.y).toBeCloseTo(expected.pad.y, 5);
+    expect(expected.opposite).toBe(false);
     expect(dest.x).toBeCloseTo(PULL_OVER_OFFSET, 0);
+  });
+
+  it('snaps an opposite-side click to the arrival-side curb (U-turn pad)', () => {
+    const start = { x: 3.5, y: -22 };
+    const dest = snapMenuDestination(start, -4.5, 80);
+    const expected = resolveTripDestination(vec3(start.x, start.y, 0), vec3(-4.5, 80, 0));
+    expect(expected.opposite).toBe(true);
+    expect(dest.x).toBeCloseTo(expected.pad.x, 5);
+    expect(dest.x).toBeCloseTo(-PULL_OVER_OFFSET, 0);
   });
 
   it('picks a random destination on a curb, away from the start', () => {
@@ -140,8 +148,14 @@ describe('start menu state flow', () => {
     sim.beginTrip(vec3(0, 50, 0), vec3(0, 78, 0), 'policy');
     const parked = { x: PULL_OVER_OFFSET, y: 78 };
     let menu = onArrived(createTripMenu({ x: 0, y: 50 }, { phase: 'driving', open: false }), parked);
-    menu = pickTripDestination(menu, 100, 4);
+    // Same-road, same-side, ahead of the parked pose so snapTripEnd does not
+    // fold the click onto a junction and tripRoute keeps route[0] at start.
+    menu = pickTripDestination(menu, 6, 160);
     expect(canStart(menu)).toBe(true);
+    expect(menu.start.x).toBeCloseTo(parked.x);
+    expect(menu.start.y).toBeCloseTo(parked.y);
+    expect(menu.destination!.x).toBeCloseTo(PULL_OVER_OFFSET, 0);
+    expect(menu.destination!.y).toBeGreaterThan(parked.y + 20);
     menu = startTrip(menu);
     sim.beginTrip(vec3(menu.start.x, menu.start.y, 0), vec3(menu.destination!.x, menu.destination!.y, 0), 'policy');
     expect(sim.hasArrived()).toBe(false);

@@ -121,6 +121,9 @@ function makeLabelSprite(text: string, color: string): THREE.Sprite {
   return sprite;
 }
 
+/** World-space % sprites drew huge over the HUD when a track sat near the camera. */
+export const DRAW_WORLD_LABEL_SPRITES = false;
+
 export class PerceptionVisualizer {
   readonly group = new THREE.Group();
   private points: THREE.Points;
@@ -361,6 +364,14 @@ export class PerceptionVisualizer {
   }
 
   private updateLabels(input: PerceptionVizInput) {
+    if (!DRAW_WORLD_LABEL_SPRITES) {
+      if (this.labels.length > 0) {
+        for (const s of this.labels) this.group.remove(s);
+        this.labels = [];
+        this.lastLabelKey = '';
+      }
+      return;
+    }
     const ego = input.ego;
     const keyParts: string[] = [];
     const items: Array<{ text: string; color: string; x: number; y: number; z: number }> = [];

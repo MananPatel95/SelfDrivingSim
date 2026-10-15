@@ -3,8 +3,8 @@
  * Destination snaps go through the existing roadside-pad API — not the planner.
  */
 
-import { nearestGridLine, snapToRoad } from '../sim/world';
-import { manhattanCorners, roadsideDestination } from '../sim/rightLane';
+import { nearestGridLine, snapTripEnd } from '../sim/world';
+import { manhattanCorners, resolveTripDestination } from '../sim/rightLane';
 import { vec3 } from '../sim/math';
 import {
   ROUTE_CORE,
@@ -80,12 +80,16 @@ export function approachHeading(start: TripPoint, end: TripPoint): number {
   return headingAlongRoad(end);
 }
 
-/** Snap a map click onto the nearest right-hand curb pad. */
+/**
+ * Snap a map click with #33's destination API: keep the clicked curb side
+ * (`snapTripEnd`), then `resolveTripDestination` places the arrival-side pad
+ * (opposite-side clicks U-turn so that curb is on the right).
+ */
 export function snapMenuDestination(start: TripPoint, clickX: number, clickY: number): TripPoint {
-  const road = snapToRoad(clickX, clickY);
-  const heading = approachHeading(start, road);
-  const pad = roadsideDestination(road, heading);
-  return { x: pad.x, y: pad.y };
+  const from = vec3(start.x, start.y, 0);
+  const end = snapTripEnd(from, clickX, clickY);
+  const resolved = resolveTripDestination(from, end);
+  return { x: resolved.pad.x, y: resolved.pad.y };
 }
 
 export function pickTripDestination(state: TripMenuState, clickX: number, clickY: number): TripMenuState {

@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { Simulation } from './sim/simulation';
 import { vec3Length, egoToWorld, clamp } from './sim/math';
 import { formatGear } from './sim/vehicle';
-import { destinationPinWorld, tripRoute } from './sim/rightLane';
+import { destinationPinWorld, PAD_ALONG, PAD_WIDTH, tripRoute } from './sim/rightLane';
 import { COCKPIT, HAND_LOCK_DEG, handWheelRotation } from './sim/cabinView';
 import {
   applyCameraLayers,
@@ -486,7 +486,7 @@ function createDestinationMarker(): THREE.Group {
   });
   const white = new THREE.MeshLambertMaterial({ color: 0xffffff });
 
-  const pad = new THREE.Mesh(new THREE.PlaneGeometry(8.4, 2.4), pinkPad);
+  const pad = new THREE.Mesh(new THREE.PlaneGeometry(PAD_ALONG, PAD_WIDTH), pinkPad);
   pad.rotation.x = -Math.PI / 2;
   pad.position.y = 0.035;
   pad.receiveShadow = true;
@@ -494,7 +494,7 @@ function createDestinationMarker(): THREE.Group {
 
   const pin = new THREE.Group();
   pin.name = 'dest-pin';
-  pin.position.set(3.15, 0, 1.1);
+  pin.position.set(PAD_ALONG / 2 - 1.05, 0, PAD_WIDTH / 2 - 0.12);
   const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.85, 8), white);
   stem.position.y = 0.95;
   stem.castShadow = true;
@@ -3078,7 +3078,7 @@ function applyShot(kind: string) {
   }
 }
 
-/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive, plus hit-car|hit-pole|hit-sign|hit-ped */
+/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp, plus hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
   suppressArrivedMenu = true;
   showAIView = true;
@@ -3089,10 +3089,24 @@ function applyDemo(kind: string) {
   if (kind === 'arrive') {
     armMenuTrip({ x: 0, y: 50 }, { x: 0, y: 78 });
     beginGame('autopilot');
+    simulation.getState().trafficVehicles = [];
+    simulation.getState().pedestrians = [];
     setCameraMode('orbit');
     orbitYaw = 0.2;
     orbitPitch = 0.34;
     orbitDist = 20;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'arrive-opp') {
+    armMenuTrip({ x: 0, y: 55 }, { x: -5, y: 78 });
+    beginGame('autopilot');
+    simulation.getState().trafficVehicles = [];
+    simulation.getState().pedestrians = [];
+    setCameraMode('orbit');
+    orbitYaw = 0.15;
+    orbitPitch = 0.38;
+    orbitDist = 22;
     camFollowReady = true;
     return;
   }
@@ -3540,6 +3554,10 @@ async function init() {
       const pos = simulation.getState().ego.transform.position;
       tripMenu = onArrived(tripMenu, { x: pos.x, y: pos.y });
       syncTripMenuDom();
+    },
+    clearAgents() {
+      simulation.getState().trafficVehicles = [];
+      simulation.getState().pedestrians = [];
     },
     getTripHeading: () => simulation.getTripHeading(),
     getEgo: () => {
