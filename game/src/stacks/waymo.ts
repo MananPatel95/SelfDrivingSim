@@ -377,9 +377,9 @@ export function runWaymoPerception(
 // Info card content
 export const WAYMO_INFO_CARD = {
   name: 'Waymo-style: Multi-sensor + HD Map',
-  sensors: 'Publicly described: 13 cameras, 4 lidars, 6 radars (6th-gen Waymo Driver)',
-  internals: 'Public: HD lane-graph routing + lidar/radar/camera fusion on a geofenced map. This sim: walk procedural HD driving lanes; live detections stay lidar+radar. Localization / geofence flags remain on the profile.',
-  strengths: 'Multi-sensor redundancy (lidar, radar, camera), precise localization from detailed maps, handles occlusions via radar, high-quality curated HD maps',
+  sensors: 'Publicly described (6th-gen Waymo Driver, 2024): 13 cameras, 4 lidars, 6 radars, plus external audio. Overlapping 360° coverage out to ~500 m.',
+  internals: 'HD prior map (lanes, crosswalks, lights) matched to live lidar/camera/radar. Per-sensor detections fuse into tracks with IDs, velocity, and short predictions. This sim: walk procedural HD driving lanes; live detections stay lidar+radar. Localization / geofence flags remain on the profile.',
+  strengths: 'Multi-sensor redundancy (lidar, radar, camera), precise localization from detailed maps, radar velocity in rain/night, high-quality curated HD maps',
   weaknesses: 'Geofenced to pre-mapped areas, map maintenance required, expensive sensor suite',
-  example: 'Waymo operates robotaxis in mapped, geofenced service areas (Phoenix, San Francisco) using detailed prior maps and multi-sensor fusion.',
+  example: 'Waymo robotaxis in mapped, geofenced cities. Maps: Waymo Driver Handbook (2020); sensors: 6th-gen Driver blog (Aug 2024).',
 };

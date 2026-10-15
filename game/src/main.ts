@@ -75,10 +75,14 @@ import { WAABI_INFO_CARD, f3WorkStats } from './stacks/waabi';
 import { TESLA_INFO_CARD, detectVisibleAgents, hudDetectionCount, type VisionDetection } from './stacks/tesla';
 import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
 import {
+  getDisplayedFuture,
   getDisplayedOccupancy,
+  getWaabiState,
+  paintDisplayedBev,
   resetWaabiOverlay,
   tickWaabiBevOverlay,
 } from './render/bevOverlay';
+import { PERCEPTION_PERIOD_MS } from './render/snapshotLerp';
 import {
   applyDayNight,
   applyTextureAnisotropy,
@@ -99,8 +103,6 @@ import { dampAngle, headingFromVelocity, pedestrianMeshYaw } from './sim/pedestr
 import { PostFx } from './render/postFx';
 import { LIDAR_CONFIGS } from './sensors/lidar';
 import type { LidarConfig } from './sim/types';
-
-const PERCEPTION_PERIOD_MS = 100;
 
 let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
@@ -190,6 +192,8 @@ let compareMode = false;
 let driveHintShown = false;
 let lastHudMs = 0;
 let lastAiViewMs = 0;
+let lastInsetMs = 0;
+let lastBevPaintMs = 0;
 let lastDetectionMs = 0;
 const frameWorkMs = {
   sim: 0,
@@ -2005,6 +2009,11 @@ function switchStack(profile: StackProfile) {
   if (showInfoCard) updateInfoCard();
   updateOverlaysForStack(profile);
   simulation.setPlannerStack(profile);
+  perceptionViz?.setStack?.(profile);
+  if (gameStarted) {
+    if (profile === 'waabi') renderBEVHeatmaps(performance.now());
+    updateAIView(false);
+  }
   console.log(`Switched to stack: ${profile}`);
 }
 
@@ -3440,10 +3449,24 @@ function animate(time: number) {
     frameWorkMs.compare = performance.now() - c0;
   }
 
-  if (!isPaused && time - lastAiViewMs >= PERCEPTION_PERIOD_MS) {
+  const perceptionDue = !isPaused && time - lastAiViewMs >= PERCEPTION_PERIOD_MS;
+  if (perceptionDue) {
     lastAiViewMs = time;
     if (bevOverlayEnabled) renderBEVHeatmaps(time);
     updateAIView(false);
+  } else {
+    if (perceptionViz && showAIView && cameraMode !== 'hood' && !compareMode) {
+      perceptionViz.animate(time, { x: ego.x, y: ego.y, yaw: ego.yaw, stack: currentStack });
+      if (time - lastInsetMs >= 50) {
+        lastInsetMs = time;
+        const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
+        if (percCanvas) perceptionViz.paintInset(percCanvas);
+      }
+    }
+    if (bevOverlayEnabled && !compareMode && time - lastBevPaintMs >= 50) {
+      lastBevPaintMs = time;
+      paintDisplayedBev(time, document.getElementById('bev-canvas') as HTMLCanvasElement | null);
+    }
   }
 
   rawCameraFrame++;
@@ -3471,6 +3494,8 @@ function updateAIView(drawRawScene: boolean) {
     latestVisionDetections = detectVisibleAgents(state.ego, agents);
   }
 
+  const waabi = currentStack === 'waabi' ? getWaabiState() : null;
+  const nowMs = typeof performance !== 'undefined' ? performance.now() : 0;
   const input = {
     stack: currentStack,
     ego: state.ego,
@@ -3481,12 +3506,16 @@ function updateAIView(drawRawScene: boolean) {
     showGroundTruth,
     plannerOutput: state.lastPlannerOutput,
     visionDetections: latestVisionDetections,
-    occupancy: currentStack === 'waabi' ? getDisplayedOccupancy() : undefined,
+    occupancy: currentStack === 'waabi' ? getDisplayedOccupancy(nowMs) : undefined,
+    futureOccupancy: currentStack === 'waabi' ? getDisplayedFuture(nowMs) : undefined,
+    trajectories: waabi?.candidateTrajectories,
+    selectedTrajectoryIndex: waabi?.selectedTrajectoryIndex,
     controlSource: state.controlSource,
     rule: state.lastRule,
     camera,
     viewW: window.innerWidth,
     viewH: window.innerHeight,
+    nowMs,
   };
 
   if (perceptionViz) {
@@ -3511,7 +3540,10 @@ function updateAIView(drawRawScene: boolean) {
   updateAIViewExplainer(currentStack);
 
   const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
-  if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
+  if (percCanvas) {
+    if (perceptionViz) perceptionViz.paintInset(percCanvas);
+    else renderAIViewCanvas(percCanvas, input, lastDecision, nowMs);
+  }
 
   if (drawRawScene) renderRawCamera();
 }

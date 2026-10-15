@@ -1,11 +1,12 @@
 /**
  * Tesla-style Vision-Only Stack
  * 
- * Features (based on publicly described Tesla approach):
- * - Cameras only (no radar, no lidar)
- * - Depth from monocular inference (simulated with noise)
+ * Features (based on publicly described Tesla Vision / Occupancy Network):
+ * - Cameras only (no radar, no lidar) — Tesla Vision
+ * - Occupancy network: multi-camera video → 3D occupied/free voxels
+ * - Vision detections (boxes) as a separate head
  * - No HD map; lanes are inferred
- * - End-to-end neural network (pixels → trajectory) guided by a nav route
+ * - Later FSD also described as end-to-end (pixels → trajectory)
  *
  * Live planner (`planForStack('tesla')`): camera-FOV detections + pursuit of
  * the Manhattan nav polyline. There is no trained net — that is the
@@ -38,7 +39,7 @@ export interface DepthEstimate {
   classType: string;
 }
 
-// Pseudo-lidar occupancy voxel grid
+// Vision occupancy-network voxel grid (cameras, not lidar)
 export interface OccupancyVoxels {
   grid: Float32Array;
   resolution: number;
@@ -122,7 +123,7 @@ export function estimateDepthFromCamera(
   };
 }
 
-// Create pseudo-lidar occupancy from depth estimates
+// Occupancy voxels from camera depth estimates (stand-in for Occupancy Network)
 export function createOccupancyVoxels(
   depthEstimates: DepthEstimate[],
   egoState: EgoState,
@@ -250,7 +251,7 @@ export function runTeslaPerception(
     }
   }
   
-  // Create occupancy voxels (pseudo-lidar)
+  // Occupancy voxels from camera depth (not a lidar cloud)
   const occupancyVoxels = createOccupancyVoxels(depthEstimates, egoState);
   
   // Convert depth estimates to raw detections
@@ -382,9 +383,9 @@ function getDefaultSize(classType: string): Vec3 {
 // Info card content
 export const TESLA_INFO_CARD = {
   name: 'Tesla-style: Vision Only',
-  sensors: 'Publicly described: cameras only (Tesla states no radar or lidar is needed)',
-  internals: 'Public: cameras-only E2E (pixels → trajectory) guided by a navigation route, no HD map. This sim: camera-FOV detections + pursuit of the nav polyline (no trained net). Depth / occupancy voxels remain HUD-only.',
+  sensors: 'Publicly described: eight cameras only (Tesla Vision). No lidar. Radar and ultrasonics were removed; occupancy network replaced ultrasonics.',
+  internals: 'Occupancy Network turns multi-camera video into 3D occupied/free voxels (CVPR 2022 / AI Day 2022). A separate head boxes objects. Lanes inferred, no HD map. Later FSD also described as end-to-end pixels → trajectory. This sim: camera-FOV detections + pursuit of the nav polyline (no trained net). Depth / occupancy voxels remain HUD-only.',
   strengths: 'Lower cost sensors, no lidar or radar needed, works globally without pre-mapping, can read traffic signs/lights',
   weaknesses: 'Depth uncertainty at range (especially at night or in rain), no instant velocity measurements, dependent on good lighting and visibility',
-  example: 'Tesla FSD is described as an end-to-end neural network using cameras only, without relying on detailed pre-built HD maps.',
+  example: 'Tesla FSD / Tesla Vision: camera-only Occupancy Network plus vision detections, without a prior HD map.',
 };

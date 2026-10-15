@@ -1,9 +1,9 @@
 /**
  * Waabi-style AI-first, interpretable end-to-end Stack
  * 
- * Features (based on publicly described Waabi approach):
- * - Fused lidar + camera + radar into BEV grid
- * - Interpretable intermediate representations
+ * Features (based on publicly described Waabi UnO / DIO / DeTra):
+ * - Lidar (plus cameras) into a BEV occupancy field
+ * - Interpretable intermediate occupancy, not cuboids alone
  * - Future occupancy heatmaps (1s, 2s, 3s)
  * - Candidate trajectory scoring
  * - Sim World: adversarial scenario generation
@@ -843,9 +843,9 @@ export function runWaabiStack(
 // Info card content
 export const WAABI_INFO_CARD = {
   name: 'Waabi-style: AI-first, Interpretable End-to-End',
-  sensors: 'Publicly described: lidars, cameras, radars fused into BEV representation',
-  internals: 'Public: BEV occupancy + 1–3 s forecast, score candidate trajectories (interpretable E2E). This sim: agent-splat occupancy (`createBEVOccupancyFromAgents` unchanged) + route-attracted candidate scoring. Overlay `tickWaabiView` stays 10 Hz HUD.',
+  sensors: 'Publicly described: lidar (plus cameras) into a bird’s-eye occupancy field. Research (UnO, DIO) self-supervises occupancy from lidar.',
+  internals: 'BEV occupancy now, +1s/+2s/+3s occupancy-flow forecasts, and a fan of scored candidate trajectories. Interpretable mid-level occupancy, not a black box. This sim: agent-splat occupancy (`createBEVOccupancyFromAgents` unchanged) + route-attracted candidate scoring. Overlay `tickWaabiView` stays 10 Hz HUD.',
   strengths: 'End-to-end trainable, interpretable predictions, simulation-first development (Waabi World), adversarial scenario generation for robustness',
   weaknesses: 'Requires extensive simulation infrastructure, dependence on sim-to-real transfer',
-  example: 'Waabi describes an AI-first stack trained in Waabi World simulator with adversarial scenarios and closed-loop learning, focusing on autonomous trucking.',
+  example: 'Waabi UnO / DIO occupancy forecasting and DeTra detection+trajectories; stack trained in Waabi World for autonomous trucking.',
 };

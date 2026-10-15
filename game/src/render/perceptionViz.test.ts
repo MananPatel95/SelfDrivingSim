@@ -1,11 +1,44 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import {
   DRAW_WORLD_LABEL_SPRITES,
   LABEL_MAX_PX,
+  PerceptionVisualizer,
+  stackOverlayFlags,
   labelOpacityForDistance,
   labelWorldHeight,
+  resetVizWorkStats,
+  vizWorkStats,
 } from './perceptionViz';
 import { hudColumnLeft, spriteHitsReservedHud } from '../ui/hudPanels';
+import { Simulation } from '../sim/simulation';
+import { makeFutureOccupancy, emptyWaabiState, tickWaabiView } from '../stacks/waabi';
+
+describe('stack overlay fidelity', () => {
+  it('keeps Tesla camera-only and gives Waymo/Waabi a lidar sweep', () => {
+    const tesla = stackOverlayFlags('tesla');
+    expect(tesla.lidarPoints).toBe(false);
+    expect(tesla.lidarSweep).toBe(false);
+    expect(tesla.radar).toBe(false);
+    expect(tesla.cameraFrustum).toBe(true);
+    expect(tesla.visionRays).toBe(true);
+    expect(tesla.occupancyVoxels).toBe(true);
+    expect(tesla.futureOccupancy).toBe(false);
+    const waymo = stackOverlayFlags('waymo');
+    expect(waymo.lidarPoints).toBe(true);
+    expect(waymo.lidarSweep).toBe(true);
+    expect(waymo.radar).toBe(true);
+    expect(waymo.hdMapLanes).toBe(true);
+    expect(waymo.cameraFrustum).toBe(false);
+    const waabi = stackOverlayFlags('waabi');
+    expect(waabi.lidarPoints).toBe(true);
+    expect(waabi.lidarSweep).toBe(true);
+    expect(waabi.occupancyVoxels).toBe(true);
+    expect(waabi.futureOccupancy).toBe(true);
+    expect(waabi.trajFan).toBe(true);
+    expect(waabi.radar).toBe(false);
+  });
+});
 
 describe('perception world labels', () => {
   it('caps screen height and fades with distance', () => {
@@ -29,5 +62,65 @@ describe('perception world labels', () => {
     expect(spriteHitsReservedHud(80, 600, 1280, 720)).toBe(true);
     expect(spriteHitsReservedHud(640, 24, 1280, 720)).toBe(true);
     expect(spriteHitsReservedHud(400, 360, 1280, 720)).toBe(false);
+  });
+
+  it('does not walk occupancy when animate interpolates a 10 Hz snapshot', () => {
+    const scene = new THREE.Scene();
+    const viz = new PerceptionVisualizer(scene);
+    viz.setEnabled(true);
+    const sim = new Simulation({ seed: 3, maxDuration: 3600 });
+    sim.beginParked();
+    sim.step(1 / 30);
+    const s = sim.getState();
+    const into = makeFutureOccupancy();
+    tickWaabiView(s.ego, [s.trafficVehicles, s.pedestrians], emptyWaabiState(), s.timestamp, 42, into);
+    viz.update({
+      stack: 'waabi',
+      ego: s.ego,
+      tracks: [],
+      lidarPoints: sim.getLidarPoints(),
+      agents: s.trafficVehicles,
+      groundTruth: [],
+      showGroundTruth: false,
+      plannerOutput: s.lastPlannerOutput,
+      visionDetections: [],
+      occupancy: into.current,
+      futureOccupancy: into,
+      nowMs: 1000,
+    });
+    resetVizWorkStats();
+    viz.animate(1050, {
+      x: s.ego.transform.position.x,
+      y: s.ego.transform.position.y,
+      yaw: s.ego.transform.rotation,
+    });
+    viz.animate(1090, {
+      x: s.ego.transform.position.x,
+      y: s.ego.transform.position.y,
+      yaw: s.ego.transform.rotation,
+    });
+    expect(vizWorkStats.occupancyCellsVisited).toBe(0);
+    expect(vizWorkStats.predArrayAllocs).toBe(0);
+    expect(vizWorkStats.planArrayAllocs).toBe(0);
+  });
+});
+
+describe('lidar sweep wedge', () => {
+  it('stays a 3–5° sector instead of a tall slab', async () => {
+    const { LIDAR_SWEEP_WEDGE_DEG, makeSweepWedgeGeometry } = await import('./perceptionShaders');
+    expect(LIDAR_SWEEP_WEDGE_DEG).toBeGreaterThanOrEqual(3);
+    expect(LIDAR_SWEEP_WEDGE_DEG).toBeLessThanOrEqual(5);
+    const geo = makeSweepWedgeGeometry();
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    expect(pos.count).toBeGreaterThan(8);
+    expect(pos.count).toBeLessThan(80);
+    let maxY = 0;
+    let maxR = 0;
+    for (let i = 0; i < pos.count; i++) {
+      maxY = Math.max(maxY, pos.getY(i));
+      maxR = Math.max(maxR, Math.hypot(pos.getX(i), pos.getZ(i)));
+    }
+    expect(maxY).toBeLessThan(0.3);
+    expect(maxR).toBeGreaterThan(40);
   });
 });

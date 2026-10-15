@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-15
-sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 39]
+sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 39]
 ---
 
 # Testing and screenshots
@@ -21,7 +21,7 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 
 Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
-`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures. `pedestrianVisual.test.ts` asserts walking heading stays within 10° of `atan2(velocity)`.
+`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `snapshotLerp.test.ts` covers 10 Hz alpha, track-id lerp (including yaw wrap), occupancy cell lerp, lidar sweep decay, `lidarSweepCrossed` wrap, box pop-in, and world-anchored lidar hits. `perceptionViz.test.ts` also asserts `animate()` does not walk occupancy cells and that Tesla has no lidar overlay. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures. `pedestrianVisual.test.ts` asserts walking heading stays within 10° of `atan2(velocity)`.
 
 `destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset 5.775 m, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on the **arrival road** (`onArrivalAsphalt` + `distanceToRightCurb` ~0.3 m), not `|x| < 7` (N–S only) or `pointOnAsphalt` (OR of both axes). Eastbound unit cases use the Y curb so `|x| < 7` would wrongly fail x≈50. The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. A dest one left turn away asserts exactly one left, no U-turn, and a near-Manhattan length (a U-turn + right would add a block). A just-around-the-corner left (`(50,100) → (104,110)`) parks at `100 + DEST_PAD_ALONG_CLEAR` on the curb (`100 + PULL_OVER_OFFSET`); the pad AABB misses city poles/signs and the visual lamps/crosswalks (~9–10 m off the box). The #33 opposite dest at y=78 stays put. Left, right, and straight trip routes all pass; a cross-street click that used to look "left of the last segment" no longer loops. `stackLeftTurn.test.ts` drives that left with `planTrajectory` + `updateVehicle` and checks each stack's `setPlannerStack` + `beginTrip` is still one left. `stackPlan.test.ts` / `laneGraph.test.ts` cover Tesla vision detections, Waymo HD-lane lefts, and Waabi occupancy scoring preferring the dest route. `?demo=left-near&stack=tesla|waymo|waabi` is the live view rig. `perceptionViz.test.ts` asserts world-space `%` sprites stay capped, fade with distance, and hide under the HUD. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs (those two demos clear traffic and pedestrians so a ped cannot steal the arrival).
 
@@ -48,6 +48,7 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/ui/startMenu.test.ts`
 - `game/src/sim/recovery.test.ts`
 - `game/src/render/perceptionViz.test.ts`
+- `game/src/render/snapshotLerp.test.ts`
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`
 - `game/src/sim/poleTurnDrive.ts`

@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 39]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 39]
 ---
 
 # Wiki log
@@ -112,6 +112,16 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
 
+## [2026-10-15] ingest | PR #37 GPU overlay animation, 10 Hz snapshot interpolation
+
+## [2026-10-15] ingest | PR #37 public-stack overlay fidelity (Tesla Vision / Waymo Driver / Waabi UnO)
+
+## [2026-10-15] ingest | PR #37 world-anchored F2/F3 lidar sweep (no dragging rings)
+
+## [2026-10-15] ingest | PR #37 beam-gated F2/F3 lidar trail (live-ego bake, shader fade)
+
+## [2026-10-15] ingest | PR #37 thin additive 4° F2/F3 lidar wedge (points on hit)
+
 ## [2026-10-15] ingest | PR #39 left cheaper than U-turn+right
 
 ## [2026-10-15] ingest | PR #39 live F1/F2/F3 planner follows the single left
@@ -119,3 +129,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #39 stack-faithful F1/F2/F3 planning (public-source notes)
 
 ## [2026-10-15] ingest | PR #39 cross-street pad 12 m past junction, clear of poles/signs
+
+## [2026-10-15] merge | origin/main (#37 perception anim) into PR #39 left vs U-turn
