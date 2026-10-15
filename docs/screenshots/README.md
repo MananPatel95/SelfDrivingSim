@@ -198,3 +198,6 @@ F3 BEV panels stay readable over the graded scene.
 
 ### verify-look-orbit-low.png / verify-look-orbit-high.png
 Same 3/4 orbit, Look Low vs Look High (lamp bloom).
+
+### verify-start-menu-look.png
+#31 start menu over the #34 city look (orbit backdrop).
