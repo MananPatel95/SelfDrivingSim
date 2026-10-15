@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-15
-sources: [34, 35]
+sources: [34, 35, 38]
 ---
 
 # City look (lighting, materials, post)

@@ -1,7 +1,7 @@
 ---
 tags: [entity]
 updated: 2026-10-12
-sources: [20, 24]
+sources: [20, 24, 38]
 ---
 
 # `intersectionRules.ts`

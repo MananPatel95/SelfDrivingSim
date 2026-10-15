@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 38]
 ---
 
 # Wiki log
@@ -112,4 +112,4 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
 
-## [2026-10-15] ingest | NA traffic signs (MUTCD stop/yield, instanced)
+## [2026-10-15] ingest | PR #38 North-American stop/yield sign visuals
