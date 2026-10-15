@@ -30,8 +30,16 @@ export const PAD_WIDTH = 2 * (ROAD_HALF - PULL_OVER_OFFSET);
 export const PULL_OVER_LENGTH = 16;
 /** Straight, road-parallel tail so the nose matches the curb at the stop. */
 export const PULL_OVER_STRAIGHT = 10;
-/** Keep the pad out of the intersection box. */
+/** Keep a same-street pad out of the intersection box (center-to-center). */
 export const DEST_INTERSECTION_CLEAR = 16;
+/**
+ * Metres past the asphalt box to the near edge of a cross-street pad.
+ * Poles, stop/yield signs, and painted crosswalks sit ~9–10 m from the
+ * crossing; a 16 m center leaves the 8.4 m bay overlapping them.
+ */
+export const PAD_JUNCTION_GAP = 12;
+/** Arrival-heading distance from the crossing to the pad center. */
+export const DEST_PAD_ALONG_CLEAR = ROAD_HALF + PAD_JUNCTION_GAP + PAD_ALONG / 2;
 /** Mid-block spawn: stay this far from a grid crossing so the car is not on a stop line. */
 export const SPAWN_INTERSECTION_CLEAR = 24;
 /** City grid step (matches `world.ts` MAP_BLOCK). */
@@ -254,10 +262,17 @@ export function placeTripStart(start: Vec3, end: Vec3): { pos: Vec3; yaw: number
   return { pos: placeInRightLane(hint.x, hint.y, yaw, LANE_OFFSET), yaw };
 }
 
-/** Slide a roadside pad backward along the approach so it is not in a junction. */
-export function slideOffIntersection(point: Vec3, heading: number): Vec3 {
+/**
+ * Slide a roadside pad out of a junction.
+ * Same-street: park *before* the box (backward along the approach).
+ * Cross-street (`keepClickSide`): stay on the click's arm so a left-turn dest
+ * just past the corner is not dragged back onto the approach street, and
+ * sit far enough that the 8.4 m bay is past poles, signs, and crosswalks.
+ */
+export function slideOffIntersection(point: Vec3, heading: number, keepClickSide = false): Vec3 {
   const yaw = snapHeadingToGrid(heading);
-  if (!nearGridCrossing(point.x, point.y)) {
+  const minAlong = keepClickSide ? DEST_PAD_ALONG_CLEAR : DEST_INTERSECTION_CLEAR;
+  if (!nearGridCrossing(point.x, point.y, minAlong)) {
     return placeInRightLane(point.x, point.y, yaw, PULL_OVER_OFFSET);
   }
   const ix = nearestGridLine(point.x);
@@ -265,15 +280,17 @@ export function slideOffIntersection(point: Vec3, heading: number): Vec3 {
   const fx = Math.cos(yaw);
   const fy = Math.sin(yaw);
   const along = (point.x - ix) * fx + (point.y - iy) * fy;
-  const targetAlong = along >= 0 ? -DEST_INTERSECTION_CLEAR : Math.min(along, -DEST_INTERSECTION_CLEAR);
+  const targetAlong = keepClickSide
+    ? Math.sign(along || 1) * Math.max(Math.abs(along), minAlong)
+    : (along >= 0 ? -DEST_INTERSECTION_CLEAR : Math.min(along, -DEST_INTERSECTION_CLEAR));
   return placeInRightLane(ix + fx * targetAlong, iy + fy * targetAlong, yaw, PULL_OVER_OFFSET);
 }
 
 /** Right-curb pad for a map click: last-segment heading, then pull-over offset. */
-export function roadsideDestination(end: Vec3, approachHeading: number): Vec3 {
+export function roadsideDestination(end: Vec3, approachHeading: number, keepClickSide = false): Vec3 {
   const yaw = snapHeadingToGrid(approachHeading);
   const pad = placeInRightLane(end.x, end.y, yaw, PULL_OVER_OFFSET);
-  return slideOffIntersection(pad, yaw);
+  return slideOffIntersection(pad, yaw, keepClickSide);
 }
 
 /** Arrival heading implied by a pad that already sits at `PULL_OVER_OFFSET`. */
@@ -338,8 +355,10 @@ export interface ResolvedDestination {
 
 /**
  * Pad on the right-hand curb of the heading we will arrive with.
- * A click left of the naive approach is an opposite-side dest: arrive from the
- * reverse heading so that curb is on the right after a legal U-turn.
+ * Opposite-side U-turn only when start and end share a grid road *and* the
+ * click is left of that road's naive approach — never for a cross-street
+ * dest that only needs a left / right / straight. A legal left at a corner
+ * must stay cheaper than going past, U-turning, and coming back for a right.
  */
 export function resolveTripDestination(start: Vec3, end: Vec3): ResolvedDestination {
   const lane = rightLaneRoute(start, end);
@@ -347,12 +366,13 @@ export function resolveTripDestination(start: Vec3, end: Vec3): ResolvedDestinat
     lastHeading(lane, Math.atan2(end.y - start.y, end.x - start.x)),
   );
   const lat = lateralFromCenter(end.x, end.y, naiveHeading);
-  const opposite = lat < OPPOSITE_SIDE_LAT;
+  const sameStreet = sameGridRoad(start, end);
+  const opposite = sameStreet && lat < OPPOSITE_SIDE_LAT;
   const arrivalHeading = normalizeAngle(
     snapHeadingToGrid(opposite ? naiveHeading + Math.PI : naiveHeading),
   );
   return {
-    pad: roadsideDestination(end, arrivalHeading),
+    pad: roadsideDestination(end, arrivalHeading, !sameStreet),
     arrivalHeading,
     naiveHeading,
     opposite,
@@ -490,17 +510,20 @@ export function tripRoute(start: Vec3, end: Vec3, offset = LANE_OFFSET): Vec3[] 
  * Replan from the car's pose: ease into the right-hand lane, then follow a
  * Manhattan right-lane path to `goal` (or cruise ahead if goal is omitted).
  * A trip goal finishes with a roadside pull-over; cruise does not.
- * Opposite-side pads loop via a legal intersection U-turn.
+ * Same-street opposite-side pads loop via a legal intersection U-turn.
+ * Pass `resolved` from the original click so a later re-engage (or beginTrip
+ * that already snapped the pad) cannot flip a left into a U-turn+right.
  */
 export function mergeIntoLaneRoute(
   from: Vec3,
   heading: number,
   goal?: Vec3 | null,
   offset = LANE_OFFSET,
+  resolved?: ResolvedDestination | null,
 ): Vec3[] {
   const yaw = snapHeadingToGrid(heading);
   const axisFrom = axisPoint(from.x, from.y, yaw);
-  if (!goal) {
+  if (!goal && !resolved) {
     const dest = cruiseDestination(from.x, from.y, yaw);
     const rest = rightLaneRoute(axisFrom, dest, offset);
     const merge = rest[0] ?? placeInRightLane(from.x, from.y, yaw, offset);
@@ -512,8 +535,8 @@ export function mergeIntoLaneRoute(
     }
     return [...lead, ...rest.slice(1)];
   }
-  const resolved = resolveTripDestination(from, goal);
-  const rest = routeToPad(axisFrom, resolved, offset);
+  const dest = resolved ?? resolveTripDestination(from, goal!);
+  const rest = routeToPad(axisFrom, dest, offset);
   const merge = rest[0] ?? placeInRightLane(from.x, from.y, yaw, offset);
   const lead: Vec3[] = [];
   const steps = 8;

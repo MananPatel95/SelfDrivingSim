@@ -7,6 +7,12 @@
  * - Localization by matching lidar to map with uncertainty ellipse
  * - Geofence: refuses rides outside mapped zone
  * - Multi-sensor fusion: per-sensor detections → fused tracks
+ * - Lane-level routing on that HD map
+ *
+ * Live planner (`laneGraphRoute`): walk heading-matched HD driving lanes to
+ * the dest-lane crossing, then the dest lane to the pad. `connections[]` is
+ * empty on this map, so hops are implicit crossings. Public sources: Waymo
+ * Driver / safety reports (HD maps, geofence, multi-sensor).
  */
 
 import type {
@@ -372,7 +378,7 @@ export function runWaymoPerception(
 export const WAYMO_INFO_CARD = {
   name: 'Waymo-style: Multi-sensor + HD Map',
   sensors: 'Publicly described (6th-gen Waymo Driver, 2024): 13 cameras, 4 lidars, 6 radars, plus external audio. Overlapping 360° coverage out to ~500 m.',
-  internals: 'HD prior map (lanes, crosswalks, lights) matched to live lidar/camera/radar. Per-sensor detections fuse into tracks with IDs, velocity, and short predictions.',
+  internals: 'HD prior map (lanes, crosswalks, lights) matched to live lidar/camera/radar. Per-sensor detections fuse into tracks with IDs, velocity, and short predictions. This sim: walk procedural HD driving lanes; live detections stay lidar+radar. Localization / geofence flags remain on the profile.',
   strengths: 'Multi-sensor redundancy (lidar, radar, camera), precise localization from detailed maps, radar velocity in rain/night, high-quality curated HD maps',
   weaknesses: 'Geofenced to pre-mapped areas, map maintenance required, expensive sensor suite',
   example: 'Waymo robotaxis in mapped, geofenced cities. Maps: Waymo Driver Handbook (2020); sensors: 6th-gen Driver blog (Aug 2024).',

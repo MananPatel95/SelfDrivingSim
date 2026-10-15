@@ -7,6 +7,12 @@
  * - Future occupancy heatmaps (1s, 2s, 3s)
  * - Candidate trajectory scoring
  * - Sim World: adversarial scenario generation
+ *
+ * Live planner (`planWaabiAlongRoute`): score a steering fan plus a
+ * dest-route candidate against agent-splat occupancy forecasts (1–3 s).
+ * Route attraction keeps a legal left cheaper than a U-turn. Overlay
+ * `tickWaabiView` is unchanged. Public sources: Waabi blogs / papers
+ * (interpretable E2E, BEV occupancy, Waabi World). Not a learned predictor.
  */
 
 import type {
@@ -838,7 +844,7 @@ export function runWaabiStack(
 export const WAABI_INFO_CARD = {
   name: 'Waabi-style: AI-first, Interpretable End-to-End',
   sensors: 'Publicly described: lidar (plus cameras) into a bird’s-eye occupancy field. Research (UnO, DIO) self-supervises occupancy from lidar.',
-  internals: 'BEV occupancy now, +1s/+2s/+3s occupancy-flow forecasts, and a fan of scored candidate trajectories. Interpretable mid-level occupancy, not a black box.',
+  internals: 'BEV occupancy now, +1s/+2s/+3s occupancy-flow forecasts, and a fan of scored candidate trajectories. Interpretable mid-level occupancy, not a black box. This sim: agent-splat occupancy (`createBEVOccupancyFromAgents` unchanged) + route-attracted candidate scoring. Overlay `tickWaabiView` stays 10 Hz HUD.',
   strengths: 'End-to-end trainable, interpretable predictions, simulation-first development (Waabi World), adversarial scenario generation for robustness',
   weaknesses: 'Requires extensive simulation infrastructure, dependence on sim-to-real transfer',
   example: 'Waabi UnO / DIO occupancy forecasting and DeTra detection+trajectories; stack trained in Waabi World for autonomous trucking.',

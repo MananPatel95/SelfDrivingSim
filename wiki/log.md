@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39]
 ---
 
 # Wiki log
@@ -127,3 +127,15 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #38 yield lettering + streetlight clearance
 
 ## [2026-10-15] merge | origin/main (#37 perception anim) into PR #38 NA traffic signs
+
+## [2026-10-15] ingest | PR #39 left cheaper than U-turn+right
+
+## [2026-10-15] ingest | PR #39 live F1/F2/F3 planner follows the single left
+
+## [2026-10-15] ingest | PR #39 stack-faithful F1/F2/F3 planning (public-source notes)
+
+## [2026-10-15] ingest | PR #39 cross-street pad 12 m past junction, clear of poles/signs
+
+## [2026-10-15] merge | origin/main (#37 perception anim) into PR #39 left vs U-turn
+
+## [2026-10-15] merge | origin/cursor/na-traffic-signs-7cdd (PR #38) into PR #39 left vs U-turn

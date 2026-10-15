@@ -7,6 +7,11 @@
  * - Vision detections (boxes) as a separate head
  * - No HD map; lanes are inferred
  * - Later FSD also described as end-to-end (pixels → trajectory)
+ *
+ * Live planner (`planForStack('tesla')`): camera-FOV detections + pursuit of
+ * the Manhattan nav polyline. There is no trained net — that is the
+ * approximation. Public sources: Tesla AI Day / FSD blogs (vision-only,
+ * radar removed, no HD maps, E2E FSD).
  */
 
 import type {
@@ -379,7 +384,7 @@ function getDefaultSize(classType: string): Vec3 {
 export const TESLA_INFO_CARD = {
   name: 'Tesla-style: Vision Only',
   sensors: 'Publicly described: eight cameras only (Tesla Vision). No lidar. Radar and ultrasonics were removed; occupancy network replaced ultrasonics.',
-  internals: 'Occupancy Network turns multi-camera video into 3D occupied/free voxels (CVPR 2022 / AI Day 2022). A separate head boxes objects. Lanes inferred, no HD map. Later FSD also described as end-to-end pixels → trajectory.',
+  internals: 'Occupancy Network turns multi-camera video into 3D occupied/free voxels (CVPR 2022 / AI Day 2022). A separate head boxes objects. Lanes inferred, no HD map. Later FSD also described as end-to-end pixels → trajectory. This sim: camera-FOV detections + pursuit of the nav polyline (no trained net). Depth / occupancy voxels remain HUD-only.',
   strengths: 'Lower cost sensors, no lidar or radar needed, works globally without pre-mapping, can read traffic signs/lights',
   weaknesses: 'Depth uncertainty at range (especially at night or in rain), no instant velocity measurements, dependent on good lighting and visibility',
   example: 'Tesla FSD / Tesla Vision: camera-only Occupancy Network plus vision detections, without a prior HD map.',

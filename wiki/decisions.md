@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
 updated: 2026-10-15
-sources: [3, 6, 12, 20, 24, 29, 31, 33, 34, 35, 36, 37]
+sources: [3, 6, 12, 20, 24, 29, 31, 33, 34, 35, 36, 37, 39]
 ---
 
 # Decisions
@@ -10,7 +10,7 @@ Durable choices. When a PR reverses one, update this page and the old `pr-NNN` s
 
 ## City-only stacks (F4 / F5 / F6 removed)
 
-[[pr-3]] deleted Aurora (F4), rail (F5), and maritime (F6) zones, HUD, keys, and COLREGs tests. [[pr-2]] had just added harbour roads and COLREGs — that harbour work is superseded. The live stacks are F1 / F2 / F3 only.
+[[pr-3]] deleted Aurora (F4), rail (F5), and maritime (F6) zones, HUD, keys, and COLREGs tests. [[pr-2]] had just added harbour roads and COLREGs — that harbour work is superseded. The live stacks are F1 / F2 / F3 only. After [[pr-39]] those views change **planning** as well as HUD: Tesla vision+nav, Waymo HD lane graph, Waabi occupancy forecast. Public-vs-approx notes live on [[public-sources]].
 
 ## Rust / WASM scope
 

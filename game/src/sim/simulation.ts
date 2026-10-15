@@ -15,7 +15,7 @@ import {
   isLegitimatelyQueued, nudgeOrRespawn,
   applyTrafficImpulse, knockPedestrian,
 } from './world';
-import { LANE_OFFSET, lateralFromCenter, mergeIntoLaneRoute, placeTripStart, resolveTripDestination, snapTripStart } from './rightLane';
+import { LANE_OFFSET, lateralFromCenter, placeTripStart, resolveTripDestination, snapTripStart, type ResolvedDestination } from './rightLane';
 import {
   type RuleDecision,
   type StopBook,
@@ -29,7 +29,14 @@ import { vec3, vec3Distance, vec3Length, SeededRandom, egoToWorld, normalizeAngl
 import { createEgoState, updateVehicle, VehicleInput, vehicleInputFromAccel } from './vehicle';
 import { simulateLidarScan, LIDAR_CONFIGS } from '../sensors/lidar';
 import { runPerception, Track } from '../stacks/perception';
-import { planTrajectory, createPlannerState, remainingRouteDistance, PlannerState, oracleSupervisor } from '../planning/planner';
+import { createPlannerState, remainingRouteDistance, PlannerState, oracleSupervisor } from '../planning/planner';
+import {
+  buildStackRoute,
+  planForStack,
+  teslaVisionPlannerDetections,
+  type PlannerStack,
+} from '../planning/stackPlan';
+import { occupancyAgentsFromEntities } from '../stacks/waabi';
 import { Recorder, Recording } from '../recorder/recorder';
 import type { PlannerOutput, LidarConfig } from './types';
 import {
@@ -134,6 +141,10 @@ export class Simulation {
   /** Last map-trip destination. Null when Just-drive / cruise has no goal. */
   private tripDestination: Vec3 | null = null;
   private tripHeading = 0;
+  /** First resolve of the click — re-engage must not re-classify the pad. */
+  private tripResolved: ResolvedDestination | null = null;
+  /** Live planner style: Tesla nav+vision, Waymo HD lane graph, Waabi occupancy. */
+  private plannerStack: PlannerStack = 'tesla';
   /** Frames of in-lane standstill while the pad is still ahead (replan trigger). */
   private stuckTicks = 0;
   private recovery: RecoveryState = createRecoveryState();
@@ -508,7 +519,9 @@ export class Simulation {
 
     const plannerInput = {
       egoState: this.state.ego,
-      detections: [...worldDetections, ...signDetections],
+      detections: this.plannerStack === 'tesla'
+        ? teslaVisionPlannerDetections(this.state.ego, allEntities)
+        : [...worldDetections, ...signDetections],
       route: this.state.route,
       trafficLightStates: new Map(trafficLights.map(l => [l.id, l.state])),
       rule: this.state.lastRule,
@@ -520,7 +533,8 @@ export class Simulation {
       45,
       2.4
     );
-    if (hazard && this.state.controlSource !== 'human') {
+    // Tesla is cameras-only: do not inject the lidar-style world hazard.
+    if (this.plannerStack !== 'tesla' && hazard && this.state.controlSource !== 'human') {
       plannerInput.detections = [
         ...plannerInput.detections,
         {
@@ -533,9 +547,19 @@ export class Simulation {
       ];
     }
 
-    const { output: plannerOutput, newState: newPlannerState } = planTrajectory(
+    const { output: plannerOutput, newState: newPlannerState } = planForStack(
       plannerInput,
-      this.state.plannerState
+      this.state.plannerState,
+      {
+        stack: this.plannerStack,
+        entities: allEntities,
+        agents: this.plannerStack === 'waabi'
+          ? occupancyAgentsFromEntities(
+            [this.state.trafficVehicles, this.state.pedestrians],
+            [],
+          )
+          : undefined,
+      },
     );
     this.state.plannerState = newPlannerState;
     this.lastPlannerOutput = plannerOutput;
@@ -883,6 +907,7 @@ export class Simulation {
     this.state.controlSource = 'human';
     this.tripDestination = null;
     this.tripHeading = 0;
+    this.tripResolved = null;
     this.state.arrived = false;
     this.stuckTicks = 0;
     this.stopHoldSec = 0;
@@ -898,7 +923,15 @@ export class Simulation {
   beginTrip(start: Vec3, end: Vec3, mode: 'human' | 'policy'): void {
     const placed = placeTripStart(start, end);
     const resolved = resolveTripDestination(placed.pos, end);
-    const route = mergeIntoLaneRoute(placed.pos, placed.yaw, resolved.pad);
+    const route = buildStackRoute({
+      stack: this.plannerStack,
+      from: placed.pos,
+      heading: placed.yaw,
+      goal: resolved.pad,
+      resolved,
+      lanes: this.state.worldMap.lanes,
+    });
+    this.tripResolved = resolved;
     this.faceAndPark(placed.yaw);
     this.state.ego = {
       ...this.state.ego,
@@ -932,6 +965,31 @@ export class Simulation {
       ...this.state.ego,
       transform: { position: { x: pos.x, y: pos.y, z: 0 }, rotation: heading },
     };
+  }
+
+  getPlannerStack(): PlannerStack {
+    return this.plannerStack;
+  }
+
+  /**
+   * Switch the live planner (F1 vision+nav / F2 HD lane graph / F3 occupancy).
+   * Rebuilds the current trip on the new stack so a mid-drive F-key does not
+   * keep the previous route style.
+   */
+  setPlannerStack(stack: PlannerStack): void {
+    if (this.plannerStack === stack) return;
+    this.plannerStack = stack;
+    if (this.state.route.length === 0 && !this.tripDestination) return;
+    const ego = this.state.ego;
+    this.state.route = buildStackRoute({
+      stack,
+      from: ego.transform.position,
+      heading: ego.transform.rotation,
+      goal: this.tripDestination,
+      resolved: this.tripResolved,
+      lanes: this.state.worldMap.lanes,
+    });
+    this.state.plannerState = createPlannerState();
   }
 
   getTripDestination(): Vec3 | null {
@@ -1001,7 +1059,14 @@ export class Simulation {
     const from = ego.transform.position;
     const heading = ego.transform.rotation;
     const goal = this.tripDestination;
-    const route = mergeIntoLaneRoute(from, heading, goal);
+    const route = buildStackRoute({
+      stack: this.plannerStack,
+      from,
+      heading,
+      goal,
+      resolved: this.tripResolved,
+      lanes: this.state.worldMap.lanes,
+    });
     this.state.route = route;
     this.state.plannerState = createPlannerState();
     this.state.controlSource = 'policy';
