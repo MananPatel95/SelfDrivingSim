@@ -100,8 +100,8 @@ export function approachHeading(start: TripPoint, end: TripPoint): number {
 
 /**
  * Snap a map click with #33's destination API: keep the clicked curb side
- * (`snapTripEnd`), then `resolveTripDestination` places the arrival-side pad
- * (opposite-side clicks U-turn so that curb is on the right).
+ * (`snapTripEnd`), then `resolveTripDestination` places the arrival-side pad.
+ * Opposite-side U-turns only fire when the pad is across the *same* street.
  */
 export function snapMenuDestination(start: TripPoint, clickX: number, clickY: number): TripPoint {
   const from = vec3(start.x, start.y, 0);

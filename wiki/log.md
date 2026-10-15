@@ -111,3 +111,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] ingest | PR #36 lane spawn, stop recovery, A→B / Random menu
 
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
+
+## [2026-10-15] ingest | cursor/left-turn-uturn-954e left cheaper than U-turn+right

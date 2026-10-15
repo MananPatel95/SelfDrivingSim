@@ -3156,7 +3156,7 @@ function applyShot(kind: string) {
   }
 }
 
-/** Demos: ?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp, plus hit-car|hit-pole|hit-sign|hit-ped */
+/** Demos: ?demo=lane|left|left-near|right|stop|yield|mix|queue|arrive|arrive-opp, plus hit-car|hit-pole|hit-sign|hit-ped */
 function applyDemo(kind: string) {
   suppressArrivedMenu = true;
   showAIView = true;
@@ -3205,6 +3205,18 @@ function applyDemo(kind: string) {
     orbitYaw = 0.35;
     orbitPitch = 0.38;
     orbitDist = 18;
+    camFollowReady = true;
+    return;
+  }
+  if (kind === 'left-near') {
+    armMenuTrip({ x: 50, y: 100 }, { x: 104, y: 110 });
+    beginGame('autopilot');
+    simulation.getState().trafficVehicles = [];
+    simulation.getState().pedestrians = [];
+    setCameraMode('orbit');
+    orbitYaw = 0.55;
+    orbitPitch = 0.42;
+    orbitDist = 22;
     camFollowReady = true;
     return;
   }
@@ -3601,6 +3613,15 @@ async function init() {
   if (shot) applyShot(shot);
   const demo = params.get('demo');
   if (demo) applyDemo(demo);
+  const ab = params.get('ab');
+  if (ab && !shot && !demo) {
+    const nums = ab.split(',').map(Number);
+    if (nums.length === 4 && nums.every(n => Number.isFinite(n))) {
+      armMenuTrip({ x: nums[0]!, y: nums[1]! }, { x: nums[2]!, y: nums[3]! });
+      previewMenuStart();
+      syncTripMenuDom();
+    }
+  }
   if (params.get('pause') === '1') isPaused = true;
   lastTime = performance.now();
   requestAnimationFrame(animate);

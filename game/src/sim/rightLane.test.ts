@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateCityMap, nearestGridLine } from './world';
-import { vec3 } from './math';
+import { normalizeAngle, vec3 } from './math';
 import { createPlannerState, planTrajectory } from '../planning/planner';
 import { createEgoState, updateVehicle, vehicleInputFromAccel } from './vehicle';
 import {
@@ -11,6 +11,7 @@ import {
   ROAD_HALF,
   SPAWN_INTERSECTION_CLEAR,
   isValidLaneSpawn,
+  snapHeadingToGrid,
   snapTripStart,
   SEDAN_HALF_WIDTH,
   distanceToRightCurb,
@@ -27,6 +28,36 @@ import {
   tripRoute,
   turnKind,
 } from './rightLane';
+import type { Vec3 } from './types';
+
+function routeLength(route: Vec3[]): number {
+  let d = 0;
+  for (let i = 1; i < route.length; i++) {
+    d += Math.hypot(route[i]!.x - route[i - 1]!.x, route[i]!.y - route[i - 1]!.y);
+  }
+  return d;
+}
+
+/** Cardinal heading changes along a route. A 180° flip is a U-turn. */
+function cardinalTurns(route: Vec3[]): Array<'left' | 'right' | 'uturn'> {
+  const cards: number[] = [];
+  for (let i = 1; i < route.length; i++) {
+    const dx = route[i]!.x - route[i - 1]!.x;
+    const dy = route[i]!.y - route[i - 1]!.y;
+    if (dx * dx + dy * dy < 1.4) continue;
+    const h = snapHeadingToGrid(Math.atan2(dy, dx));
+    const prev = cards[cards.length - 1];
+    if (prev == null || Math.abs(normalizeAngle(h - prev)) > 0.5) cards.push(h);
+  }
+  const turns: Array<'left' | 'right' | 'uturn'> = [];
+  for (let i = 1; i < cards.length; i++) {
+    const d = normalizeAngle(cards[i]! - cards[i - 1]!);
+    if (Math.abs(d) > 2.4) turns.push('uturn');
+    else if (d > 0.5) turns.push('left');
+    else if (d < -0.5) turns.push('right');
+  }
+  return turns;
+}
 
 const CITY = { gridSize: 6, blockSize: 100, laneWidth: 3.5, sidewalkWidth: 2 };
 
@@ -201,6 +232,71 @@ describe('right-hand traffic lanes', () => {
     const prev = route[route.length - 2]!;
     expect(tail.y).toBeLessThan(prev.y);
     expect(Math.max(...route.map(p => p.y))).toBeGreaterThan(95);
+  });
+
+  it('takes exactly one left and no U-turn when the dest is one left away', () => {
+    const start = snapTripStart(50, 100, 0);
+    const end = vec3(103.5, 140, 0);
+    const resolved = resolveTripDestination(start, end);
+    expect(resolved.opposite).toBe(false);
+    expect(resolved.arrivalHeading).toBeCloseTo(Math.PI / 2, 5);
+    expect(resolved.pad.x).toBeCloseTo(100 + PULL_OVER_OFFSET, 1);
+    expect(resolved.pad.y).toBeCloseTo(140, 0);
+
+    const route = tripRoute(start, end);
+    const turns = cardinalTurns(route);
+    expect(turns.filter(t => t === 'left')).toHaveLength(1);
+    expect(turns.filter(t => t === 'right')).toHaveLength(0);
+    expect(turns.filter(t => t === 'uturn')).toHaveLength(0);
+    expect(Math.max(...route.map(p => p.y))).toBeLessThan(resolved.pad.y + 8);
+    expect(Math.min(...route.map(p => p.y))).toBeGreaterThan(90);
+
+    const manhattan = Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
+    // Left at the corner stays near Manhattan. A U-turn + right adds a full extra block.
+    expect(routeLength(route)).toBeLessThan(manhattan + 55);
+    expect(routeLength(route)).toBeLessThan(manhattan + 100);
+  });
+
+  it('keeps a just-around-the-corner left dest on the far arm, not a loop', () => {
+    const start = snapTripStart(50, 100, 0);
+    const end = vec3(104, 110, 0);
+    const resolved = resolveTripDestination(start, end);
+    expect(resolved.opposite).toBe(false);
+    expect(resolved.pad.y).toBeGreaterThan(100);
+    expect(resolved.pad.x).toBeCloseTo(100 + PULL_OVER_OFFSET, 1);
+    const route = tripRoute(start, end);
+    const turns = cardinalTurns(route);
+    expect(turns).toEqual(['left']);
+    expect(Math.min(...route.map(p => p.y))).toBeGreaterThan(90);
+    expect(Math.max(...route.map(p => p.y))).toBeLessThan(resolved.pad.y + 8);
+  });
+
+  it('does not loop for a cross-street dest that used to look opposite', () => {
+    const start = snapTripStart(50, 100, 0);
+    const end = vec3(103.5, 80, 0);
+    const resolved = resolveTripDestination(start, end);
+    expect(resolved.opposite).toBe(false);
+    const route = tripRoute(start, end);
+    expect(cardinalTurns(route)).toEqual(['right']);
+    expect(Math.min(...route.map(p => p.y))).toBeGreaterThan(70);
+  });
+
+  it('routes left, right, and straight without a U-turn', () => {
+    const leftStart = snapTripStart(50, 100, 0);
+    const left = tripRoute(leftStart, vec3(103.5, 140, 0));
+    expect(cardinalTurns(left)).toEqual(['left']);
+
+    const rightStart = snapTripStart(50, 100, 0);
+    const right = tripRoute(rightStart, vec3(96.5, 60, 0));
+    expect(resolveTripDestination(rightStart, vec3(96.5, 60, 0)).opposite).toBe(false);
+    expect(cardinalTurns(right)).toEqual(['right']);
+    expect(Math.min(...right.map(p => p.y))).toBeGreaterThan(50);
+
+    const straightStart = vec3(LANE_OFFSET, -50, 0);
+    const straight = tripRoute(straightStart, vec3(3.5, 40, 0));
+    expect(resolveTripDestination(straightStart, vec3(3.5, 40, 0)).opposite).toBe(false);
+    expect(cardinalTurns(straight)).toEqual([]);
+    expect(straight[straight.length - 1]!.x).toBeCloseTo(PULL_OVER_OFFSET, 1);
   });
 
   it('snaps a start click into a mid-block right-hand lane, off the stop line', () => {

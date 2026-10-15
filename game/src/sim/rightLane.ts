@@ -254,8 +254,13 @@ export function placeTripStart(start: Vec3, end: Vec3): { pos: Vec3; yaw: number
   return { pos: placeInRightLane(hint.x, hint.y, yaw, LANE_OFFSET), yaw };
 }
 
-/** Slide a roadside pad backward along the approach so it is not in a junction. */
-export function slideOffIntersection(point: Vec3, heading: number): Vec3 {
+/**
+ * Slide a roadside pad out of a junction.
+ * Same-street: park *before* the box (backward along the approach).
+ * Cross-street (`keepClickSide`): stay on the click's arm so a left-turn dest
+ * just past the corner is not dragged back onto the approach street.
+ */
+export function slideOffIntersection(point: Vec3, heading: number, keepClickSide = false): Vec3 {
   const yaw = snapHeadingToGrid(heading);
   if (!nearGridCrossing(point.x, point.y)) {
     return placeInRightLane(point.x, point.y, yaw, PULL_OVER_OFFSET);
@@ -265,15 +270,17 @@ export function slideOffIntersection(point: Vec3, heading: number): Vec3 {
   const fx = Math.cos(yaw);
   const fy = Math.sin(yaw);
   const along = (point.x - ix) * fx + (point.y - iy) * fy;
-  const targetAlong = along >= 0 ? -DEST_INTERSECTION_CLEAR : Math.min(along, -DEST_INTERSECTION_CLEAR);
+  const targetAlong = keepClickSide
+    ? (along >= 0 ? 1 : -1) * DEST_INTERSECTION_CLEAR
+    : (along >= 0 ? -DEST_INTERSECTION_CLEAR : Math.min(along, -DEST_INTERSECTION_CLEAR));
   return placeInRightLane(ix + fx * targetAlong, iy + fy * targetAlong, yaw, PULL_OVER_OFFSET);
 }
 
 /** Right-curb pad for a map click: last-segment heading, then pull-over offset. */
-export function roadsideDestination(end: Vec3, approachHeading: number): Vec3 {
+export function roadsideDestination(end: Vec3, approachHeading: number, keepClickSide = false): Vec3 {
   const yaw = snapHeadingToGrid(approachHeading);
   const pad = placeInRightLane(end.x, end.y, yaw, PULL_OVER_OFFSET);
-  return slideOffIntersection(pad, yaw);
+  return slideOffIntersection(pad, yaw, keepClickSide);
 }
 
 /** Arrival heading implied by a pad that already sits at `PULL_OVER_OFFSET`. */
@@ -338,8 +345,10 @@ export interface ResolvedDestination {
 
 /**
  * Pad on the right-hand curb of the heading we will arrive with.
- * A click left of the naive approach is an opposite-side dest: arrive from the
- * reverse heading so that curb is on the right after a legal U-turn.
+ * Opposite-side U-turn only when start and end share a grid road *and* the
+ * click is left of that road's naive approach — never for a cross-street
+ * dest that only needs a left / right / straight. A legal left at a corner
+ * must stay cheaper than going past, U-turning, and coming back for a right.
  */
 export function resolveTripDestination(start: Vec3, end: Vec3): ResolvedDestination {
   const lane = rightLaneRoute(start, end);
@@ -347,12 +356,13 @@ export function resolveTripDestination(start: Vec3, end: Vec3): ResolvedDestinat
     lastHeading(lane, Math.atan2(end.y - start.y, end.x - start.x)),
   );
   const lat = lateralFromCenter(end.x, end.y, naiveHeading);
-  const opposite = lat < OPPOSITE_SIDE_LAT;
+  const sameStreet = sameGridRoad(start, end);
+  const opposite = sameStreet && lat < OPPOSITE_SIDE_LAT;
   const arrivalHeading = normalizeAngle(
     snapHeadingToGrid(opposite ? naiveHeading + Math.PI : naiveHeading),
   );
   return {
-    pad: roadsideDestination(end, arrivalHeading),
+    pad: roadsideDestination(end, arrivalHeading, !sameStreet),
     arrivalHeading,
     naiveHeading,
     opposite,
@@ -490,7 +500,7 @@ export function tripRoute(start: Vec3, end: Vec3, offset = LANE_OFFSET): Vec3[] 
  * Replan from the car's pose: ease into the right-hand lane, then follow a
  * Manhattan right-lane path to `goal` (or cruise ahead if goal is omitted).
  * A trip goal finishes with a roadside pull-over; cruise does not.
- * Opposite-side pads loop via a legal intersection U-turn.
+ * Same-street opposite-side pads loop via a legal intersection U-turn.
  */
 export function mergeIntoLaneRoute(
   from: Vec3,
