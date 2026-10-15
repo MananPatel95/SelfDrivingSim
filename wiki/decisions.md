@@ -1,7 +1,7 @@
 ---
 tags: [decisions]
-updated: 2026-10-14
-sources: [3, 6, 12, 20, 24, 29, 31, 33, 34]
+updated: 2026-10-15
+sources: [3, 6, 12, 20, 24, 29, 31, 33, 34, 35, 36, 37]
 ---
 
 # Decisions
@@ -26,7 +26,7 @@ These stay in TypeScript:
 
 The live F3 HUD is a 10 Hz `tickWaabiView` overlay (`bevOverlay.ts`) that does **not** recast lidar. `runWaabiStack` remains the headless/API path. Planner / `obstacleAhead` / `updateVehicle` stay on the sim step. This restores the cheap overlay from [[pr-26]] after [[pr-28]] reverted it for a pole-hazard stall (fixed in #28, not by the overlay).
 
-City look textures are procedural CC0 (`cityTextures.ts`). **Look High** is bloom + LUT only; **Quality High** is the tight-frustum PCF sun. Pixel ratio is capped at 1.5. Browser lidar display uses a fixed beam (no per-frame jitter).
+City look textures are procedural CC0 (`cityTextures.ts`). **Look High** is bloom + LUT only; **Quality High** is the tight-frustum PCF sun. Pixel ratio is capped at 1.5. Browser lidar display uses a fixed beam (no per-frame jitter). Overlay *motion* is a display-side sweep/decay + 10 Hz snapshot lerp (`snapshotLerp.ts`, shader `uTime` / `uSweep` / `aBirth`). F2/F3 lidar points bake into world as the visual sweep crosses each azimuth (live ego pose, reused buffer) and must not reintroduce beam jitter or per-frame `simulateLidarScan`.
 
 World collision response is also TypeScript (`collision.ts`): SAT / capsule overlap, spatial hash, and a 2D impulse. It runs after `updateVehicle` and does not go through WASM.
 
