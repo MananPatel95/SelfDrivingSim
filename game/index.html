@@ -558,8 +558,15 @@
       display: inline-block;
       border: 1px solid #fff;
     }
-    #start-map-legend .leg-start { background: #fff; }
+    #start-map-legend .leg-start { background: #5dff9a; }
     #start-map-legend .leg-dest { background: #ff2d8a; }
+    #start-mode-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 12px;
+    }
     #start-camera-row {
       display: flex;
       align-items: center;
@@ -568,6 +575,8 @@
       margin: 12px 0 14px;
     }
     #start-status { color: #cfe; font-size: 13px; min-height: 1.3em; margin-bottom: 10px; }
+    #start-reroll.hidden,
+    #start-reset.hidden { display: none !important; }
     .start-actions { display: flex; gap: 10px; flex-wrap: wrap; }
     .start-actions .pause-btn { flex: 1; min-width: 140px; }
     .start-actions .pause-btn:disabled { opacity: 0.45; cursor: default; }
@@ -1051,7 +1060,7 @@
       <div id="start-card">
         <p id="start-arrived-banner">Arrived — choose next destination</p>
         <h1 id="start-title">AUTONOMY CITY: How Machines See</h1>
-        <p class="start-lead" id="start-lead">Watch how three public-style stacks see the same street. Choose a view, click a destination, then Start.</p>
+        <p class="start-lead" id="start-lead">Watch how three public-style stacks see the same street. Choose a view, A → B or Random, then Start.</p>
         <div id="start-layout">
           <div id="start-copy">
             <div class="start-label">Starting view</div>
@@ -1076,9 +1085,17 @@
                 <button type="button" data-camera="hood">First person</button>
               </div>
             </div>
-            <div id="start-status">Click the map to choose a destination, or pick a random one.</div>
+            <div id="start-mode-row">
+              <div class="start-label" style="margin:0">Trip</div>
+              <div class="seg" id="start-mode-seg">
+                <button type="button" data-mode="ab" class="active">A → B</button>
+                <button type="button" data-mode="random">Random</button>
+              </div>
+            </div>
+            <div id="start-status">Click the map to set the start (green pin), then the destination (pink pad).</div>
             <div class="start-actions">
-              <button type="button" id="start-random" class="pause-btn">Random destination</button>
+              <button type="button" id="start-reset" class="pause-btn">Reset</button>
+              <button type="button" id="start-reroll" class="pause-btn hidden">Reroll</button>
               <button type="button" id="start-manual" class="pause-btn">Just drive</button>
               <button type="button" id="start-auto" class="pause-btn primary" disabled>Start</button>
             </div>

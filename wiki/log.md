@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
 ---
 
 # Wiki log
@@ -107,3 +107,7 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#31 start, #32 HUD, #33 dest) into PR #34 view perf
 
 ## [2026-10-15] ingest | PR #35 asphalt noise, block fill, pre-#34 buildings, ped heading
+
+## [2026-10-15] ingest | PR #36 lane spawn, stop recovery, A→B / Random menu
+
+## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
