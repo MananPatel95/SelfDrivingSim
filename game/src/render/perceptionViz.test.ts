@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
 import {
   DRAW_WORLD_LABEL_SPRITES,
   LABEL_MAX_PX,
+  PerceptionVisualizer,
   labelOpacityForDistance,
   labelWorldHeight,
+  resetVizWorkStats,
+  vizWorkStats,
 } from './perceptionViz';
 import { hudColumnLeft, spriteHitsReservedHud } from '../ui/hudPanels';
+import { Simulation } from '../sim/simulation';
+import { makeFutureOccupancy, emptyWaabiState, tickWaabiView } from '../stacks/waabi';
 
 describe('perception world labels', () => {
   it('caps screen height and fades with distance', () => {
@@ -29,5 +35,45 @@ describe('perception world labels', () => {
     expect(spriteHitsReservedHud(80, 600, 1280, 720)).toBe(true);
     expect(spriteHitsReservedHud(640, 24, 1280, 720)).toBe(true);
     expect(spriteHitsReservedHud(400, 360, 1280, 720)).toBe(false);
+  });
+
+  it('does not walk occupancy when animate interpolates a 10 Hz snapshot', () => {
+    const scene = new THREE.Scene();
+    const viz = new PerceptionVisualizer(scene);
+    viz.setEnabled(true);
+    const sim = new Simulation({ seed: 3, maxDuration: 3600 });
+    sim.beginParked();
+    sim.step(1 / 30);
+    const s = sim.getState();
+    const into = makeFutureOccupancy();
+    tickWaabiView(s.ego, [s.trafficVehicles, s.pedestrians], emptyWaabiState(), s.timestamp, 42, into);
+    viz.update({
+      stack: 'waabi',
+      ego: s.ego,
+      tracks: [],
+      lidarPoints: sim.getLidarPoints(),
+      agents: s.trafficVehicles,
+      groundTruth: [],
+      showGroundTruth: false,
+      plannerOutput: s.lastPlannerOutput,
+      visionDetections: [],
+      occupancy: into.current,
+      futureOccupancy: into,
+      nowMs: 1000,
+    });
+    resetVizWorkStats();
+    viz.animate(1050, {
+      x: s.ego.transform.position.x,
+      y: s.ego.transform.position.y,
+      yaw: s.ego.transform.rotation,
+    });
+    viz.animate(1090, {
+      x: s.ego.transform.position.x,
+      y: s.ego.transform.position.y,
+      yaw: s.ego.transform.rotation,
+    });
+    expect(vizWorkStats.occupancyCellsVisited).toBe(0);
+    expect(vizWorkStats.predArrayAllocs).toBe(0);
+    expect(vizWorkStats.planArrayAllocs).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 ---
 tags: [system, perception]
-updated: 2026-10-12
-sources: [2, 3, 14, 20]
+updated: 2026-10-15
+sources: [2, 3, 14, 20, 34, 37]
 ---
 
 # Perception F1 — Tesla-style
@@ -12,8 +12,12 @@ After [[pr-20]] the same FOV test also boxes nearby `stop_sign` and `yield_sign`
 
 There is no HD map and no radar on this stack.
 
+The 3D overlay still snapshots vision detections at **10 Hz** ([[pr-34]]). Each display frame interpolates those snapshots and animates on the GPU ([[pr-37]]): a camera-frustum sweep, boxes that pop in with a confidence bar, occupancy voxels that rise/fall with inferred height, and a pulsing vision-ray fan. Perception is not recomputed between ticks.
+
 ## Key files
 
 - `game/src/stacks/tesla.ts`
 - `game/src/stacks/tesla.test.ts`
 - `game/src/render/perceptionViz.ts`
+- `game/src/render/snapshotLerp.ts`
+- `game/src/render/perceptionShaders.ts`

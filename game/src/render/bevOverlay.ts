@@ -43,6 +43,9 @@ let hasPrev = false;
 let imageBuf: ImageData | null = null;
 let lastVariantKey = '';
 let cachedDisplayVariants: AdversarialVariant[] = [];
+let lastPaintEgo: EgoState | null = null;
+let lastTrajectories: CandidateTrajectory[] = [];
+let lastSelectedIndex = 0;
 
 export function getWaabiState(): WaabiStackState {
   return waabiState;
@@ -57,6 +60,9 @@ export function resetWaabiOverlay() {
   hasPrev = false;
   lastVariantKey = '';
   cachedDisplayVariants = [];
+  lastPaintEgo = null;
+  lastTrajectories = [];
+  lastSelectedIndex = 0;
 }
 
 function copyOccupancy(dst: BEVOccupancy, src: BEVOccupancy) {
@@ -184,6 +190,7 @@ function paintHeatmaps(
   ego: EgoState,
   trajectories: CandidateTrajectory[],
   selectedIndex: number,
+  nowMs: number = 0,
 ) {
   const w = ctx.canvas.width;
   const h = ctx.canvas.height;
@@ -237,14 +244,21 @@ function paintHeatmaps(
   ctx.scale(3, -3);
   const egoX = ego.transform.position.x;
   const egoY = ego.transform.position.y;
+  const tSec = nowMs * 0.001;
+  const sweep = (tSec * 0.7) % 1;
+  ctx.setLineDash([1.1, 0.7]);
+  ctx.lineDashOffset = -tSec * 10;
   for (let i = 0; i < trajectories.length; i++) {
     const traj = trajectories[i]!;
     const isSelected = i === selectedIndex;
     ctx.strokeStyle = isSelected ? '#00ff00' : '#ff6600';
     ctx.lineWidth = isSelected ? 0.5 : 0.2;
-    ctx.globalAlpha = isSelected ? 1 : 0.5;
+    ctx.globalAlpha = isSelected ? 1 : 0.28 + 0.35 * (0.5 + 0.5 * Math.sin(tSec * 5.2 + i));
     ctx.beginPath();
-    for (let j = 0; j < traj.points.length; j++) {
+    const cut = isSelected
+      ? traj.points.length
+      : Math.max(2, Math.floor(traj.points.length * (0.25 + 0.75 * sweep)));
+    for (let j = 0; j < cut; j++) {
       const pt = traj.points[j]!;
       const dx = pt.position.x - egoX;
       const dy = pt.position.y - egoY;
@@ -253,15 +267,26 @@ function paintHeatmaps(
     }
     ctx.stroke();
     if (isSelected && traj.points.length > 0) {
+      ctx.setLineDash([]);
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#00ff00';
       ctx.font = '3px Arial';
       const lastPt = traj.points[traj.points.length - 1]!;
       ctx.fillText(`Cost: ${traj.cost.toFixed(1)}`, lastPt.position.x - egoX + 1, lastPt.position.y - egoY);
+      ctx.setLineDash([1.1, 0.7]);
     }
   }
   ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
   ctx.restore();
+}
+
+/** Paint interpolated occupancy / sweeping candidates without a new predict. */
+export function paintDisplayedBev(nowMs: number, canvas?: HTMLCanvasElement | null) {
+  if (!canvas || !lastPaintEgo) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  paintHeatmaps(ctx, getDisplayedFuture(nowMs), lastPaintEgo, lastTrajectories, lastSelectedIndex, nowMs);
 }
 
 export function tickWaabiBevOverlay(input: BevOverlayInput): FutureOccupancy {
@@ -284,14 +309,18 @@ export function tickWaabiBevOverlay(input: BevOverlayInput): FutureOccupancy {
       hasPrev = true;
     }
 
+    lastPaintEgo = input.ego;
+    lastTrajectories = result.trajectories;
+    lastSelectedIndex = waabiState.selectedTrajectoryIndex;
     if (input.canvas) {
       const ctx = input.canvas.getContext('2d');
-      if (ctx) paintHeatmaps(ctx, currOcc, input.ego, result.trajectories, waabiState.selectedTrajectoryIndex);
+      if (ctx) paintHeatmaps(ctx, currOcc, input.ego, result.trajectories, waabiState.selectedTrajectoryIndex, input.nowMs);
     }
     updateSimWorldTable(waabiState.simWorld.variants, input.variantsBody ?? null, input.variantsStats ?? null);
   } else if (hasPrev) {
     const t = Math.max(0, Math.min(1, (input.nowMs - lastPredictMs) / WAABI_PREDICT_PERIOD_MS));
     lerpFuture(displayOcc, prevOcc, currOcc, t);
+    if (input.canvas) paintDisplayedBev(input.nowMs, input.canvas);
   }
   return hasPrev ? getDisplayedFuture(input.nowMs) : currOcc;
 }

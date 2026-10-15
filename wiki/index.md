@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37]
 ---
 
 # Wiki index
@@ -13,9 +13,9 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Game loop and fixed step](systems/game-loop.md) — 30 Hz step, render interpolation
 - [Vehicle physics](systems/vehicle-physics.md) — bicycle model, tyres, WASD
 - [Collisions](systems/collisions.md) — impulse solver, capsules, snap / tumble
-- [Perception F1 Tesla](systems/perception-tesla.md) — cameras, eight-camera ring
-- [Perception F2 Waymo](systems/perception-waymo.md) — lidar + radar fusion
-- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, `runWaabiStack` HUD
+- [Perception F1 Tesla](systems/perception-tesla.md) — cameras, eight-camera ring, frustum sweep
+- [Perception F2 Waymo](systems/perception-waymo.md) — lidar + radar fusion, sweep/decay
+- [Perception F3 Waabi](systems/perception-waabi.md) — BEV occupancy, interpolated heat / ghosts
 - [AI View](systems/ai-view.md) — insets, banner, compare
 - [Lidar and Rust/WASM](systems/lidar-wasm.md) — `cast_rays` only
 - [Planning and autopilot](systems/planning.md) — right-hand route, corners, pink roadside pad, stop/yield cap
@@ -39,6 +39,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 
 - [main.ts](entities/main-ts.md)
 - [bevOverlay.ts](entities/bev-overlay.md)
+- [snapshotLerp.ts](entities/snapshot-lerp.md)
 - [simulation.ts](entities/simulation-ts.md)
 - [vehicle.ts](entities/vehicle-ts.md)
 - [planner.ts](entities/planner-ts.md)
@@ -83,6 +84,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
 - [PR #35](sources/pr-35.md) — isotropic ground, block fill, solid buildings, ped heading
 - [PR #36](sources/pr-36.md) — lane spawn, stop-sign recovery, A→B / Random menu
+- [PR #37](sources/pr-37.md) — GPU overlay animation, 10 Hz snapshot interpolation
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 
