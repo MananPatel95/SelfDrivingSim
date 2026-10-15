@@ -75,7 +75,7 @@ describe('HUD panel DOM', () => {
     expect(panelHelpIsOpen()).toBe(true);
     const pop = document.getElementById(HUD_HELP_POPOVER_ID)!;
     expect(pop.classList.contains('hidden')).toBe(false);
-    expect(pop.textContent).toMatch(/Lidar, cameras, and radar/);
+    expect(pop.textContent).toMatch(/occupancy field/);
     expect(pop.textContent).toMatch(/Unlike the others/);
     expect(document.querySelector('.hud-help-backdrop')).toBeNull();
     expect(getComputedStyle(pop).pointerEvents).not.toBe('none');

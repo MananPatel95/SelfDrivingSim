@@ -4,6 +4,7 @@ import {
   DRAW_WORLD_LABEL_SPRITES,
   LABEL_MAX_PX,
   PerceptionVisualizer,
+  stackOverlayFlags,
   labelOpacityForDistance,
   labelWorldHeight,
   resetVizWorkStats,
@@ -12,6 +13,32 @@ import {
 import { hudColumnLeft, spriteHitsReservedHud } from '../ui/hudPanels';
 import { Simulation } from '../sim/simulation';
 import { makeFutureOccupancy, emptyWaabiState, tickWaabiView } from '../stacks/waabi';
+
+describe('stack overlay fidelity', () => {
+  it('keeps Tesla camera-only and gives Waymo/Waabi a lidar sweep', () => {
+    const tesla = stackOverlayFlags('tesla');
+    expect(tesla.lidarPoints).toBe(false);
+    expect(tesla.lidarSweep).toBe(false);
+    expect(tesla.radar).toBe(false);
+    expect(tesla.cameraFrustum).toBe(true);
+    expect(tesla.visionRays).toBe(true);
+    expect(tesla.occupancyVoxels).toBe(true);
+    expect(tesla.futureOccupancy).toBe(false);
+    const waymo = stackOverlayFlags('waymo');
+    expect(waymo.lidarPoints).toBe(true);
+    expect(waymo.lidarSweep).toBe(true);
+    expect(waymo.radar).toBe(true);
+    expect(waymo.hdMapLanes).toBe(true);
+    expect(waymo.cameraFrustum).toBe(false);
+    const waabi = stackOverlayFlags('waabi');
+    expect(waabi.lidarPoints).toBe(true);
+    expect(waabi.lidarSweep).toBe(true);
+    expect(waabi.occupancyVoxels).toBe(true);
+    expect(waabi.futureOccupancy).toBe(true);
+    expect(waabi.trajFan).toBe(true);
+    expect(waabi.radar).toBe(false);
+  });
+});
 
 describe('perception world labels', () => {
   it('caps screen height and fades with distance', () => {

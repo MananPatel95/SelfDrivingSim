@@ -113,3 +113,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
 
 ## [2026-10-15] ingest | PR #37 GPU overlay animation, 10 Hz snapshot interpolation
+
+## [2026-10-15] ingest | PR #37 public-stack overlay fidelity (Tesla Vision / Waymo Driver / Waabi UnO)

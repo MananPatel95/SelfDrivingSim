@@ -30,6 +30,7 @@ import {
   boxPopScale,
   interpolatePoses,
   lidarAzimuth,
+  lidarLocalToWorldThree,
   lidarSweepAngle,
   lerpOccupancy,
   rememberBirths,
@@ -61,6 +62,27 @@ export function resetVizWorkStats() {
 }
 
 export type VizStack = 'tesla' | 'waymo' | 'waabi';
+
+/** Which overlay layers match the public stack (Tesla Vision vs Waymo Driver vs Waabi occupancy). */
+export function stackOverlayFlags(stack: VizStack) {
+  const tesla = stack === 'tesla';
+  const waymo = stack === 'waymo';
+  const waabi = stack === 'waabi';
+  return {
+    lidarPoints: waymo || waabi,
+    lidarSweep: waymo || waabi,
+    radar: waymo,
+    occupancyVoxels: tesla || waabi,
+    futureOccupancy: waabi,
+    cameraFrustum: tesla,
+    visionRays: tesla,
+    hdMapLanes: waymo,
+    fusedTracks: tesla || waymo || waabi,
+    velocityArrows: waymo,
+    motionTrails: waymo,
+    trajFan: waabi,
+  };
+}
 
 const MAX_POINTS = 5000;
 const MAX_VOXELS = 500;
@@ -357,7 +379,8 @@ export class PerceptionVisualizer {
     pGeom.setAttribute('aAzimuth', new THREE.BufferAttribute(this.pointAz, 1));
     pGeom.setDrawRange(0, 0);
     this.points = new THREE.Points(pGeom, makeLidarPointsMaterial(this.uniforms));
-    this.rig.add(this.points);
+    this.points.frustumCulled = false;
+    this.group.add(this.points);
 
     const sweepGeo = new THREE.BoxGeometry(72, 2.6, 0.14);
     sweepGeo.translate(36, 1.15, 0);
@@ -507,6 +530,8 @@ export class PerceptionVisualizer {
       : 1;
     this.uniforms.uSweep.value = lidarSweepAngle(tSec);
     this.uniforms.uPulse.value = 0.5 + 0.5 * Math.sin(tSec * 5.6);
+    this.uniforms.uEgoPos.value.set(liveEgo.x, 0, -liveEgo.y);
+    this.uniforms.uEgoYaw.value = liveEgo.yaw;
 
     this.rig.position.set(liveEgo.x, 0, -liveEgo.y);
     this.rig.rotation.y = liveEgo.yaw;
@@ -625,59 +650,31 @@ export class PerceptionVisualizer {
   }
 
   private uploadPoints(input: PerceptionVizInput) {
-    const { stack, lidarPoints, agents } = input;
+    const { stack, lidarPoints } = input;
     let n = 0;
-    const push = (lx: number, ly: number, lz: number, r: number, g: number, b: number, az: number) => {
+    const ego = input.ego.transform;
+    const pushLocal = (lx: number, ly: number, lz: number, r: number, g: number, b: number) => {
       if (n >= MAX_POINTS) return;
+      const w = lidarLocalToWorldThree(lx, ly, lz, ego.position.x, ego.position.y, ego.rotation);
       const i = n * 3;
-      this.pointPos[i] = lx;
-      this.pointPos[i + 1] = lz;
-      this.pointPos[i + 2] = -ly;
+      this.pointPos[i] = w.x;
+      this.pointPos[i + 1] = w.y;
+      this.pointPos[i + 2] = w.z;
       this.pointCol[i] = r;
       this.pointCol[i + 1] = g;
       this.pointCol[i + 2] = b;
-      this.pointAz[n] = az;
+      this.pointAz[n] = lidarAzimuth(lx, ly);
       n++;
     };
 
-    const useLidar = stack === 'waymo' || stack === 'waabi';
-    if (useLidar) {
+    // Tesla Vision is cameras-only (occupancy network + boxes). Lidar cloud is F2/F3.
+    if (stackOverlayFlags(stack).lidarPoints) {
       const step = Math.max(1, Math.ceil(lidarPoints.length / MAX_POINTS));
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
         if (p.z < 0.25 && (p.ring % 3) !== 0) continue;
         const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
-        push(p.x, p.y, p.z + 0.05, 0.10 + h * 0.16, 0.32 + h * 0.38, 0.78 - h * 0.4, lidarAzimuth(p.x, p.y));
-      }
-    }
-
-    if (stack === 'tesla') {
-      for (const det of input.visionDetections) {
-        const samples = det.classType === 'pedestrian' ? 18 : 40;
-        const id = det.entityId;
-        const loc = worldToEgo(
-          det.center.x, det.center.y, 0,
-          input.ego.transform.position.x, input.ego.transform.position.y, input.ego.transform.rotation,
-        );
-        for (let i = 0; i < samples && n < MAX_POINTS; i++) {
-          const u = ((id * 13 + i * 17) % 1000) / 1000;
-          const v = ((id * 29 + i * 11) % 1000) / 1000;
-          const w = ((id * 7 + i * 19) % 1000) / 1000;
-          const lx = loc.x + (u - 0.5) * det.size.x;
-          const ly = loc.y + (v - 0.5) * det.size.y;
-          push(lx, ly, 0.3 + w * det.size.z, 0.18, 0.72, 0.85, lidarAzimuth(lx, ly));
-        }
-      }
-    }
-
-    if (stack === 'waymo') {
-      for (const agent of agents) {
-        if (n >= MAX_POINTS) break;
-        const loc = worldToEgo(
-          agent.boundingBox.center.x, agent.boundingBox.center.y, 1.2,
-          input.ego.transform.position.x, input.ego.transform.position.y, input.ego.transform.rotation,
-        );
-        push(loc.x, loc.y, loc.z, 1, 0.4, 0.1, lidarAzimuth(loc.x, loc.y));
+        pushLocal(p.x, p.y, p.z + 0.05, 0.10 + h * 0.16, 0.32 + h * 0.38, 0.78 - h * 0.4);
       }
     }
 
@@ -1108,23 +1105,21 @@ export class PerceptionVisualizer {
   }
 
   private syncStackVisibility() {
-    const tesla = this.stack === 'tesla';
-    const waymo = this.stack === 'waymo';
-    const waabi = this.stack === 'waabi';
-    this.points.visible = waymo || tesla;
-    this.sweep.visible = waymo;
-    this.radar.visible = waymo;
-    this.radar.count = waymo ? 3 : 0;
-    this.voxels.visible = tesla || waabi;
-    this.futureVoxels.visible = waabi;
-    this.boxes.visible = tesla || waymo || waabi;
-    this.bars.visible = tesla || waymo || waabi;
-    this.arrows.visible = waymo || waabi;
-    this.rays.visible = tesla;
-    this.laneLine.visible = waymo;
-    this.trailLine.visible = waymo;
-    this.frustumFill.visible = tesla;
-    this.frustumLines.forEach(l => { l.visible = tesla; });
+    const f = stackOverlayFlags(this.stack);
+    this.points.visible = f.lidarPoints;
+    this.sweep.visible = f.lidarSweep;
+    this.radar.visible = f.radar;
+    this.radar.count = f.radar ? 3 : 0;
+    this.voxels.visible = f.occupancyVoxels;
+    this.futureVoxels.visible = f.futureOccupancy;
+    this.boxes.visible = f.fusedTracks;
+    this.bars.visible = f.fusedTracks;
+    this.arrows.visible = f.velocityArrows;
+    this.rays.visible = f.visionRays;
+    this.laneLine.visible = f.hdMapLanes;
+    this.trailLine.visible = f.motionTrails;
+    this.frustumFill.visible = f.cameraFrustum;
+    this.frustumLines.forEach(l => { l.visible = f.cameraFrustum; });
   }
 
   private updatePlan(input: PerceptionVizInput, decision: DecisionInfo) {
@@ -1274,9 +1269,9 @@ export function renderAIViewCanvas(
   ctx.fillStyle = '#7fd7ff';
   ctx.font = 'bold 12px sans-serif';
   const titles: Record<VizStack, string> = {
-    tesla: 'Tesla · cameras only → voxels (no lidar/map)',
-    waymo: 'Waymo · lidar+radar+map fused boxes',
-    waabi: 'Waabi · BEV occupancy now + 1–3s future',
+    tesla: 'Tesla · occupancy network + vision boxes (no lidar)',
+    waymo: 'Waymo · lidar+radar+cameras on HD map',
+    waabi: 'Waabi · BEV occupancy now + 1–3s forecast',
   };
   ctx.fillText(titles[input.stack], 8, 16);
 

@@ -18,6 +18,13 @@ describe('view copy', () => {
       expect(summary.length).toBeLessThan(80);
     }
     expect(STACK_VIEW_COPY.waabi.summary).toMatch(/occupancy grid \+ 1–3 s forecast/);
+    expect(STACK_VIEW_COPY.tesla.uses).toMatch(/occupancy network/i);
+    expect(STACK_VIEW_COPY.tesla.uses).toMatch(/No lidar/);
+    expect(STACK_VIEW_COPY.waymo.uses).toMatch(/lidar/i);
+    expect(STACK_VIEW_COPY.waymo.uses).toMatch(/radar/i);
+    expect(STACK_VIEW_COPY.waymo.uses).toMatch(/HD map/);
+    expect(STACK_VIEW_COPY.waabi.uses).toMatch(/occupancy/);
+    expect(STACK_VIEW_COPY.waabi.uses).toMatch(/trajector/);
   });
 
   it('shortens the AI View header', () => {

@@ -18,28 +18,28 @@ export interface ViewCopy {
 export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string; percLabel: string; blurb: string }> = {
   tesla: {
     title: 'F1 · Tesla-style',
-    summary: 'Cameras only → occupancy voxels from pixels',
-    blurb: 'Cameras only — depth from pixels, no lidar or map.',
-    uses: 'Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. Lights and signs are read from the image.',
-    diff: 'Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range and night depth.',
+    summary: 'Cameras only → occupancy network + vision boxes',
+    blurb: 'Cameras only — occupancy network from video, no lidar or map.',
+    uses: 'Cameras only (Tesla Vision). An occupancy network turns the eight-camera video into 3D occupied/free voxels; a separate head boxes cars, people, and signs. No lidar, no radar, no HD map.',
+    diff: 'Waymo fuses spinning lidar + radar + cameras on an HD map. Waabi forecasts BEV occupancy 1–3 s ahead. This stack is vision: cheaper sensors, weaker range and night depth.',
     rawLabel: 'Front camera (vision)',
-    percLabel: 'Vision boxes + voxels',
+    percLabel: 'Vision boxes + occupancy',
   },
   waymo: {
     title: 'F2 · Waymo-style',
     summary: 'Lidar + radar + cameras → 3D boxes on an HD map',
     blurb: 'Lidar + radar + cameras, fused on a prior HD map.',
-    uses: 'Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
+    uses: '6th-gen Waymo Driver: 13 cameras, 4 lidars, 6 radars, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
     diff: 'Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes. This stack is multi-sensor + geofenced map: more redundant, only works where the map exists.',
     rawLabel: 'Ego camera (context)',
     percLabel: 'Fused lidar / radar boxes',
   },
   waabi: {
     title: 'F3 · Waabi-style',
-    summary: 'Lidar + camera + radar → occupancy grid + 1–3 s forecast',
+    summary: 'Lidar → BEV occupancy grid + 1–3 s forecast',
     blurb: 'Bird’s-eye occupancy — where space will be in 1–3 s.',
-    uses: 'Lidar, cameras, and radar fused into a bird’s-eye occupancy grid, plus 1 s / 2 s / 3 s future occupancy and a fan of scored trajectories. Mid-level reps stay readable.',
-    diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Sim World), not just “what is that object now?”',
+    uses: 'Lidar (plus cameras) into a bird’s-eye occupancy field, 1 s / 2 s / 3 s occupancy forecasts, and a fan of scored trajectories. Occupancy is the mid-level rep (UnO / DIO-style), not cuboids alone.',
+    diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Waabi World), not just “what is that object now?”',
     rawLabel: 'Ego camera (context)',
     percLabel: 'BEV occupancy-flow',
   },
@@ -93,9 +93,9 @@ export function panelHelpCopy(
   }
   if (id === 'ai-view') {
     const how: Record<StackProfile, string> = {
-      tesla: 'Left inset is the raw front camera (click it for first person). Right inset draws vision boxes: magenta = pedestrians, green = cars and stop/yield signs. Cyan voxels in the world are occupied cells inferred from pixels — there is no lidar cloud.',
-      waymo: 'Left inset is the ego camera for context. Right inset draws fused lidar/radar boxes with track IDs on the HD map. These are current object tracks, not a future occupancy forecast.',
-      waabi: 'Left inset is the ego camera. Right inset is a 2D bird’s-eye occupancy map (same idea as the bigger Waabi BEV panel): warm cells are occupied, the cyan dot is you.',
+      tesla: 'Left inset is the raw front camera (click it for first person). Right inset draws vision boxes: magenta = pedestrians, green = cars and stop/yield signs. Cyan voxels are the occupancy network (occupied space from cameras) — there is no lidar cloud or spinning beam.',
+      waymo: 'Left inset is the ego camera for context. Right inset draws fused lidar/radar boxes with track IDs on the HD map. The spinning cyan beam is the lidar sweep; orange rings are radar. These are current object tracks, not a future occupancy forecast.',
+      waabi: 'Left inset is the ego camera. Right inset is a 2D bird’s-eye occupancy map (same idea as the bigger Waabi BEV panel): warm cells are occupied now, ghosts are +1s/+2s/+3s forecasts, orange fans are candidate trajectories.',
     };
     return {
       title: aiViewTitle(stack),

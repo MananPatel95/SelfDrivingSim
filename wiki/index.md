@@ -31,7 +31,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 ## Concepts
 
 - [Fixed timestep](concepts/fixed-timestep.md) — physics vs display rate
-- [Stack profiles](concepts/stack-profiles.md) — F1–F3, F4–F6 gone
+- [Stack profiles](concepts/stack-profiles.md) — F1 Tesla Vision, F2 Waymo Driver, F3 Waabi occupancy
 - [Overview](overview.md) — what the project is now
 - [Decisions](decisions.md) — scope and WASM
 

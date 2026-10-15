@@ -100,6 +100,22 @@ export function worldToEgo(
   return { x: dx * c - dy * s, y: dx * s + dy * c, z: wz };
 }
 
+/** Ego-local lidar hit → Three.js world (x, height, -y). Anchors returns on the road. */
+export function lidarLocalToWorldThree(
+  lx: number,
+  ly: number,
+  lz: number,
+  egoX: number,
+  egoY: number,
+  egoYaw: number,
+): { x: number; y: number; z: number } {
+  const c = Math.cos(egoYaw);
+  const s = Math.sin(egoYaw);
+  const wx = egoX + lx * c - ly * s;
+  const wy = egoY + lx * s + ly * c;
+  return { x: wx, y: lz, z: -wy };
+}
+
 export function lidarAzimuth(x: number, y: number): number {
   return Math.atan2(y, x);
 }

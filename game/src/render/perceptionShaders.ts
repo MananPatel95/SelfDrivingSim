@@ -11,6 +11,8 @@ export interface AnimUniforms {
   uAlpha: { value: number };
   uSweep: { value: number };
   uPulse: { value: number };
+  uEgoPos: { value: THREE.Vector3 };
+  uEgoYaw: { value: number };
 }
 
 export function createAnimUniforms(): AnimUniforms {
@@ -19,6 +21,8 @@ export function createAnimUniforms(): AnimUniforms {
     uAlpha: { value: 1 },
     uSweep: { value: 0 },
     uPulse: { value: 1 },
+    uEgoPos: { value: new THREE.Vector3() },
+    uEgoYaw: { value: 0 },
   };
 }
 
@@ -27,6 +31,8 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
     uniforms: {
       uTime: u.uTime,
       uSweep: u.uSweep,
+      uEgoPos: u.uEgoPos,
+      uEgoYaw: u.uEgoYaw,
       uDecay: { value: LIDAR_DECAY_S },
       uPeriod: { value: LIDAR_SWEEP_PERIOD_S },
       uPointSize: { value: 0.28 },
@@ -36,8 +42,9 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
     depthWrite: false,
     toneMapped: false,
     vertexShader: `
-      attribute float aAzimuth;
       uniform float uSweep;
+      uniform vec3 uEgoPos;
+      uniform float uEgoYaw;
       uniform float uDecay;
       uniform float uPeriod;
       uniform float uPointSize;
@@ -45,8 +52,14 @@ export function makeLidarPointsMaterial(u: AnimUniforms): THREE.ShaderMaterial {
       varying float vAlpha;
       void main() {
         vColor = color;
+        vec3 rel = position - uEgoPos;
+        float c = cos(uEgoYaw);
+        float s = sin(uEgoYaw);
+        float localX = rel.x * c + rel.z * s;
+        float localZ = -rel.x * s + rel.z * c;
+        float az = atan(-localZ, localX);
         float twoPi = 6.28318530718;
-        float d = mod(uSweep - aAzimuth + twoPi, twoPi);
+        float d = mod(uSweep - az + twoPi, twoPi);
         float age = d / twoPi * uPeriod;
         vAlpha = 0.16 + 0.84 * exp(-age / max(uDecay, 0.001));
         float beam = 1.0 - smoothstep(0.0, 0.22, d);

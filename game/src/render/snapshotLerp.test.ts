@@ -13,6 +13,7 @@ import {
   lerpOccupancy,
   lidarAzimuth,
   lidarDecayAlpha,
+  lidarLocalToWorldThree,
   lidarSweepAge,
   lidarSweepAngle,
   rememberBirths,
@@ -109,6 +110,21 @@ describe('snapshot interpolation', () => {
     expect(boxPopScale(BOX_POP_S / 2)).toBeLessThan(0.6);
     expect(boxPopScale(BOX_POP_S)).toBe(1);
     expect(boxPopScale(1)).toBe(1);
+  });
+
+  it('anchors ego-local lidar hits in world so they do not drag with a later pose', () => {
+    const hit = lidarLocalToWorldThree(10, 0, 0.4, 0, 0, 0);
+    expect(hit.x).toBeCloseTo(10, 5);
+    expect(hit.z).toBeCloseTo(0, 5);
+    const moved = lidarLocalToWorldThree(10, 0, 0.4, 5, 2, 0);
+    expect(moved.x).toBeCloseTo(15, 5);
+    expect(moved.z).toBeCloseTo(-2, 5);
+    const rotated = lidarLocalToWorldThree(10, 0, 0.4, 0, 0, Math.PI / 2);
+    expect(rotated.x).toBeCloseTo(0, 5);
+    expect(rotated.z).toBeCloseTo(-10, 5);
+    const back = worldToEgo(moved.x, -moved.z, moved.y, 5, 2, 0);
+    expect(back.x).toBeCloseTo(10, 5);
+    expect(back.y).toBeCloseTo(0, 5);
   });
 
   it('records first-seen times and drops ids that left the snapshot', () => {
