@@ -43,6 +43,20 @@ export function spriteHitsHudColumn(screenX: number, vw: number, halfPx = 90): b
   return screenX + halfPx > hudColumnLeft(vw) - 8;
 }
 
+/** True when a world label overlaps the right column or reserved HUD chrome. */
+export function spriteHitsReservedHud(
+  screenX: number,
+  screenY: number,
+  vw: number,
+  vh: number,
+  halfW = 48,
+  halfH = 12,
+): boolean {
+  if (spriteHitsHudColumn(screenX, vw, halfW)) return true;
+  const box = { id: 'label', x: screenX - halfW, y: screenY - halfH, w: halfW * 2, h: halfH * 2 };
+  return reservedHudRects(vw, vh).some((r) => rectsOverlap(box, r, 6));
+}
+
 export const PANEL_SIZE: Record<PanelId, { w: number; h: number; collapsedH: number }> = {
   explainer: { w: PANEL_WIDTH, h: 108, collapsedH: 36 },
   'ai-view': { w: PANEL_WIDTH, h: 196, collapsedH: 36 },

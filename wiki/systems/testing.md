@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-15
-sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33]
+sources: [3, 18, 20, 22, 24, 25, 27, 28, 29, 30, 31, 32, 33, 34]
 ---
 
 # Testing and screenshots
@@ -21,9 +21,9 @@ Planner corner tests drive `planTrajectory` + `updateVehicle` and assert the car
 
 Collision-response tests live in `collision.test.ts` (OBB/capsule overlap, spatial hash, momentum, off-centre spin, slow-vs-snap poles, swept thin poles, roadside `obstacleAhead` skip) and `collisionSim.test.ts` (HUD count, autopilot drop, shoved NPC, snapped pole/sign, tumbling pedestrian). Screenshot rigs: `?demo=hit-car|hit-pole|hit-sign|hit-ped`.
 
-`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them.
+`poleTurn.test.ts` drives left / right / straight through a grid corner that has city poles and asserts `obstacleAhead` never full-brakes on them. `viewPerfTurns.test.ts` reuses the same `driveCorner` helper so those turns still complete after perception-scheduling changes. `f3Perf.test.ts` bounds F3 overlay lidar scans, occupancy allocs, and 10 Hz predicts. `npm run bench:views` reports F1/F2/F3 subsystem times. `cityLook.test.ts` covers vertex AO and procedural textures.
 
-`destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset 5.775 m, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on the **arrival road** (`onArrivalAsphalt` + `distanceToRightCurb` ~0.3 m), not `|x| < 7` (N–S only) or `pointOnAsphalt` (OR of both axes). Eastbound unit cases use the Y curb so `|x| < 7` would wrongly fail x≈50. The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. `perceptionViz.test.ts` asserts world-space `%` sprites stay off. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs (those two demos clear traffic and pedestrians so a ped cannot steal the arrival).
+`destination.test.ts` / `rightLane.test.ts` cover the roadside pad (right-curb offset 5.775 m, slide off junctions, `tripRoute` tail) and a planner+vehicle pull-over that stops on the pad. Parked pose asserts heading error **< 5°** and every sedan corner on the **arrival road** (`onArrivalAsphalt` + `distanceToRightCurb` ~0.3 m), not `|x| < 7` (N–S only) or `pointOnAsphalt` (OR of both axes). Eastbound unit cases use the Y curb so `|x| < 7` would wrongly fail x≈50. The live sim then holds with banner **Arrived**. Opposite-side clicks assert a U-turn (route goes past the next junction) and Arrived on the left curb heading-aligned, with no cruise-stuck in-lane stop. `perceptionViz.test.ts` asserts world-space `%` sprites stay capped, fade with distance, and hide under the HUD. Minimap tests assert the dest pin is `#ff2d8a` and still projects in manual. `?demo=arrive` / `?demo=arrive-opp` are the screenshot rigs (those two demos clear traffic and pedestrians so a ped cannot steal the arrival).
 
 `startMenu.test.ts` covers the overlay state machine: start → pick dest → driving → arrived menu (current pose as new start) → new dest → second trip. Clicks snap through `snapTripEnd` + `resolveTripDestination` (same-side and opposite-side curb). Map world↔canvas round-trips so start/dest pins stay aligned. `?demo=` / `?shot=` still skip the overlay. Live shots: `docs/screenshots/28-start-menu.png`, `29-arrived-menu.png`, `30-second-trip.png`.
 
@@ -46,6 +46,10 @@ Screenshots used in PRs and `README.md` sit in `docs/screenshots/`. They are cap
 - `game/src/render/perceptionViz.test.ts`
 - `game/src/sim/vehicle.test.ts`
 - `game/src/sim/poleTurn.test.ts`
+- `game/src/sim/poleTurnDrive.ts`
+- `game/src/sim/viewPerfTurns.test.ts`
+- `game/src/render/f3Perf.test.ts`
+- `game/src/render/cityLook.test.ts`
 - `game/src/sim/collision.test.ts`
 - `game/src/sim/collisionSim.test.ts`
 - `docs/screenshots/README.md`

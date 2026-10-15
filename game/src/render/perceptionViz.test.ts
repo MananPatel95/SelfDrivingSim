@@ -1,48 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import * as THREE from 'three';
-import { createEgoState } from '../sim/vehicle';
-import { vec3 } from '../sim/math';
 import {
   DRAW_WORLD_LABEL_SPRITES,
-  PerceptionVisualizer,
+  LABEL_MAX_PX,
+  labelOpacityForDistance,
+  labelWorldHeight,
 } from './perceptionViz';
+import { hudColumnLeft, spriteHitsReservedHud } from '../ui/hudPanels';
 
 describe('perception world labels', () => {
-  it('does not draw world-space confidence sprites over the HUD', () => {
-    expect(DRAW_WORLD_LABEL_SPRITES).toBe(false);
-    const scene = new THREE.Scene();
-    const viz = new PerceptionVisualizer(scene);
-    viz.setEnabled(true);
-    const ego = createEgoState('car', vec3(0, 0, 0), Math.PI / 2);
-    viz.update({
-      stack: 'tesla',
-      ego,
-      tracks: [{
-        id: 7,
-        classType: 'car',
-        box: {
-          center: { x: 0.4, y: 1.2, z: 0.6 },
-          size: { x: 4.5, y: 1.8, z: 1.5 },
-          yaw: 0,
-        },
-        velocity: vec3(0, 0, 0),
-        confidence: 0.2775,
-        age: 3,
-        missedFrames: 0,
-      }],
-      lidarPoints: [],
-      agents: [],
-      groundTruth: [],
-      showGroundTruth: false,
-      plannerOutput: null,
-      visionDetections: [],
-      controlSource: 'policy',
-      rule: { reason: 'Cruising: lane clear', severity: 'go' },
-    });
-    let sprites = 0;
-    viz.group.traverse((obj) => {
-      if (obj instanceof THREE.Sprite) sprites += 1;
-    });
-    expect(sprites).toBe(0);
+  it('caps screen height and fades with distance', () => {
+    const near = labelWorldHeight(6, 720, 60);
+    const far = labelWorldHeight(40, 720, 60);
+    expect(DRAW_WORLD_LABEL_SPRITES).toBe(true);
+    expect(near).toBeLessThan(far);
+    expect(near).toBeLessThan(1.2);
+    const vFov = (60 * Math.PI) / 180;
+    const worldPerPx = (2 * 6 * Math.tan(vFov / 2)) / 720;
+    expect(near / worldPerPx).toBeLessThanOrEqual(LABEL_MAX_PX);
+    expect(labelOpacityForDistance(2)).toBe(0);
+    expect(labelOpacityForDistance(20)).toBeGreaterThan(0.7);
+    expect(labelOpacityForDistance(60)).toBeLessThan(0.5);
+    expect(labelOpacityForDistance(100)).toBe(0);
+  });
+
+  it('hides labels under the HUD column, minimap, and speed stack', () => {
+    expect(spriteHitsReservedHud(hudColumnLeft(1280) + 20, 80, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(80, 120, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(80, 600, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(640, 24, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(400, 360, 1280, 720)).toBe(false);
   });
 });

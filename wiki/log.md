@@ -1,7 +1,7 @@
 ---
 tags: [log]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
 ---
 
 # Wiki log
@@ -96,6 +96,12 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 
 ## [2026-10-14] ingest | PR #33 parked offset 5.775 m / heading-aware curb tests
 
+## [2026-10-14] ingest | PR #34 F2/F3 10 Hz overlay, no extra lidar, InstancedMesh
+
+## [2026-10-14] ingest | PR #34 city look: PCF sun, ACES, textures, bloom/LUT
+
 ## [2026-10-15] merge | origin/main (#33 dest U-turn) into PR #31 start menu
 
 ## [2026-10-15] merge | origin/main (#31 start menu, #33 dest) into PR #32 HUD panels
+
+## [2026-10-15] merge | origin/main (#31 start, #32 HUD, #33 dest) into PR #34 view perf

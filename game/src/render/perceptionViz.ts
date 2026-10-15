@@ -9,9 +9,28 @@ import type { EgoState, Entity, LidarPoint, PlannerOutput, Vec3 } from '../sim/t
 import type { Track } from '../stacks/perception';
 import { CAMERA_CONFIG, type VisionDetection } from '../stacks/tesla';
 import type { BEVOccupancy } from '../stacks/waabi';
-import { spriteHitsHudColumn } from '../ui/hudPanels';
+import { writeOccupancyRgbaAiView } from './occupancyPaint';
+import { spriteHitsReservedHud } from '../ui/hudPanels';
 
 const _labelNdc = new THREE.Vector3();
+
+export interface VizWorkStats {
+  predArrayAllocs: number;
+  planArrayAllocs: number;
+  occupancyCellsVisited: number;
+}
+
+export const vizWorkStats: VizWorkStats = {
+  predArrayAllocs: 0,
+  planArrayAllocs: 0,
+  occupancyCellsVisited: 0,
+};
+
+export function resetVizWorkStats() {
+  vizWorkStats.predArrayAllocs = 0;
+  vizWorkStats.planArrayAllocs = 0;
+  vizWorkStats.occupancyCellsVisited = 0;
+}
 
 export type VizStack = 'tesla' | 'waymo' | 'waabi';
 
@@ -109,6 +128,27 @@ export function computeDecision(input: PerceptionVizInput): DecisionInfo {
   return { text: `Cruising: lane clear, ${Math.round(speed * 3.6)} km/h`, severity: 'go' };
 }
 
+export const LABEL_TARGET_PX = 16;
+export const LABEL_MAX_PX = 22;
+export const LABEL_ASPECT = 4;
+export const LABEL_FADE_START = 36;
+export const LABEL_FADE_END = 90;
+export const LABEL_NEAR_HIDE = 3.5;
+
+/** World height so a label stays ~16–22 px tall at this camera distance. */
+export function labelWorldHeight(dist: number, viewH: number, fovDeg: number): number {
+  const vFov = (fovDeg * Math.PI) / 180;
+  const worldPerPx = (2 * Math.max(0.6, dist) * Math.tan(vFov / 2)) / Math.max(1, viewH);
+  return Math.min(LABEL_MAX_PX, LABEL_TARGET_PX) * worldPerPx;
+}
+
+export function labelOpacityForDistance(dist: number): number {
+  if (dist < LABEL_NEAR_HIDE) return 0;
+  if (dist >= LABEL_FADE_END) return 0;
+  if (dist <= LABEL_FADE_START) return 0.88;
+  return 0.88 * (1 - (dist - LABEL_FADE_START) / (LABEL_FADE_END - LABEL_FADE_START));
+}
+
 function makeLabelSprite(text: string, color: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 256;
@@ -122,13 +162,18 @@ function makeLabelSprite(text: string, color: string): THREE.Sprite {
   ctx.fillText(text, 128, 40);
   const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
-  sprite.scale.set(4.2, 1.05, 1);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  }));
+  sprite.scale.set(LABEL_ASPECT * 0.4, 0.4, 1);
   return sprite;
 }
 
-/** World-space % sprites drew huge over the HUD when a track sat near the camera. */
-export const DRAW_WORLD_LABEL_SPRITES = false;
+/** On, but capped / faded / HUD-clipped so they cannot cover the panels. */
+export const DRAW_WORLD_LABEL_SPRITES = true;
 
 export class PerceptionVisualizer {
   readonly group = new THREE.Group();
@@ -142,6 +187,10 @@ export class PerceptionVisualizer {
   private planLine: THREE.Line;
   private frustumLines: THREE.Line[] = [];
   private lastLabelKey = '';
+  private predPts = new Float32Array(12 * 3);
+  private planPts = new Float32Array(48 * 3);
+  private boxDummy = new THREE.Object3D();
+  private boxes: THREE.InstancedMesh;
 
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
@@ -153,9 +202,12 @@ export class PerceptionVisualizer {
     pGeom.setAttribute('color', new THREE.BufferAttribute(this.pointCol, 3));
     pGeom.setDrawRange(0, 0);
     this.points = new THREE.Points(pGeom, new THREE.PointsMaterial({
-      size: 0.18,
+      size: 0.14,
       vertexColors: true,
       sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.78,
+      depthWrite: false,
     }));
     this.group.add(this.points);
 
@@ -166,6 +218,14 @@ export class PerceptionVisualizer {
     this.voxels.count = 0;
     this.voxels.frustumCulled = false;
     this.group.add(this.voxels);
+
+    const boxGeom = new THREE.BoxGeometry(1, 1, 1);
+    const boxMat = new THREE.MeshBasicMaterial({ color: 0x88ff88, wireframe: true, transparent: true, opacity: 0.7 });
+    this.boxes = new THREE.InstancedMesh(boxGeom, boxMat, MAX_LABELS);
+    this.boxes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.boxes.count = 0;
+    this.boxes.frustumCulled = false;
+    this.group.add(this.boxes);
 
     const planGeom = new THREE.BufferGeometry();
     planGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(48 * 3), 3));
@@ -192,24 +252,41 @@ export class PerceptionVisualizer {
 
     this.updatePoints(input);
     this.updateVoxels(input);
+    this.updateBoxes(input);
     this.updatePredictions(input);
     this.updatePlan(input, decision);
     this.updateLabels(input);
-    this.clipLabelsToHudColumn(input);
+    this.layoutWorldLabels(input);
     this.updateFrustums(input);
     return decision;
   }
 
-  /** Hide world labels that would be sliced by the 300px right-side HUD column. */
-  private clipLabelsToHudColumn(input: PerceptionVizInput) {
+  /** Cap screen size, fade with distance, and hide labels under HUD chrome. */
+  private layoutWorldLabels(input: PerceptionVizInput) {
     const cam = input.camera;
     const vw = input.viewW ?? 0;
     const vh = input.viewH ?? 0;
-    if (!cam || vw < 8 || vh < 8 || this.labels.length === 0) return;
+    if (this.labels.length === 0) return;
+    const fov = cam instanceof THREE.PerspectiveCamera ? cam.fov : 60;
+    const camPos = cam?.position;
     for (const sprite of this.labels) {
+      const dist = camPos
+        ? camPos.distanceTo(sprite.position)
+        : 20;
+      const h = labelWorldHeight(dist, vh > 0 ? vh : 720, fov);
+      sprite.scale.set(h * LABEL_ASPECT, h, 1);
+      const opacity = labelOpacityForDistance(dist);
+      const mat = sprite.material as THREE.SpriteMaterial;
+      mat.opacity = opacity;
+      if (!cam || vw < 8 || vh < 8) {
+        sprite.visible = opacity > 0.04;
+        continue;
+      }
       _labelNdc.copy(sprite.position).project(cam);
       const sx = (_labelNdc.x * 0.5 + 0.5) * vw;
-      sprite.visible = _labelNdc.z < 1 && !spriteHitsHudColumn(sx, vw);
+      const sy = (1 - (_labelNdc.y * 0.5 + 0.5)) * vh;
+      const behind = _labelNdc.z >= 1 || _labelNdc.z < -1;
+      sprite.visible = !behind && opacity > 0.04 && !spriteHitsReservedHud(sx, sy, vw, vh);
     }
   }
 
@@ -235,21 +312,25 @@ export class PerceptionVisualizer {
       for (let i = 0; i < lidarPoints.length && n < MAX_POINTS; i += step) {
         const p = lidarPoints[i]!;
         const world = egoToWorld(p, ego.transform.position, ego.transform.rotation);
-        if (p.z < 0.25 && i % 6 !== 0) continue;
+        if (p.z < 0.25 && (p.ring % 3) !== 0) continue;
         const h = Math.max(0, Math.min(1, (p.z + 0.2) / 3));
-        push(world.x, world.y, world.z + 0.05, 0.15 + h * 0.2, 0.4 + h * 0.5, 1 - h * 0.6);
+        push(world.x, world.y, world.z + 0.05, 0.10 + h * 0.16, 0.32 + h * 0.38, 0.78 - h * 0.4);
       }
     }
 
     if (stack === 'tesla') {
       for (const det of input.visionDetections) {
         const samples = det.classType === 'pedestrian' ? 18 : 40;
+        const id = det.entityId;
         for (let i = 0; i < samples && n < MAX_POINTS; i++) {
+          const u = ((id * 13 + i * 17) % 1000) / 1000;
+          const v = ((id * 29 + i * 11) % 1000) / 1000;
+          const w = ((id * 7 + i * 19) % 1000) / 1000;
           push(
-            det.center.x + (Math.random() - 0.5) * det.size.x,
-            det.center.y + (Math.random() - 0.5) * det.size.y,
-            0.3 + Math.random() * det.size.z,
-            0.2, 0.9, 1
+            det.center.x + (u - 0.5) * det.size.x,
+            det.center.y + (v - 0.5) * det.size.y,
+            0.3 + w * det.size.z,
+            0.18, 0.72, 0.85
           );
         }
       }
@@ -311,6 +392,7 @@ export class PerceptionVisualizer {
       for (let gy = 0; gy < gridSize && count < MAX_VOXELS; gy += step) {
         for (let gx = 0; gx < gridSize && count < MAX_VOXELS; gx += step) {
           const v = occ.grid[gy * gridSize + gx] || 0;
+          vizWorkStats.occupancyCellsVisited++;
           if (v < 0.12) continue;
           const lx = gx * occ.resolution - occ.extent;
           const ly = gy * occ.resolution - occ.extent;
@@ -328,14 +410,42 @@ export class PerceptionVisualizer {
     this.voxels.instanceMatrix.needsUpdate = true;
   }
 
+  private updateBoxes(input: PerceptionVizInput) {
+    const show = input.stack === 'waymo' || input.stack === 'waabi';
+    this.boxes.visible = show;
+    if (!show) {
+      this.boxes.count = 0;
+      return;
+    }
+    const dummy = this.boxDummy;
+    const ego = input.ego;
+    let count = 0;
+    for (const track of input.tracks) {
+      if (count >= MAX_LABELS) break;
+      if (track.missedFrames > 0 || track.confidence < 0.4) continue;
+      const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
+      dummy.position.set(world.x, Math.max(world.z, track.box.size.z / 2), -world.y);
+      dummy.scale.set(
+        Math.max(track.box.size.x, 0.6),
+        Math.max(track.box.size.z, 0.8),
+        Math.max(track.box.size.y, 0.6),
+      );
+      dummy.rotation.set(0, -(track.box.yaw + ego.transform.rotation), 0);
+      dummy.updateMatrix();
+      this.boxes.setMatrixAt(count++, dummy.matrix);
+    }
+    this.boxes.count = count;
+    this.boxes.instanceMatrix.needsUpdate = true;
+  }
+
   private updatePredictions(input: PerceptionVizInput) {
     const ego = input.ego;
     let used = 0;
+    const pts = this.predPts;
     for (const track of input.tracks) {
       if (used >= this.predLines.length) break;
       if (track.missedFrames > 0) continue;
       const world = egoToWorld(track.box.center, ego.transform.position, ego.transform.rotation);
-      const pts = new Float32Array(12 * 3);
       for (let t = 0; t < 12; t++) {
         const s = t * 0.25;
         pts[t * 3] = world.x + track.velocity.x * s;
@@ -354,7 +464,7 @@ export class PerceptionVisualizer {
   private updatePlan(input: PerceptionVizInput, decision: DecisionInfo) {
     const ego = input.ego;
     const traj = input.plannerOutput?.trajectory?.points ?? [];
-    const pts = new Float32Array(48 * 3);
+    const pts = this.planPts;
     let n = 0;
     if (traj.length > 1) {
       const step = Math.max(1, Math.floor(traj.length / 40));
@@ -509,21 +619,22 @@ export function renderAIViewCanvas(
 
   if (input.stack === 'waabi' && input.occupancy) {
     const occ = input.occupancy;
-    const gridSize = Math.sqrt(occ.grid.length);
     const side = Math.min(w - 16, h - 36);
     const x0 = 8;
     const y0 = 24;
-    const cell = side / gridSize;
-    for (let gy = 0; gy < gridSize; gy++) {
-      for (let gx = 0; gx < gridSize; gx++) {
-        const v = occ.grid[gy * gridSize + gx] || 0;
-        if (v < 0.05) continue;
-        const r = Math.min(255, Math.floor(v * 255 * 1.6));
-        const g = Math.max(0, Math.floor((1 - v) * 180));
-        ctx.fillStyle = `rgb(${r},${g},${40})`;
-        ctx.fillRect(x0 + gx * cell, y0 + (gridSize - gy - 1) * cell, cell + 0.4, cell + 0.4);
-      }
+    const img = ctx.createImageData(w, h);
+    img.data.fill(0);
+    for (let i = 0; i < img.data.length; i += 4) {
+      img.data[i] = 11;
+      img.data[i + 1] = 15;
+      img.data[i + 2] = 24;
+      img.data[i + 3] = 255;
     }
+    writeOccupancyRgbaAiView(img.data, w, occ, x0, y0, side, side);
+    ctx.putImageData(img, 0, 0);
+    ctx.fillStyle = '#7fd7ff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.fillText(titles[input.stack], 8, 16);
     ctx.fillStyle = '#00ffff';
     ctx.beginPath();
     ctx.arc(x0 + side / 2, y0 + side / 2, 3, 0, Math.PI * 2);

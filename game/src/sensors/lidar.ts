@@ -12,6 +12,44 @@ import {
 import { vec3Add, rotateVec3, vec3Dot, vec3Sub, vec3, vec3Scale, SeededRandom } from '../sim/math';
 import { getWasmKernels } from '../sim/wasm';
 
+const localDirCache = new Map<string, { dirs: Float32Array; rings: number[]; count: number }>();
+let pooledDirs = new Float32Array(0);
+let pooledBoxes = new Float32Array(0);
+
+function configKey(config: LidarConfig): string {
+  return `${config.beams}:${config.verticalFov[0]},${config.verticalFov[1]}:${config.horizontalFov[0]},${config.horizontalFov[1]}:${config.horizontalResolution}`;
+}
+
+function localDirsFor(config: LidarConfig): { dirs: Float32Array; rings: number[]; count: number } {
+  const key = configKey(config);
+  const hit = localDirCache.get(key);
+  if (hit) return hit;
+  const rays = generateLidarRays(
+    vec3(0, 0, 0),
+    0,
+    config.beams,
+    config.verticalFov,
+    config.horizontalFov,
+    config.horizontalResolution
+  );
+  const dirs = new Float32Array(rays.length * 3);
+  const rings = new Array<number>(rays.length);
+  for (let i = 0; i < rays.length; i++) {
+    const r = rays[i]!;
+    dirs[i * 3] = r.ray.direction.x;
+    dirs[i * 3 + 1] = r.ray.direction.y;
+    dirs[i * 3 + 2] = r.ray.direction.z;
+    rings[i] = r.ring;
+  }
+  const cached = { dirs, rings, count: rays.length };
+  localDirCache.set(key, cached);
+  return cached;
+}
+
+function ensureCapacity(buf: Float32Array, n: number): Float32Array {
+  return buf.length >= n ? buf : new Float32Array(n);
+}
+
 export interface LidarScanResult {
   timestamp: number;
   points: LidarPoint[];
@@ -29,12 +67,6 @@ export function simulateLidarScan(
   const rng = new SeededRandom(seed + timestamp);
   const points: LidarPoint[] = [];
   
-  // Build spatial grid
-  const grid = new SpatialGrid(10);
-  for (const entity of entities) {
-    grid.insert(entity);
-  }
-  
   // Sensor position in world frame
   const sensorWorldPos = vec3Add(
     egoState.transform.position,
@@ -42,8 +74,13 @@ export function simulateLidarScan(
   );
   const sensorWorldYaw = egoState.transform.rotation + config.rotation.z;
   
-  // Generate rays
-  const rays = generateLidarRays(
+  const kernels = getWasmKernels();
+  const useBatch = typeof window !== 'undefined';
+  const local = useBatch ? localDirsFor(config) : null;
+  const rayCount = local?.count ?? 0;
+
+  // Generate rays only for the TS fallback (WASM uses cached local dirs).
+  const rays = useBatch ? null : generateLidarRays(
     sensorWorldPos,
     sensorWorldYaw,
     config.beams,
@@ -52,35 +89,57 @@ export function simulateLidarScan(
     config.horizontalResolution
   );
   
-  const kernels = getWasmKernels();
-  const useBatch = typeof window !== 'undefined';
   let batchHits: Float32Array | null = null;
-  if (useBatch && entities.length > 0) {
-    const dirs = new Float32Array(rays.length * 3);
-    rays.forEach((r, i) => {
-      dirs[i * 3] = r.ray.direction.x;
-      dirs[i * 3 + 1] = r.ray.direction.y;
-      dirs[i * 3 + 2] = r.ray.direction.z;
-    });
-    const boxes = new Float32Array(entities.length * 7);
-    entities.forEach((e, j) => {
-      boxes[j * 7] = e.boundingBox.center.x;
-      boxes[j * 7 + 1] = e.boundingBox.center.y;
-      boxes[j * 7 + 2] = e.boundingBox.center.z;
-      boxes[j * 7 + 3] = e.boundingBox.size.x;
-      boxes[j * 7 + 4] = e.boundingBox.size.y;
-      boxes[j * 7 + 5] = e.boundingBox.size.z;
-      boxes[j * 7 + 6] = e.boundingBox.yaw;
-    });
+  if (useBatch && local && entities.length > 0) {
+    const cos = Math.cos(sensorWorldYaw);
+    const sin = Math.sin(sensorWorldYaw);
+    pooledDirs = ensureCapacity(pooledDirs, rayCount * 3);
+    for (let i = 0; i < rayCount; i++) {
+      const lx = local.dirs[i * 3]!;
+      const ly = local.dirs[i * 3 + 1]!;
+      const lz = local.dirs[i * 3 + 2]!;
+      pooledDirs[i * 3] = lx * cos - ly * sin;
+      pooledDirs[i * 3 + 1] = lx * sin + ly * cos;
+      pooledDirs[i * 3 + 2] = lz;
+    }
+    pooledBoxes = ensureCapacity(pooledBoxes, entities.length * 7);
+    for (let j = 0; j < entities.length; j++) {
+      const e = entities[j]!;
+      pooledBoxes[j * 7] = e.boundingBox.center.x;
+      pooledBoxes[j * 7 + 1] = e.boundingBox.center.y;
+      pooledBoxes[j * 7 + 2] = e.boundingBox.center.z;
+      pooledBoxes[j * 7 + 3] = e.boundingBox.size.x;
+      pooledBoxes[j * 7 + 4] = e.boundingBox.size.y;
+      pooledBoxes[j * 7 + 5] = e.boundingBox.size.z;
+      pooledBoxes[j * 7 + 6] = e.boundingBox.yaw;
+    }
     batchHits = kernels.castRays(
       sensorWorldPos.x, sensorWorldPos.y, sensorWorldPos.z,
-      dirs, boxes, config.maxRange
+      pooledDirs.subarray(0, rayCount * 3),
+      pooledBoxes.subarray(0, entities.length * 7),
+      config.maxRange
     );
   }
 
+  const grid = (!batchHits && rays) ? new SpatialGrid(10) : null;
+  if (grid) {
+    for (const entity of entities) grid.insert(entity);
+  }
+
+  const nRays = rays ? rays.length : rayCount;
   // Cast rays and collect points
-  for (let ri = 0; ri < rays.length; ri++) {
-    const { ray, ring } = rays[ri]!;
+  for (let ri = 0; ri < nRays; ri++) {
+    const ray = rays
+      ? rays[ri]!.ray
+      : {
+          origin: sensorWorldPos,
+          direction: {
+            x: pooledDirs[ri * 3]!,
+            y: pooledDirs[ri * 3 + 1]!,
+            z: pooledDirs[ri * 3 + 2]!,
+          },
+        };
+    const ring = rays ? rays[ri]!.ring : local!.rings[ri]!;
     let hit = null as ReturnType<typeof castRay>;
     if (batchHits) {
       const t = batchHits[ri * 2] ?? -1;
@@ -112,20 +171,22 @@ export function simulateLidarScan(
           intensity: 0.4,
         };
       }
-    } else {
+    } else if (grid) {
       hit = castRay(ray, entities, config.maxRange, grid);
     }
     
     if (hit) {
-      // Apply noise
-      const noisyHit = applyLidarNoise(
-        hit,
-        0.02, // 2cm range noise
-        0.01, // 1% base dropout
-        environment.weather,
-        environment.timeOfDay,
-        () => rng.next()
-      );
+      // Browser viz: fixed beam (no per-frame jitter). Headless keeps seeded noise.
+      const noisyHit = useBatch
+        ? { ...hit, intensity: hit.intensity * 0.72 }
+        : applyLidarNoise(
+            hit,
+            0.02, // 2cm range noise
+            0.01, // 1% base dropout
+            environment.weather,
+            environment.timeOfDay,
+            () => rng.next()
+          );
       
       if (noisyHit) {
         // Transform hit point to ego frame

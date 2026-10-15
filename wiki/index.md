@@ -1,7 +1,7 @@
 ---
 tags: [index]
 updated: 2026-10-15
-sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]
+sources: [1, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34]
 ---
 
 # Wiki index
@@ -22,6 +22,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [Traffic rules](systems/traffic-rules.md) — stop / yield / uncontrolled, random walk, deadlock breaker
 - [Pedestrians](systems/pedestrians.md) — sidewalks, crossings, tumble on hit
 - [Camera](systems/camera.md) — chase, hood, BEV, orbit
+- [City look](systems/city-look.md) — sun/PCF, ACES, textures, bloom/LUT
 - [Ego sedan mesh](systems/ego-mesh.md) — Kenney CC0 sedan-sports + cockpit
 - [HUD and menus](systems/hud.md) — start / arrived menu, 300px right column, ? popovers, pink dest pin, seed/demo, collision count
 - [Data engine](systems/data-engine.md) — Python mine/label/train
@@ -37,6 +38,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 ## Entities / modules
 
 - [main.ts](entities/main-ts.md)
+- [bevOverlay.ts](entities/bev-overlay.md)
 - [simulation.ts](entities/simulation-ts.md)
 - [vehicle.ts](entities/vehicle-ts.md)
 - [planner.ts](entities/planner-ts.md)
@@ -78,6 +80,7 @@ Read this first. Then open a page. Conventions live in `AGENTS.md`.
 - [PR #31](sources/pr-31.md) — orbiting start / arrived menu
 - [PR #32](sources/pr-32.md) — shared 300px HUD column + ? popovers
 - [PR #33](sources/pr-33.md) — opposite-side pad, legal U-turn, HUD % sprite
+- [PR #34](sources/pr-34.md) — F2/F3 10 Hz overlay, city look, InstancedMesh / pooled points
 
 There is no merged PR #9 (closed as redundant with the nose/mesh yaw work).
 

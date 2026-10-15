@@ -9,6 +9,7 @@ import {
   panelWidthForViewport,
   hudColumnLeft,
   spriteHitsHudColumn,
+  spriteHitsReservedHud,
   PANEL_IDS,
   PANEL_SIZE,
   PANEL_WIDTH,
@@ -79,6 +80,9 @@ describe('HUD panel layout', () => {
     expect(hudColumnLeft(1280)).toBe(970);
     expect(spriteHitsHudColumn(970, 1280)).toBe(true);
     expect(spriteHitsHudColumn(400, 1280)).toBe(false);
+    expect(spriteHitsReservedHud(980, 80, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(80, 120, 1280, 720)).toBe(true);
+    expect(spriteHitsReservedHud(400, 360, 1280, 720)).toBe(false);
   });
 
   it('round-trips localStorage JSON', () => {

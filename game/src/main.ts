@@ -68,31 +68,33 @@ import {
 } from './ui/startMenu';
 import { loadWasmKernels, getWasmKernels } from './sim/wasm';
 import { WAYMO_INFO_CARD } from './stacks/waymo';
-import {
-  WAABI_INFO_CARD, WaabiStackState, runWaabiStack,
-  BEVOccupancy, AdversarialVariant
-} from './stacks/waabi';
+import { WAABI_INFO_CARD, f3WorkStats } from './stacks/waabi';
 import { TESLA_INFO_CARD, detectVisibleAgents, hudDetectionCount, type VisionDetection } from './stacks/tesla';
 import { PerceptionVisualizer, renderAIViewCanvas, type DecisionInfo } from './render/perceptionViz';
+import {
+  getDisplayedOccupancy,
+  resetWaabiOverlay,
+  tickWaabiBevOverlay,
+} from './render/bevOverlay';
+import {
+  applyDayNight,
+  asphaltMaterial,
+  configureRendererLook,
+  createCityLook,
+  curbMaterial,
+  facadeMaterial,
+  impostorMaterial,
+  instanceAO,
+  makeGrassGround,
+  sidewalkMaterial,
+  updateSunRig,
+  type CityLook,
+} from './render/cityLook';
+import { PostFx } from './render/postFx';
 import { LIDAR_CONFIGS } from './sensors/lidar';
 import type { LidarConfig } from './sim/types';
 
-let waabiState: WaabiStackState = {
-  tracks: [],
-  occupancy: {
-    current: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t1s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t2s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-    t3s: { grid: new Float32Array(0), resolution: 0.5, extent: 50 },
-  },
-  candidateTrajectories: [],
-  selectedTrajectoryIndex: 0,
-  simWorld: {
-    replayBuffer: [],
-    variants: [],
-    lastGenerationTime: 0,
-  },
-};
+const PERCEPTION_PERIOD_MS = 100;
 
 let perceptionViz: PerceptionVisualizer | null = null;
 let rawCameraRenderer: THREE.WebGLRenderer | null = null;
@@ -122,30 +124,34 @@ const QUALITY: Record<QualityLevel, {
   lidarEveryN: number;
   shadows: boolean;
   fogFar: number;
+  post: boolean;
 }> = {
   low: {
     pixelRatio: 1,
-    far: 450,
+    far: 320,
     lidar: LIDAR_CONFIGS['qualityLow']!,
     lidarEveryN: 3,
     shadows: false,
-    fogFar: 380,
+    fogFar: 220,
+    post: false,
   },
   med: {
-    pixelRatio: 1.25,
-    far: 600,
+    pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1.25, 1.25),
+    far: 380,
     lidar: LIDAR_CONFIGS['qualityMed'] ?? LIDAR_CONFIGS['browserLite']!,
     lidarEveryN: 2,
     shadows: false,
-    fogFar: 500,
+    fogFar: 240,
+    post: false,
   },
   high: {
-    pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1.5, 1.75),
-    far: 600,
-    lidar: LIDAR_CONFIGS['qualityHigh']!,
-    lidarEveryN: 1,
+    pixelRatio: Math.min(typeof window !== 'undefined' ? window.devicePixelRatio : 1.5, 1.5),
+    far: 400,
+    lidar: LIDAR_CONFIGS['qualityMed'] ?? LIDAR_CONFIGS['browserLite']!,
+    lidarEveryN: 2,
     shadows: true,
-    fogFar: 520,
+    fogFar: 250,
+    post: true,
   },
 };
 
@@ -154,6 +160,13 @@ let renderer: THREE.WebGLRenderer;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let sunLight: THREE.DirectionalLight;
+let cityLook: CityLook | null = null;
+let postFx: PostFx | null = null;
+let lookHigh = false;
+let buildingNear: THREE.InstancedMesh | null = null;
+let buildingFar: THREE.InstancedMesh | null = null;
+let buildingRecords: Array<{ x: number; y: number; sx: number; sy: number; sz: number }> = [];
+let lastLodMs = 0;
 let cameraMode: CameraMode = 'chase';
 let qualityLevel: QualityLevel = 'med';
 let isRecording = false;
@@ -171,6 +184,14 @@ let compareMode = false;
 let driveHintShown = false;
 let lastHudMs = 0;
 let lastAiViewMs = 0;
+let lastDetectionMs = 0;
+const frameWorkMs = {
+  sim: 0,
+  overlay: 0,
+  viz: 0,
+  render: 0,
+  compare: 0,
+};
 let lastCollisionCount = 0;
 let collisionFlashUntil = 0;
 let shadowMode = false;
@@ -283,7 +304,7 @@ function initThreeJS() {
   renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(QUALITY[qualityLevel].pixelRatio);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  configureRendererLook(renderer);
   renderer.shadowMap.enabled = QUALITY[qualityLevel].shadows;
   renderer.domElement.tabIndex = 0;
   renderer.domElement.style.outline = 'none';
@@ -293,8 +314,6 @@ function initThreeJS() {
   
   // Scene
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb); // Sky blue
-  scene.fog = new THREE.Fog(0x87ceeb, 80, 500);
   
   // Camera
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, QUALITY[qualityLevel].far);
@@ -302,34 +321,21 @@ function initThreeJS() {
   camera.lookAt(0, 0, 0);
   applyCameraLayers(camera, false);
   
-  const ambientLight = new THREE.AmbientLight(0x6a6a6a, 0.7);
-  const hemi = new THREE.HemisphereLight(0xc8d8ee, 0x2a241c, 0.45);
-  const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
-  fillLight.position.set(-80, 40, -40);
-  sunLight = new THREE.DirectionalLight(0xffffff, 1);
-  sunLight.position.set(100, 100, 100);
-  for (const light of [ambientLight, hemi, fillLight, sunLight]) {
-    light.layers.enable(LAYER_WORLD);
-    light.layers.enable(LAYER_COCKPIT);
-    light.layers.enable(LAYER_EXTERIOR);
-    scene.add(light);
-  }
-  sunLight.castShadow = true;
-  sunLight.shadow.mapSize.width = 1024;
-  sunLight.shadow.mapSize.height = 1024;
-  sunLight.shadow.camera.near = 10;
-  sunLight.shadow.camera.far = 500;
-  sunLight.shadow.camera.left = -200;
-  sunLight.shadow.camera.right = 200;
-  sunLight.shadow.camera.top = 200;
-  sunLight.shadow.camera.bottom = -200;
+  sunLight = new THREE.DirectionalLight(0xfff1d6, 1.15);
+  sunLight.layers.enable(LAYER_WORLD);
+  sunLight.layers.enable(LAYER_COCKPIT);
+  sunLight.layers.enable(LAYER_EXTERIOR);
+  scene.add(sunLight);
+  cityLook = createCityLook(scene, sunLight);
+  cityLook.hemi.layers.enable(LAYER_WORLD);
+  cityLook.hemi.layers.enable(LAYER_COCKPIT);
+  cityLook.hemi.layers.enable(LAYER_EXTERIOR);
+  postFx = new PostFx(cityLook.textures.lut);
+  postFx.setSize(window.innerWidth, window.innerHeight);
+  postFx.enabled = QUALITY[qualityLevel].post;
   
-  // Ground - grass/terrain base
-  const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
-  const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x2d5a27 });
-  groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
-  groundMesh.rotation.x = -Math.PI / 2;
-  groundMesh.receiveShadow = true;
+  // Ground - grass with vertex variation
+  groundMesh = makeGrassGround();
   scene.add(groundMesh);
   
   // Build proper city roads, sidewalks, crosswalks
@@ -348,6 +354,7 @@ function initThreeJS() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    postFx?.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
   });
 }
 
@@ -386,13 +393,14 @@ function buildCityRoads() {
   const sidewalkWidth = 3;
   const halfSize = (gridSize * blockSize) / 2;
 
-  const asphaltMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a});
-  const sidewalkMat = new THREE.MeshLambertMaterial({ color: 0xd0d0d0});
-  const curbMat = new THREE.MeshLambertMaterial({ color: 0x555555});
+  const tex = cityLook?.textures;
+  const asphaltMat = tex ? asphaltMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const sidewalkMat = tex ? sidewalkMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0xd0d0d0 });
+  const curbMat = tex ? curbMaterial(tex) : new THREE.MeshLambertMaterial({ color: 0x555555 });
   const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffee66});
   const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff});
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x333333});
-  const glowMat = new THREE.MeshLambertMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.4 });
+  const glowMat = new THREE.MeshLambertMaterial({ color: 0xfff2b0, emissive: 0xffe08a, emissiveIntensity: 1.1 });
 
   // Full-length asphalt + sidewalks + curbs as shared meshes (few draw calls)
   for (let i = 0; i <= gridSize; i++) {
@@ -414,16 +422,19 @@ function buildCityRoads() {
     for (const side of [-1, 1]) {
       const sw = new THREE.Mesh(new THREE.BoxGeometry(sidewalkWidth, 0.15, gridSize * blockSize), sidewalkMat);
       sw.position.set(pos + side * (roadWidth / 2 + sidewalkWidth / 2), 0.075, 0);
+      sw.receiveShadow = true;
       scene.add(sw);
       cityRoadMeshes.push(sw);
 
       const swE = new THREE.Mesh(new THREE.BoxGeometry(gridSize * blockSize, 0.15, sidewalkWidth), sidewalkMat);
       swE.position.set(0, 0.075, -pos + side * (roadWidth / 2 + sidewalkWidth / 2));
+      swE.receiveShadow = true;
       scene.add(swE);
       cityRoadMeshes.push(swE);
 
       const curb = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, gridSize * blockSize), curbMat);
       curb.position.set(pos + side * (roadWidth / 2), 0.1, 0);
+      curb.receiveShadow = true;
       scene.add(curb);
       cityRoadMeshes.push(curb);
     }
@@ -466,7 +477,7 @@ function buildCityRoads() {
   addInstanced(new THREE.BoxGeometry(0.18, 0.02, 3.2), yellowMat, [...dashX, ...dashZ]);
   addInstanced(new THREE.BoxGeometry(0.5, 0.02, 3.5), whiteMat, cross);
   addInstanced(new THREE.CylinderGeometry(0.1, 0.14, 6, 6), poleMat, poles);
-  addInstanced(new THREE.BoxGeometry(0.4, 0.15, 0.4), glowMat, lamps);
+  addInstanced(new THREE.SphereGeometry(0.28, 8, 6), glowMat, lamps);
 
   console.log(`Built city roads: ${cityRoadMeshes.length} objects (instanced markings)`);
 }
@@ -838,26 +849,47 @@ function rebuildStaticCity() {
   const dummy = new THREE.Object3D();
 
   const buildings = statics.filter(e => e.classType === 'building');
+  buildingNear = null;
+  buildingFar = null;
+  buildingRecords = [];
   if (buildings.length > 0) {
-    const colors = [0x606070, 0x707080, 0x556065, 0x4a5560, 0x505a60];
-    const mesh = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshLambertMaterial({ color: 0x667077 }),
-      buildings.length
-    );
-    mesh.frustumCulled = true;
+    const night = cityLook?.night ?? false;
+    const nearMat = cityLook ? facadeMaterial(cityLook.textures, night) : new THREE.MeshLambertMaterial({ color: 0x667077 });
+    const farMat = impostorMaterial();
+    const near = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), nearMat, buildings.length);
+    const far = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), farMat, buildings.length);
+    near.frustumCulled = true;
+    far.frustumCulled = true;
+    near.castShadow = false;
+    near.receiveShadow = true;
+    far.castShadow = false;
+    far.receiveShadow = false;
     buildings.forEach((b, i) => {
       dummy.position.set(b.transform.position.x, b.boundingBox.size.z / 2, -b.transform.position.y);
       dummy.rotation.set(0, 0, 0);
       dummy.scale.set(b.boundingBox.size.x, b.boundingBox.size.z, b.boundingBox.size.y);
       dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      mesh.setColorAt(i, new THREE.Color(colors[i % colors.length]!));
+      near.setMatrixAt(i, dummy.matrix);
+      far.setMatrixAt(i, dummy.matrix);
+      near.setColorAt(i, instanceAO(b.transform.position.x, b.transform.position.y, b.boundingBox.size.z));
+      buildingRecords.push({
+        x: b.transform.position.x,
+        y: b.transform.position.y,
+        sx: b.boundingBox.size.x,
+        sy: b.boundingBox.size.y,
+        sz: b.boundingBox.size.z,
+      });
     });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    scene.add(mesh);
-    staticCityMeshes.push(mesh);
+    near.instanceMatrix.needsUpdate = true;
+    far.instanceMatrix.needsUpdate = true;
+    if (near.instanceColor) near.instanceColor.needsUpdate = true;
+    near.count = buildings.length;
+    far.count = 0;
+    scene.add(near);
+    scene.add(far);
+    staticCityMeshes.push(near, far);
+    buildingNear = near;
+    buildingFar = far;
   }
 
   const trees = statics.filter(e => e.classType === 'tree');
@@ -884,6 +916,10 @@ function rebuildStaticCity() {
     });
     trunks.instanceMatrix.needsUpdate = true;
     foliage.instanceMatrix.needsUpdate = true;
+    trunks.castShadow = true;
+    foliage.castShadow = true;
+    trunks.frustumCulled = true;
+    foliage.frustumCulled = true;
     scene.add(trunks);
     scene.add(foliage);
     staticCityMeshes.push(trunks, foliage);
@@ -907,6 +943,8 @@ function rebuildStaticCity() {
       mesh.setMatrixAt(i, dummy.matrix);
     });
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = true;
+    mesh.frustumCulled = true;
     scene.add(mesh);
     staticCityMeshes.push(mesh);
     poleInstanced = mesh;
@@ -953,6 +991,31 @@ function rebuildStaticCity() {
     scene.add(lines);
     staticCityMeshes.push(lines);
   }
+}
+
+function updateBuildingLod(egoX: number, egoY: number) {
+  if (!buildingNear || !buildingFar || buildingRecords.length === 0) return;
+  const dummy = new THREE.Object3D();
+  let nNear = 0;
+  let nFar = 0;
+  const lim = 130 * 130;
+  for (const b of buildingRecords) {
+    const dx = b.x - egoX;
+    const dy = b.y - egoY;
+    dummy.position.set(b.x, b.sz / 2, -b.y);
+    dummy.scale.set(b.sx, b.sz, b.sy);
+    dummy.rotation.set(0, 0, 0);
+    dummy.updateMatrix();
+    if (dx * dx + dy * dy < lim) {
+      buildingNear.setMatrixAt(nNear++, dummy.matrix);
+    } else {
+      buildingFar.setMatrixAt(nFar++, dummy.matrix);
+    }
+  }
+  buildingNear.count = nNear;
+  buildingFar.count = nFar;
+  buildingNear.instanceMatrix.needsUpdate = true;
+  buildingFar.instanceMatrix.needsUpdate = true;
 }
 
 function updateEntityMeshes() {
@@ -1504,15 +1567,37 @@ function setCameraMode(mode: CameraMode) {
   updateViewExplainer();
 }
 
+function applyLook(high: boolean) {
+  lookHigh = high;
+  const q = QUALITY[qualityLevel];
+  renderer.shadowMap.enabled = q.shadows;
+  sunLight.castShadow = q.shadows;
+  if (postFx) {
+    postFx.enabled = high;
+    postFx.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+  }
+  if (cityLook && !cityLook.night) {
+    cityLook.fill.intensity = 0.55;
+    cityLook.sun.intensity = 1.2;
+  }
+  document.querySelectorAll('#look-seg button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLElement).dataset['look'] === (high ? 'high' : 'low'));
+  });
+}
+
 function applyQuality(level: QualityLevel) {
   qualityLevel = level;
   const q = QUALITY[level];
-  renderer.setPixelRatio(q.pixelRatio);
+  renderer.setPixelRatio(Math.min(q.pixelRatio, 1.5));
   renderer.shadowMap.enabled = q.shadows;
   camera.far = q.far;
   camera.updateProjectionMatrix();
   sunLight.castShadow = q.shadows;
   if (scene.fog instanceof THREE.Fog) scene.fog.far = q.fogFar;
+  if (postFx) {
+    postFx.enabled = lookHigh || q.post;
+    postFx.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+  }
   simulation.setLidarQuality(q.lidar, q.lidarEveryN);
   document.querySelectorAll('#quality-seg button').forEach(btn => {
     btn.classList.toggle('active', (btn as HTMLElement).dataset['quality'] === level);
@@ -1545,6 +1630,7 @@ function restartSim() {
   latestVisionDetections = [];
   detectionTimings.clear();
   visionFirstSeen.clear();
+  resetWaabiOverlay();
   simulation.restart();
   rebuildStaticCity();
   syncDestinationMarker();
@@ -1841,212 +1927,22 @@ function updateOverlaysForStack(profile: StackProfile) {
   updateViewExplainer(profile);
 }
 
-// Render BEV occupancy heatmaps for Waabi
-function renderBEVHeatmaps() {
+// Render BEV occupancy heatmaps for Waabi (10 Hz, no extra lidar)
+function renderBEVHeatmaps(nowMs: number) {
   if (!bevOverlayEnabled) return;
-  
-  const canvas = document.getElementById('bev-canvas') as HTMLCanvasElement;
-  if (!canvas) return;
-  
-  const ctx = canvas.getContext('2d')!;
+  const t0 = performance.now();
   const state = simulation.getState();
-  
-  // Run Waabi stack to get real occupancy and trajectories
-  const entities = [
-    ...state.worldMap.staticEntities,
-    ...state.trafficVehicles,
-    ...state.pedestrians,
-  ];
-  
-  const waabiResult = runWaabiStack(
-    state.ego,
-    entities,
-    state.environment,
-    waabiState,
-    state.timestamp,
-    42,
-    10
-  );
-  waabiState = waabiResult.newState;
-  
-  // Clear canvas
-  ctx.fillStyle = '#1a1a2e';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  const cellWidth = canvas.width / 4;
-  const cellHeight = canvas.height / 2;
-  
-  // Draw 4 occupancy grids: current, +1s, +2s, +3s
-  const grids = [
-    { occ: waabiResult.occupancy.current, label: 'Current', x: 0, y: 0 },
-    { occ: waabiResult.occupancy.t1s, label: '+1s', x: cellWidth, y: 0 },
-    { occ: waabiResult.occupancy.t2s, label: '+2s', x: cellWidth * 2, y: 0 },
-    { occ: waabiResult.occupancy.t3s, label: '+3s', x: cellWidth * 3, y: 0 },
-  ];
-  
-  grids.forEach(({ occ, label, x, y }, i) => {
-    // Draw grid background/border
-    ctx.strokeStyle = '#444';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x + 1, y + 1, cellWidth - 4, cellHeight - 22);
-    
-    ctx.fillStyle = '#12182a';
-    ctx.fillRect(x + 2, y + 2, cellWidth - 6, cellHeight - 24);
-    renderOccupancyGrid(ctx, occ, x + 2, y + 2, cellWidth - 6, cellHeight - 24);
-    
-    // Draw label
-    ctx.fillStyle = i === 0 ? '#00ffff' : '#888';
-    ctx.font = '10px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(label, x + cellWidth / 2, y + cellHeight - 5);
+  tickWaabiBevOverlay({
+    ego: state.ego,
+    traffic: state.trafficVehicles,
+    pedestrians: state.pedestrians,
+    timestamp: state.timestamp,
+    nowMs,
+    canvas: document.getElementById('bev-canvas') as HTMLCanvasElement | null,
+    variantsBody: document.getElementById('simworld-variants'),
+    variantsStats: document.getElementById('simworld-stats'),
   });
-  
-  // Draw trajectory fan in bottom half
-  ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height - 20);
-  ctx.scale(3, -3); // Scale and flip Y
-  
-  // Draw all candidate trajectories
-  waabiResult.trajectories.forEach((traj, i) => {
-    const isSelected = i === waabiState.selectedTrajectoryIndex;
-    ctx.strokeStyle = isSelected ? '#00ff00' : '#ff6600';
-    ctx.lineWidth = isSelected ? 0.5 : 0.2;
-    ctx.globalAlpha = isSelected ? 1 : 0.5;
-    
-    ctx.beginPath();
-    traj.points.forEach((pt, j) => {
-      const dx = pt.position.x - state.ego.transform.position.x;
-      const dy = pt.position.y - state.ego.transform.position.y;
-      if (j === 0) ctx.moveTo(dx, dy);
-      else ctx.lineTo(dx, dy);
-    });
-    ctx.stroke();
-    
-    // Show cost on selected trajectory
-    if (isSelected && traj.points.length > 0) {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#00ff00';
-      ctx.font = '3px Arial';
-      const lastPt = traj.points[traj.points.length - 1]!;
-      const dx = lastPt.position.x - state.ego.transform.position.x;
-      const dy = lastPt.position.y - state.ego.transform.position.y;
-      ctx.fillText(`Cost: ${traj.cost.toFixed(1)}`, dx + 1, dy);
-    }
-  });
-  
-  ctx.globalAlpha = 1;
-  ctx.restore();
-  
-  // Update Sim World table
-  updateSimWorldTable(waabiState.simWorld.variants);
-}
-
-// Render a single occupancy grid
-function renderOccupancyGrid(
-  ctx: CanvasRenderingContext2D,
-  occ: BEVOccupancy,
-  x: number, y: number,
-  width: number, height: number
-) {
-  if (occ.grid.length === 0) return;
-  
-  const gridSize = Math.sqrt(occ.grid.length);
-  const cellW = width / gridSize;
-  const cellH = height / gridSize;
-  
-  for (let gy = 0; gy < gridSize; gy++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const value = occ.grid[gy * gridSize + gx] || 0;
-      if (value > 0.01) {
-        // Heatmap color: blue (low) -> red (high)
-        const r = Math.min(255, Math.floor(value * 255 * 2));
-        const g = Math.max(0, Math.min(255, Math.floor((1 - value) * 255)));
-        const b = Math.max(0, 150 - Math.floor(value * 150));
-        ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        ctx.fillRect(
-          x + gx * cellW,
-          y + (gridSize - gy - 1) * cellH,
-          Math.max(cellW + 0.8, 3),
-          Math.max(cellH + 0.8, 3)
-        );
-      }
-    }
-  }
-  
-  // Draw ego marker at center
-  ctx.fillStyle = '#00ffff';
-  ctx.beginPath();
-  ctx.arc(x + width / 2, y + height / 2, 2, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-// Update Sim World adversarial variants table
-function updateSimWorldTable(variants: AdversarialVariant[]) {
-  const tbody = document.getElementById('simworld-variants');
-  const statsEl = document.getElementById('simworld-stats');
-  if (!tbody || !statsEl) return;
-  
-  // Clear existing rows
-  tbody.innerHTML = '';
-  
-  // Ensure we have at least 20 variants for display
-  const displayVariants = variants.length >= 20 ? variants : generateDisplayVariants(variants);
-  
-  // Count pass/fail
-  let passCount = 0;
-  let failCount = 0;
-  
-  displayVariants.forEach(v => {
-    if (v.result === 'pass') passCount++;
-    else if (v.result === 'fail') failCount++;
-    
-    const row = document.createElement('tr');
-    row.innerHTML = `
-      <td style="padding: 2px 4px; color: #aaa;">${v.id.slice(0, 10)}</td>
-      <td style="padding: 2px 4px; text-align: center; color: #888;">${v.perturbations[0]?.type || 'mixed'}</td>
-      <td style="padding: 2px 4px; text-align: center;">
-        <span style="color: ${v.result === 'pass' ? '#00ff88' : v.result === 'fail' ? '#ff4444' : '#888'};">
-          ${v.result === 'pass' ? '✓' : v.result === 'fail' ? '✗' : '?'}
-        </span>
-      </td>
-      <td style="padding: 2px 4px; text-align: right; color: ${v.metrics && v.metrics.minTTC < 2 ? '#ffaa00' : '#888'};">
-        ${v.metrics ? v.metrics.minTTC.toFixed(1) + 's' : '-'}
-      </td>
-    `;
-    tbody.appendChild(row);
-  });
-  
-  statsEl.textContent = `${displayVariants.length} variants: ${passCount} pass, ${failCount} fail`;
-}
-
-// Generate display variants when we don't have enough from simulation
-function generateDisplayVariants(existingVariants: AdversarialVariant[]): AdversarialVariant[] {
-  const result = [...existingVariants];
-  const types: Array<'timing' | 'speed' | 'path'> = ['timing', 'speed', 'path'];
-  
-  while (result.length < 20) {
-    const i = result.length;
-    const pertType = types[i % 3];
-    const isPassing = Math.random() > 0.15; // 15% failure rate
-    
-    result.push({
-      id: `variant_${i.toString().padStart(2, '0')}`,
-      description: `${pertType} perturbation`,
-      perturbations: [{
-        actorId: 1000 + i,
-        type: pertType!,
-        delta: (Math.random() - 0.5) * 0.5,
-      }],
-      result: isPassing ? 'pass' : 'fail',
-      metrics: {
-        minTTC: isPassing ? 1.5 + Math.random() * 3 : 0.5 + Math.random() * 0.8,
-        maxDecel: isPassing ? 2 + Math.random() * 3 : 6 + Math.random() * 2,
-        hadCollision: !isPassing && Math.random() > 0.5,
-      },
-    });
-  }
-  
-  return result;
+  frameWorkMs.overlay = performance.now() - t0;
 }
 
 // Initialize compare mode renderers
@@ -2191,130 +2087,133 @@ function updateCompareMode() {
   if (waymoFusedBoxGroup) waymoFusedBoxGroup.visible = false;
 }
 
-// Tesla-style voxel visualization with depth jitter
-function updateTeslaVoxelVisualization(detections: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number }; confidence: number; worldFrame?: boolean }[], egoState: { transform: { position: { x: number; y: number; z: number }; rotation: number } }) {
+const COMPARE_MAX_VOXELS = 400;
+const COMPARE_MAX_POINTS = 4000;
+const COMPARE_MAX_BOXES = 48;
+let teslaVoxelMesh: THREE.InstancedMesh | null = null;
+let teslaVoxelDummy = new THREE.Object3D();
+let waymoPoints: THREE.Points | null = null;
+let waymoPointPos = new Float32Array(COMPARE_MAX_POINTS * 3);
+let waymoPointCol = new Float32Array(COMPARE_MAX_POINTS * 3);
+let waymoBoxMesh: THREE.InstancedMesh | null = null;
+let waymoBoxDummy = new THREE.Object3D();
+
+function ensureCompareMeshes() {
   if (!teslaVoxelGroup) {
     teslaVoxelGroup = new THREE.Group();
     scene.add(teslaVoxelGroup);
+    teslaVoxelMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.55, 0.55, 0.55),
+      new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.55 }),
+      COMPARE_MAX_VOXELS,
+    );
+    teslaVoxelMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    teslaVoxelMesh.count = 0;
+    teslaVoxelMesh.frustumCulled = false;
+    teslaVoxelGroup.add(teslaVoxelMesh);
   }
-  
-  const voxelGroup = teslaVoxelGroup;
-  while (voxelGroup.children.length > 0) {
-    voxelGroup.remove(voxelGroup.children[0]!);
-  }
-  
-  const geom = new THREE.BoxGeometry(0.55, 0.55, 0.55);
-  detections.forEach(det => {
-    const world = det.worldFrame
-      ? det.box.center
-      : egoToWorld(det.box.center, egoState.transform.position, egoState.transform.rotation);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      transparent: true,
-      opacity: 0.55 * det.confidence,
-    });
-    const nx = Math.min(4, Math.max(2, Math.ceil(det.box.size.x / 0.8)));
-    const ny = Math.min(3, Math.max(2, Math.ceil(det.box.size.y / 0.8)));
-    for (let ix = 0; ix < nx; ix++) {
-      for (let iy = 0; iy < ny; iy++) {
-        const voxel = new THREE.Mesh(geom, material);
-        const jitter = (Math.random() - 0.5) * (1 - det.confidence) * 1.2;
-        voxel.position.set(
-          world.x + (ix - nx / 2) * 0.6 + jitter,
-          0.4 + (iy % 2) * 0.55,
-          -world.y + (iy - ny / 2) * 0.6 + jitter
-        );
-        voxelGroup.add(voxel);
-      }
-    }
-  });
-}
-
-// Waymo-style point cloud + fused boxes visualization
-function updateWaymoPointCloudVisualization(detections: Array<{ center: { x: number; y: number }; classType: string }>, _egoState: { transform: { position: { x: number; y: number; z: number } } }) {
   if (!waymoPointCloudGroup) {
     waymoPointCloudGroup = new THREE.Group();
     scene.add(waymoPointCloudGroup);
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(waymoPointPos, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(waymoPointCol, 3));
+    geom.setDrawRange(0, 0);
+    waymoPoints = new THREE.Points(geom, new THREE.PointsMaterial({ size: 0.15, vertexColors: true }));
+    waymoPointCloudGroup.add(waymoPoints);
   }
   if (!waymoFusedBoxGroup) {
     waymoFusedBoxGroup = new THREE.Group();
     scene.add(waymoFusedBoxGroup);
+    waymoBoxMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xff8800, wireframe: true, transparent: true, opacity: 0.8 }),
+      COMPARE_MAX_BOXES,
+    );
+    waymoBoxMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    waymoBoxMesh.count = 0;
+    waymoBoxMesh.frustumCulled = false;
+    waymoFusedBoxGroup.add(waymoBoxMesh);
   }
-  
-  const pcGroup = waymoPointCloudGroup;
-  const boxGroup = waymoFusedBoxGroup;
-  
-  // Clear previous
-  while (pcGroup.children.length > 0) {
-    pcGroup.remove(pcGroup.children[0]!);
-  }
-  while (boxGroup.children.length > 0) {
-    boxGroup.remove(boxGroup.children[0]!);
-  }
-  
-  // Create point cloud for detections
-  const pointsGeometry = new THREE.BufferGeometry();
-  const points: number[] = [];
-  const colors: number[] = [];
-  
-  detections.forEach(det => {
-    const boxSize = det.classType === 'pedestrian' 
-      ? { x: 0.5, y: 0.5, z: 1.7 } 
-      : { x: 4.5, y: 1.8, z: 1.5 };
-    
-    // Generate point cloud within box
-    const numPoints = det.classType === 'pedestrian' ? 30 : 80;
-    for (let i = 0; i < numPoints; i++) {
-      const px = det.center.x + (Math.random() - 0.5) * boxSize.x;
-      const py = det.center.y + (Math.random() - 0.5) * boxSize.y;
-      const pz = Math.random() * boxSize.z;
-      
-      points.push(px, pz, -py);
-      
-      // Color based on height (blue low, green high)
-      const heightRatio = pz / boxSize.z;
-      colors.push(0.2, 0.5 + heightRatio * 0.5, 1 - heightRatio * 0.5);
+}
+
+// Tesla-style voxel visualization with depth jitter
+function updateTeslaVoxelVisualization(detections: { box: { center: { x: number; y: number; z: number }; size: { x: number; y: number; z: number }; yaw: number }; confidence: number; worldFrame?: boolean }[], egoState: { transform: { position: { x: number; y: number; z: number }; rotation: number } }) {
+  ensureCompareMeshes();
+  const mesh = teslaVoxelMesh;
+  if (!mesh) return;
+  const dummy = teslaVoxelDummy;
+  let count = 0;
+  for (const det of detections) {
+    if (count >= COMPARE_MAX_VOXELS) break;
+    const world = det.worldFrame
+      ? det.box.center
+      : egoToWorld(det.box.center, egoState.transform.position, egoState.transform.rotation);
+    const nx = Math.min(4, Math.max(2, Math.ceil(det.box.size.x / 0.8)));
+    const ny = Math.min(3, Math.max(2, Math.ceil(det.box.size.y / 0.8)));
+    for (let ix = 0; ix < nx && count < COMPARE_MAX_VOXELS; ix++) {
+      for (let iy = 0; iy < ny && count < COMPARE_MAX_VOXELS; iy++) {
+        const jitter = (Math.random() - 0.5) * (1 - det.confidence) * 1.2;
+        dummy.position.set(
+          world.x + (ix - nx / 2) * 0.6 + jitter,
+          0.4 + (iy % 2) * 0.55,
+          -world.y + (iy - ny / 2) * 0.6 + jitter
+        );
+        dummy.scale.setScalar(1);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(count++, dummy.matrix);
+      }
     }
-    
-    // Create fused 3D box
-    const boxGeo = new THREE.BoxGeometry(boxSize.x, boxSize.z, boxSize.y);
-    const boxMat = new THREE.MeshBasicMaterial({
-      color: det.classType === 'pedestrian' ? 0x00ff88 : 0xff8800,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.8,
-    });
-    const box = new THREE.Mesh(boxGeo, boxMat);
-    box.position.set(det.center.x, boxSize.z / 2, -det.center.y);
-    boxGroup.add(box);
-    
-    // Add label
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 128;
-    labelCanvas.height = 32;
-    const ctx = labelCanvas.getContext('2d')!;
-    ctx.fillStyle = det.classType === 'pedestrian' ? '#00ff88' : '#ff8800';
-    ctx.font = 'bold 20px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(det.classType.toUpperCase(), 64, 22);
-    
-    const labelTexture = new THREE.CanvasTexture(labelCanvas);
-    const labelMat = new THREE.SpriteMaterial({ map: labelTexture, transparent: true });
-    const label = new THREE.Sprite(labelMat);
-    label.position.set(det.center.x, boxSize.z + 0.5, -det.center.y);
-    label.scale.set(2, 0.5, 1);
-    boxGroup.add(label);
-  });
-  
-  pointsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-  pointsGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  
-  const pointsMaterial = new THREE.PointsMaterial({
-    size: 0.15,
-    vertexColors: true,
-  });
-  const pointCloud = new THREE.Points(pointsGeometry, pointsMaterial);
-  pcGroup.add(pointCloud);
+  }
+  mesh.count = count;
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
+// Waymo-style point cloud + fused boxes visualization
+function updateWaymoPointCloudVisualization(detections: Array<{ center: { x: number; y: number }; classType: string }>, _egoState: { transform: { position: { x: number; y: number; z: number } } }) {
+  ensureCompareMeshes();
+  const dummy = waymoBoxDummy;
+  let nPts = 0;
+  let nBoxes = 0;
+  for (const det of detections) {
+    const boxSize = det.classType === 'pedestrian'
+      ? { x: 0.5, y: 0.5, z: 1.7 }
+      : { x: 4.5, y: 1.8, z: 1.5 };
+    const numPoints = det.classType === 'pedestrian' ? 30 : 80;
+    for (let i = 0; i < numPoints && nPts < COMPARE_MAX_POINTS; i++) {
+      const u = ((i * 17 + nPts * 13) % 1000) / 1000;
+      const v = ((i * 29 + nPts * 7) % 1000) / 1000;
+      const w = ((i * 11 + nPts * 19) % 1000) / 1000;
+      const px = det.center.x + (u - 0.5) * boxSize.x;
+      const py = det.center.y + (v - 0.5) * boxSize.y;
+      const pz = w * boxSize.z;
+      const i3 = nPts * 3;
+      waymoPointPos[i3] = px;
+      waymoPointPos[i3 + 1] = pz;
+      waymoPointPos[i3 + 2] = -py;
+      const heightRatio = pz / boxSize.z;
+      waymoPointCol[i3] = 0.2;
+      waymoPointCol[i3 + 1] = 0.5 + heightRatio * 0.5;
+      waymoPointCol[i3 + 2] = 1 - heightRatio * 0.5;
+      nPts++;
+    }
+    if (waymoBoxMesh && nBoxes < COMPARE_MAX_BOXES) {
+      dummy.position.set(det.center.x, boxSize.z / 2, -det.center.y);
+      dummy.scale.set(boxSize.x, boxSize.z, boxSize.y);
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      waymoBoxMesh.setMatrixAt(nBoxes++, dummy.matrix);
+    }
+  }
+  if (waymoPoints) {
+    (waymoPoints.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
+    (waymoPoints.geometry.getAttribute('color') as THREE.BufferAttribute).needsUpdate = true;
+    waymoPoints.geometry.setDrawRange(0, nPts);
+  }
+  if (waymoBoxMesh) {
+    waymoBoxMesh.count = nBoxes;
+    waymoBoxMesh.instanceMatrix.needsUpdate = true;
+  }
 }
 
 // Simulate alternate stack with different detection characteristics
@@ -2781,7 +2680,17 @@ function setupInput() {
         const state = simulation.getState();
         const newTimeOfDay = state.environment.timeOfDay === 'day' ? 'night' : 'day';
         state.environment.timeOfDay = newTimeOfDay;
-        if (newTimeOfDay === 'night') {
+        if (cityLook) {
+          applyDayNight(
+            cityLook,
+            scene,
+            newTimeOfDay === 'night',
+            newTimeOfDay === 'night' ? QUALITY[qualityLevel].fogFar * 0.7 : QUALITY[qualityLevel].fogFar,
+          );
+          if (buildingNear && cityLook) {
+            buildingNear.material = facadeMaterial(cityLook.textures, cityLook.night);
+          }
+        } else if (newTimeOfDay === 'night') {
           scene.background = new THREE.Color(0x0a0a1a);
           scene.fog = new THREE.Fog(0x0a0a1a, 50, QUALITY[qualityLevel].fogFar * 0.7);
         } else {
@@ -2851,6 +2760,9 @@ function setupInput() {
   });
   document.querySelectorAll('#quality-seg button').forEach(btn => {
     btn.addEventListener('click', () => applyQuality((btn as HTMLElement).dataset['quality'] as QualityLevel));
+  });
+  document.querySelectorAll('#look-seg button').forEach(btn => {
+    btn.addEventListener('click', () => applyLook((btn as HTMLElement).dataset['look'] === 'high'));
   });
   document.querySelectorAll('#camera-seg button').forEach(btn => {
     btn.addEventListener('click', () => setCameraMode((btn as HTMLElement).dataset['camera'] as CameraMode));
@@ -3261,10 +3173,15 @@ function animate(time: number) {
       prevEgoYaw = currEgoYaw;
       prevEgoRoll = currEgoRoll;
       prevEgoPitch = currEgoPitch;
+      const simT0 = performance.now();
       simulation.step(SIM_DT, humanInput);
+      frameWorkMs.sim = performance.now() - simT0;
       captureEgoPose();
       updateEntityMeshes();
-      updateDetectionMeshes();
+      if (time - lastDetectionMs >= PERCEPTION_PERIOD_MS) {
+        lastDetectionMs = time;
+        updateDetectionMeshes();
+      }
       simAccumulator -= SIM_DT;
       if (
         !suppressArrivedMenu
@@ -3332,6 +3249,11 @@ function animate(time: number) {
       : handWheelRotation(currSteer);
   }
   updateCamera(frameDt, ego.x, ego.y, ego.yaw);
+  if (cityLook) updateSunRig(cityLook, ego.x, ego.y);
+  if (time - lastLodMs >= 200) {
+    lastLodMs = time;
+    updateBuildingLod(ego.x, ego.y);
+  }
   syncDestinationMarker();
 
   if (time - lastHudMs >= 200) {
@@ -3340,23 +3262,32 @@ function animate(time: number) {
     updateMinimap();
   }
 
-  if (compareMode) updateCompareMode();
+  if (compareMode) {
+    const c0 = performance.now();
+    updateCompareMode();
+    frameWorkMs.compare = performance.now() - c0;
+  }
 
-  if (!isPaused && time - lastAiViewMs >= 200) {
+  if (!isPaused && time - lastAiViewMs >= PERCEPTION_PERIOD_MS) {
     lastAiViewMs = time;
-    if (bevOverlayEnabled) renderBEVHeatmaps();
+    if (bevOverlayEnabled) renderBEVHeatmaps(time);
     updateAIView(false);
   }
 
   rawCameraFrame++;
   if (showAIView && !compareMode && !isPaused && rawCameraFrame % 3 === 0) {
-    updateAIView(true);
+    renderRawCamera();
   }
 
   if (perceptionViz) {
     perceptionViz.group.visible = showAIView && cameraMode !== 'hood' && !compareMode;
   }
-  if (!compareMode) renderer.render(scene, camera);
+  if (!compareMode) {
+    const r0 = performance.now();
+    if (postFx && postFx.enabled) postFx.render(renderer, scene, camera);
+    else renderer.render(scene, camera);
+    frameWorkMs.render = performance.now() - r0;
+  }
 }
 
 function updateAIView(drawRawScene: boolean) {
@@ -3378,7 +3309,7 @@ function updateAIView(drawRawScene: boolean) {
     showGroundTruth,
     plannerOutput: state.lastPlannerOutput,
     visionDetections: latestVisionDetections,
-    occupancy: currentStack === 'waabi' ? waabiState.occupancy.current : undefined,
+    occupancy: currentStack === 'waabi' ? getDisplayedOccupancy() : undefined,
     controlSource: state.controlSource,
     rule: state.lastRule,
     camera,
@@ -3387,8 +3318,10 @@ function updateAIView(drawRawScene: boolean) {
   };
 
   if (perceptionViz) {
+    const v0 = performance.now();
     perceptionViz.setEnabled(showAIView && cameraMode !== 'hood');
     lastDecision = perceptionViz.update(input);
+    frameWorkMs.viz = performance.now() - v0;
   } else {
     lastDecision = { text: 'Cruising: lane clear', severity: 'go' };
   }
@@ -3408,24 +3341,28 @@ function updateAIView(drawRawScene: boolean) {
   const percCanvas = document.getElementById('ai-view-canvas') as HTMLCanvasElement | null;
   if (percCanvas) renderAIViewCanvas(percCanvas, input, lastDecision);
 
-  if (drawRawScene && rawCameraRenderer && rawCamera && !compareMode) {
-    const ego = state.ego;
-    const yaw = ego.transform.rotation;
-    rawCamera.position.set(
-      ego.transform.position.x + Math.cos(yaw) * 1.6,
-      1.35,
-      -(ego.transform.position.y + Math.sin(yaw) * 1.6)
-    );
-    rawCamera.lookAt(
-      ego.transform.position.x + Math.cos(yaw) * 20,
-      1.1,
-      -(ego.transform.position.y + Math.sin(yaw) * 20)
-    );
-    const vizWas = perceptionViz?.group.visible ?? false;
-    if (perceptionViz) perceptionViz.group.visible = false;
-    rawCameraRenderer.render(scene, rawCamera);
-    if (perceptionViz) perceptionViz.group.visible = vizWas;
-  }
+  if (drawRawScene) renderRawCamera();
+}
+
+function renderRawCamera() {
+  if (!rawCameraRenderer || !rawCamera || compareMode || !showAIView) return;
+  const state = simulation.getState();
+  const ego = state.ego;
+  const yaw = ego.transform.rotation;
+  rawCamera.position.set(
+    ego.transform.position.x + Math.cos(yaw) * 1.6,
+    1.35,
+    -(ego.transform.position.y + Math.sin(yaw) * 1.6)
+  );
+  rawCamera.lookAt(
+    ego.transform.position.x + Math.cos(yaw) * 20,
+    1.1,
+    -(ego.transform.position.y + Math.sin(yaw) * 20)
+  );
+  const vizWas = perceptionViz?.group.visible ?? false;
+  if (perceptionViz) perceptionViz.group.visible = false;
+  rawCameraRenderer.render(scene, rawCamera);
+  if (perceptionViz) perceptionViz.group.visible = vizWas;
 }
 
 async function createEgoVehicle(): Promise<THREE.Group> {
@@ -3584,6 +3521,10 @@ async function init() {
     },
     getFps: () => displayFps,
     f3Work: () => ({ ...f3WorkStats }),
+    frameWork: () => ({ ...frameWorkMs }),
+    applyLook,
+    applyQuality,
+    setCameraMode,
     holdSteer(dir: 'left' | 'right' | 'none') {
       inputState.left = dir === 'left';
       inputState.right = dir === 'right';

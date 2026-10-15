@@ -175,3 +175,29 @@ Low side view: tires inside the arches and on the road.
 
 ### cabin3_wheel_closeup.png
 Close-up of a road wheel sitting in its arch.
+
+## F2/F3 view performance
+
+### verify-f1-fps.png
+F1 Tesla-style chase after `?demo=lane`. HUD FPS comparable to the other stacks.
+
+### verify-f2-fps.png
+F2 Waymo-style: lidar points + fused boxes, HUD FPS.
+
+### verify-f3-fps.png
+F3 Waabi-style: BEV occupancy current/+1s/+2s/+3s, trajectory fan, Sim World table, HUD FPS.
+
+### verify-f1-look-before.png / verify-f1-look-after.png
+F1 before the city-look upgrade vs Look High after (ACES + fog + bloom).
+
+### verify-f2-look-before.png / verify-f2-look-after.png
+F2 lidar ring stays readable on the graded scene.
+
+### verify-f3-look-before.png / verify-f3-look-after.png
+F3 BEV panels stay readable over the graded scene.
+
+### verify-look-orbit-low.png / verify-look-orbit-high.png
+Same 3/4 orbit, Look Low vs Look High (lamp bloom).
+
+### verify-start-menu-look.png
+#31 start menu over the #34 city look (orbit backdrop).
