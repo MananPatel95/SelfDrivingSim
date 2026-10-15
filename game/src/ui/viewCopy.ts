@@ -12,9 +12,10 @@ export interface ViewCopy {
   diff: string;
 }
 
-export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string; percLabel: string }> = {
+export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string; percLabel: string; blurb: string }> = {
   tesla: {
     title: 'F1 · Tesla-style',
+    blurb: 'Cameras only — depth from pixels, no lidar or map.',
     uses: 'Cameras only. Depth is inferred from pixels, then turned into occupancy voxels. No lidar, no radar, no HD map. Lights and signs are read from the image.',
     diff: 'Waymo fuses lidar + radar + a prior map. Waabi predicts where space will be occupied in 1–3 s. This stack is vision end-to-end: cheaper sensors, weaker range and night depth.',
     rawLabel: 'Front camera (vision)',
@@ -22,6 +23,7 @@ export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string
   },
   waymo: {
     title: 'F2 · Waymo-style',
+    blurb: 'Lidar + radar + cameras, fused on a prior HD map.',
     uses: 'Lidar + radar + cameras, fused into labeled 3D boxes with track IDs. Localizes against an HD map (lanes, crosswalks, lights). Radar keeps velocity through rain and night.',
     diff: 'Tesla is cameras-only and has no map. Waabi scores future occupancy, not current boxes. This stack is multi-sensor + geofenced map: more redundant, only works where the map exists.',
     rawLabel: 'Ego camera (context)',
@@ -29,6 +31,7 @@ export const STACK_VIEW_COPY: Record<StackProfile, ViewCopy & { rawLabel: string
   },
   waabi: {
     title: 'F3 · Waabi-style',
+    blurb: 'Bird’s-eye occupancy — where space will be in 1–3 s.',
     uses: 'Lidar, cameras, and radar fused into a bird’s-eye occupancy grid, plus 1 s / 2 s / 3 s future occupancy and a fan of scored trajectories. Mid-level reps stay readable.',
     diff: 'Tesla draws current vision boxes. Waymo draws fused tracks on a map. This stack asks “where will space be occupied?” and trains that in simulation (Sim World), not just “what is that object now?”',
     rawLabel: 'Ego camera (context)',

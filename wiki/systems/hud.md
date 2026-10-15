@@ -1,7 +1,7 @@
 ---
 tags: [system]
 updated: 2026-10-14
-sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30, 33]
+sources: [3, 10, 13, 15, 16, 19, 20, 25, 27, 28, 29, 30, 31, 33]
 ---
 
 # HUD and menus
@@ -14,7 +14,9 @@ Parked or driving in manual: the decision banner is **Manual — press T to re-e
 
 Right-side cards (stack explainer, AI View, info) are one column: each has collapse and close, and is draggable by its header. Positions and collapsed state live in `localStorage` (`autonomy-hud-panels`). **P** resets a customised layout, or toggles the column if it is already the default. Floating cards are pushed off the minimap, speed HUD, and centre banner ([[pr-25]]).
 
-Start menu ([[pr-13]], [[pr-19]]): click start then end on the city map. The end point is the pink pin. **Just drive** parks with no route. Autopilot still needs both map points to *start*, but T can cruise with no trip after you are in the car.
+Start / arrived menu: a glass overlay over a slowly orbiting city. Title is **AUTONOMY CITY: How Machines See**. The car’s current pose is the start (white triangle). Click the north-up city map (minimap colours, larger) or **Random destination** to set a pink curb pad via `snapTripEnd` + `resolveTripDestination` ([[pr-33]]): the pad sits on the arrival-side right curb; a left-of-approach click is an opposite-side dest (legal U-turn). F1 / F2 / F3 cards pick the stack; Chase / First person pick the camera. **Start** / Enter begins an autopilot `beginTrip`. **Just drive** still parks with no route. The sim does not step while the overlay is open. Esc on the first-launch menu does nothing; Esc on the arrived variant dismisses it; Esc while driving still opens the pause menu. After `hasArrived()` the same overlay returns as **Arrived — choose next destination** with the parked pose as the new start; Continue / Start calls `beginTrip` again without reloading. `?demo=` / `?shot=` skip the overlay and do not reopen it on arrival. Overlay cards use the same HUD glass (`#2a5a72` / `#7fd7ff`) as the right-side panels.
+
+This **supersedes** the two-click start-then-end map from [[pr-13]] / [[pr-19]] for the live overlay. Autopilot still needs a destination to *start* from the menu; T can cruise with no trip after you are in the car.
 
 Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|stop|yield|mix|queue|arrive|arrive-opp|hit-car|hit-pole|hit-sign|hit-ped` skip the menu for reproducible shots. `arrive` is a mid-block northbound trip onto the pink pad; `arrive-opp` is a left-curb dest that U-turns at the next junction.
 
@@ -22,7 +24,9 @@ Query params ([[pr-20]]): `?seed=` (default **3**) and `?demo=lane|left|right|st
 
 - `game/src/main.ts`
 - `game/index.html`
+- `game/src/ui/startMenu.ts`
 - `game/src/ui/minimapRoute.ts`
 - `game/src/stacks/tesla.ts`
 - `game/src/sim/startDrive.test.ts`
+- `game/src/ui/startMenu.test.ts`
 - `game/src/ui/hudPanels.ts`
