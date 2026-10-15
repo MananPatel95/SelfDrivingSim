@@ -86,6 +86,7 @@ import {
   buildingInstanceColor,
   buildingPaletteMaterial,
   configureRendererLook,
+  cornerStreetLampOffsets,
   createCityLook,
   curbMaterial,
   impostorMaterial,
@@ -493,9 +494,9 @@ function buildCityRoads() {
         cross.push({ x: x + roadWidth / 2 + 2.2, y: 0.03, z: z + s * 0.9, ry: Math.PI / 2 });
         cross.push({ x: x - roadWidth / 2 - 2.2, y: 0.03, z: z + s * 0.9, ry: Math.PI / 2 });
       }
-      for (const [dx, dz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
-        poles.push({ x: x + dx * (roadWidth / 2 + 2), y: 3, z: z + dz * (roadWidth / 2 + 2) });
-        lamps.push({ x: x + dx * (roadWidth / 2 + 2), y: 6, z: z + dz * (roadWidth / 2 + 2) });
+      for (const off of cornerStreetLampOffsets(roadWidth)) {
+        poles.push({ x: x + off.x, y: 3, z: z + off.z });
+        lamps.push({ x: x + off.x, y: 6, z: z + off.z });
       }
     }
   }

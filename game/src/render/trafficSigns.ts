@@ -92,30 +92,54 @@ function paintStop(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillText('STOP', cx, cy + w * 0.012);
 }
 
-function paintYield(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  ctx.clearRect(0, 0, w, h);
-  const cx = w / 2;
+/** Layout for YIELD inside the white field (inverted triangle, wide at the top). */
+export function yieldTextLayout(w: number, h: number) {
   const top = h * 0.06;
   const bot = h * 0.94;
   const half = w * 0.46;
-  const tri = (inset: number) => {
+  const inset = w * 0.14;
+  const whiteTop = top + inset;
+  const whiteBot = bot - inset;
+  const whiteHalfTop = half - inset * 1.15;
+  const textY = whiteTop + (whiteBot - whiteTop) * 0.18;
+  const t = (textY - whiteTop) / (whiteBot - whiteTop);
+  const halfAtY = whiteHalfTop * (1 - t);
+  const maxWidth = halfAtY * 2 * 0.72;
+  const font = Math.round(w * 0.105);
+  const approxWidth = 5 * font * 0.62;
+  return { top, bot, half, inset, textY, font, halfAtY, maxWidth, approxWidth, fits: approxWidth <= maxWidth };
+}
+
+function paintYield(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  ctx.clearRect(0, 0, w, h);
+  const cx = w / 2;
+  const layout = yieldTextLayout(w, h);
+  const { top, bot, half, inset, textY } = layout;
+  const tri = (pad: number) => {
     ctx.beginPath();
-    ctx.moveTo(cx, bot - inset);
-    ctx.lineTo(cx - half + inset * 1.15, top + inset);
-    ctx.lineTo(cx + half - inset * 1.15, top + inset);
+    ctx.moveTo(cx, bot - pad);
+    ctx.lineTo(cx - half + pad * 1.15, top + pad);
+    ctx.lineTo(cx + half - pad * 1.15, top + pad);
     ctx.closePath();
   };
   tri(0);
   ctx.fillStyle = '#d32f2f';
   ctx.fill();
-  tri(w * 0.14);
+  tri(inset);
   ctx.fillStyle = '#f7f7f7';
   ctx.fill();
   ctx.fillStyle = '#d32f2f';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `bold ${Math.round(w * 0.16)}px Arial, Helvetica, sans-serif`;
-  ctx.fillText('YIELD', cx, h * 0.38);
+  let size = layout.font;
+  ctx.font = `bold ${size}px Arial, Helvetica, sans-serif`;
+  if (typeof ctx.measureText === 'function') {
+    while (size >= 10 && ctx.measureText('YIELD').width > layout.maxWidth) {
+      size -= 1;
+      ctx.font = `bold ${size}px Arial, Helvetica, sans-serif`;
+    }
+  }
+  ctx.fillText('YIELD', cx, textY);
 }
 
 function facingPlusX(geo: THREE.BufferGeometry): THREE.BufferGeometry {

@@ -200,6 +200,19 @@ export function instanceAO(x: number, y: number, height: number): THREE.Color {
   return new THREE.Color(s, s, s * 0.98);
 }
 
+/** Corner streetlight offset from an intersection, in Three.js XZ. */
+export function cornerStreetLampOffsets(roadWidth: number): Array<{ x: number; z: number }> {
+  const side = roadWidth / 2 + 2;
+  const along = 16;
+  const out: Array<{ x: number; z: number }> = [];
+  for (const dx of [1, -1] as const) {
+    for (const dz of [1, -1] as const) {
+      out.push({ x: dx * along, z: dz * side });
+    }
+  }
+  return out;
+}
+
 export function makeGrassGround(): THREE.Mesh {
   const geo = new THREE.PlaneGeometry(1000, 1000, 8, 8);
   applyVertexAO(geo, 0.22);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { createSignGroup, getSignAssets, octagonPath, SIGN_BLADE_Y } from './trafficSigns';
+import { createSignGroup, getSignAssets, octagonPath, SIGN_BLADE_Y, yieldTextLayout } from './trafficSigns';
 
 describe('traffic signs', () => {
   it('shares one pole / stop / yield material across groups', () => {
@@ -47,6 +47,14 @@ describe('traffic signs', () => {
 
   it('caches one shared asset set', () => {
     expect(getSignAssets()).toBe(getSignAssets());
+  });
+
+  it('keeps YIELD inside the white triangle near the wide top', () => {
+    const layout = yieldTextLayout(256, 256);
+    expect(layout.fits).toBe(true);
+    expect(layout.textY).toBeLessThan(256 * 0.4);
+    expect(layout.approxWidth).toBeLessThan(layout.maxWidth);
+    expect(layout.font).toBeLessThan(256 * 0.14);
   });
 
   it('draws a flat-top octagon (8 vertices)', () => {

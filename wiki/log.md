@@ -113,3 +113,5 @@ Append-only. `grep "^## \[" wiki/log.md | tail -5`
 ## [2026-10-15] merge | origin/main (#35 city look) into PR #36 spawn / menu modes
 
 ## [2026-10-15] ingest | PR #38 North-American stop/yield sign visuals
+
+## [2026-10-15] ingest | PR #38 yield lettering + streetlight clearance
